@@ -180,7 +180,7 @@ pub const Rows = struct {
         const hi = try a.alloc(i32, n);
         for (pos, slot, hi, 0..) |*p, *sl, *x, i| {
             // short histories, wrapped rings, the last position; gate 4: one stream's row at the bound, every row alike
-            p.* = @intCast(if (fill == .stress or i == n - 1) at -| 1 else if (i % 4 == 0) i % @min(40, shape.k) else (i * 7919) % shape.k);
+            p.* = @intCast(if (f.prompt) at + i else if (fill == .stress or i == n - 1) at -| 1 else if (i % 4 == 0) i % @min(40, shape.k) else (i * 7919) % shape.k);
             sl.* = @intCast(if (fill == .stress) 0 else i % f.streams);
             x.* = @intCast(at + i);
         }
