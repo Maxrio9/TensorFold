@@ -1,3 +1,5 @@
+Raw evidence is packaged in [evidence.tar.gz](evidence.tar.gz) to keep the PR file list reviewable. It contains the complete original phase snapshot, including raw JSON/logs, reproduction sources/fixtures and their original SHA manifests. `archive-members.sha256.json` hashes every payload member. Extract into an empty directory with `tar -xzf evidence.tar.gz`, then verify those SHA256 values with Python/hashlib. Summaries below remain inline. No measurement or source input was changed; no executable, library or model weights are included.
+
 # First common lifetime overlay: still resource-limited
 
 All three comparison binaries compiled. The MLP binary ran alone, with a common two-file gates/Rig cleanup overlay and all original kernel math, seeds, shapes, references, controls and limits unchanged. It reached the final Flash Next standalone suite but was killed after 6,005.3 seconds without a SUMMARY. Sampled peak process RSS was 25,683,369,984 bytes. The exact owned-process kernel record confirms a cgroup OOM kill at the 24 GiB cap. The earlier zero-OOM/zero-swap checkpoint predates that kill.

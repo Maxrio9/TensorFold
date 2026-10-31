@@ -1,3 +1,5 @@
+Raw evidence is packaged in [evidence.tar.gz](evidence.tar.gz) to keep the PR file list reviewable. It contains the complete original phase snapshot, including raw JSON/logs, reproduction sources/fixtures and their original SHA manifests. `archive-members.sha256.json` hashes every payload member. Extract into an empty directory with `tar -xzf evidence.tar.gz`, then verify those SHA256 values with Python/hashlib. Summaries below remain inline. No measurement or source input was changed; no executable, library or model weights are included.
+
 # Resumed cold-prefill qualification
 
 Four complete boots (stock, MLP, attention, final stock), five exact prompt sizes and three completions per size: all 60 completions have zero cached tokens, exactly 16 output tokens and matching token/output hashes across every arm. Configured context remains 131072; the largest input is 130816, leaving 256 positions for output and speculative lookahead. This does not qualify the separately retained 131056-input baseline failure.

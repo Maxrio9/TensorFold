@@ -1,3 +1,5 @@
+Raw evidence is packaged in [evidence.tar.gz](evidence.tar.gz) to keep the PR file list reviewable. It contains the complete original phase snapshot, including raw JSON/logs, reproduction sources/fixtures and their original SHA manifests. `archive-members.sha256.json` hashes every payload member. Extract into an empty directory with `tar -xzf evidence.tar.gz`, then verify those SHA256 values with Python/hashlib. Summaries below remain inline. No measurement or source input was changed; no executable, library or model weights are included.
+
 # Original complete-run attempts: resource failures
 
 These are the original unmodified full CUDA contract programs. Stock and attention exited-9 together after1990seconds, each sampled process highwater about9.5GB. The cgroup memory.events snapshot records2OOMkills. The surviving MLP runner later exited-9 after4582.6seconds at sampled highwater25,616,699,392bytes, near the24GiB container limit. That counter snapshot predates the final MLP kill; its final cgroup event count was not retained.

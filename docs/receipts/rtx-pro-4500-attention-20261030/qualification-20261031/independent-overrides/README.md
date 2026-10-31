@@ -1,3 +1,5 @@
+Raw evidence is packaged in [evidence.tar.gz](evidence.tar.gz) to keep the PR file list reviewable. It contains the complete original phase snapshot, including raw JSON/logs, reproduction sources/fixtures and their original SHA manifests. `archive-members.sha256.json` hashes every payload member. Extract into an empty directory with `tar -xzf evidence.tar.gz`, then verify those SHA256 values with Python/hashlib. Summaries below remain inline. No measurement or source input was changed; no executable, library or model weights are included.
+
 # Independent attention override bracket on RTX PRO 4500
 
 One compiled native binary, flag `TF_CUDA_TEST_ATTN_MT2` set to `0`, then `1`, then `0`. All three boots completed with fresh calibration and matched request history. All community/classic token hashes and feature/fallback dictionaries match. Long-context draft/plain hashes also match where measured. This is physical 4500 qualification of the override, not an RTX 5090 or PRO 6000 result.
