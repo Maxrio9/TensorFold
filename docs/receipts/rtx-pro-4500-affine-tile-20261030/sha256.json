@@ -1,5 +1,5 @@
 {
-  "README.md": "220b2ed139f3ed45032e195ad5f31cbdda26dabb9c242d6bf1c902a285f96ef0",
+  "README.md": "52509ada6a7515e916d95f4480dc3fe3d7abf848a18f79a95c87483b0ee25f51",
   "checks/base-lean.txt": "d920cfe48f0d4f74308bbf4f9b8f7f9d45cf8a5acdb985fa134687d058275288",
   "checks/base-live-host-inherited.log": "af1aba73009c03ae14ef95b07b9a176f82df4b45b10afdc048f90100d4bda3ab",
   "checks/integration-failures.json": "602271d2b65a48f06ceaaf47e9bc5373f9d66e764129cb7da1c144e168652eb7",
@@ -62,6 +62,10 @@
   "qualification-20261031/first-overlay-resource-failure/README.md": "1d7fd0c116670b14cd2bac7c35786450458d3c65d2313538f825e0c9faff52c4",
   "qualification-20261031/first-overlay-resource-failure/evidence.tar.gz": "4168537001ab558a9acafe2ea5957baec96387c7c41f3c6fc402e5e123d8d09e",
   "qualification-20261031/first-overlay-resource-failure/sha256.json": "86093323c2dac3637fcbd23bd154cefe5c95bf9ca3cfde79351a82c5ea47a8eb",
+  "qualification-20261031/full-contract/README.md": "34a2cf84e89beca5e971b4af765266a088043e83fd143aa6ae1c5c34667db7e0",
+  "qualification-20261031/full-contract/evidence.tar.gz": "560b03f0742fca03c507154e7a2322c793f2aa479d747b30d2aaaff0c5764273",
+  "qualification-20261031/full-contract/sha256.json": "357171a22f5313e0e1807b4fa71ecfa314a74a24884c78710cc8d84e2cc8592e",
+  "qualification-20261031/full-contract/summary.json": "bc1657dbe910a0d901fd2382c6f35f4de6c473d684eb5cdbbb7381aeaebd26c9",
   "qualification-20261031/independent-overrides/README.md": "bf05ee9fb6f445624213eec534e76d00795710c2d734cebc67ad981a27e744a3",
   "qualification-20261031/independent-overrides/comparison.json": "80a5ad839c73744294f95fa6009cd3cf5c0bc2481b3f2df607e3095d715d17f9",
   "qualification-20261031/independent-overrides/evidence.tar.gz": "4152137885bfbe61e2e556891a08e3e35d67b9a8077be3138b8dec2a52c193be",
