@@ -1,5 +1,5 @@
 {
-  "README.md": "dff45455b6e14f055df07c3b5aae40a0462eee9e41e1ce037eb7ced925c741be",
+  "README.md": "58a9b03a0de2e22fe9b21028f5da16484044a7c4bda546aface41fc7926a1a5b",
   "attention-coordination.json": "420d79fbeabf2e418d2002e9ec2ef4143b57976b39a9b4773b663c8b63dfb28b",
   "attention-source-identity.json": "feb7c54d076f1c69ad2e13ea0fac46c5dd52f46a5eda7e7af6693f34a1ad455d",
   "checks/attention-checks.json": "7c38fb4ebf4eb6148f9ffecc24bb6f4b9e3fd90e708f2a22838a3570bfd565dc",
@@ -53,6 +53,10 @@
   "qualification-20261031/first-overlay-resource-failure/README.md": "1d7fd0c116670b14cd2bac7c35786450458d3c65d2313538f825e0c9faff52c4",
   "qualification-20261031/first-overlay-resource-failure/evidence.tar.gz": "4168537001ab558a9acafe2ea5957baec96387c7c41f3c6fc402e5e123d8d09e",
   "qualification-20261031/first-overlay-resource-failure/sha256.json": "86093323c2dac3637fcbd23bd154cefe5c95bf9ca3cfde79351a82c5ea47a8eb",
+  "qualification-20261031/full-contract/README.md": "34a2cf84e89beca5e971b4af765266a088043e83fd143aa6ae1c5c34667db7e0",
+  "qualification-20261031/full-contract/evidence.tar.gz": "560b03f0742fca03c507154e7a2322c793f2aa479d747b30d2aaaff0c5764273",
+  "qualification-20261031/full-contract/sha256.json": "357171a22f5313e0e1807b4fa71ecfa314a74a24884c78710cc8d84e2cc8592e",
+  "qualification-20261031/full-contract/summary.json": "bc1657dbe910a0d901fd2382c6f35f4de6c473d684eb5cdbbb7381aeaebd26c9",
   "qualification-20261031/independent-overrides/README.md": "a80ea630104e7039ca7ba2251815e055470801b37fef77f223155822b2ed7554",
   "qualification-20261031/independent-overrides/comparison.json": "fa56ff55f71386eacdc516406f2642977a24ea40e5047d433646b4bbf604bb82",
   "qualification-20261031/independent-overrides/evidence.tar.gz": "4dd77e4a2a37516696a125678dff6e9415922e7b726e1dab42af4f8b59695718",

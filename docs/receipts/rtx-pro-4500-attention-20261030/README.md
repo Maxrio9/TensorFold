@@ -75,3 +75,5 @@ For device qualification run `zig build -Dsm=120 -Dnvcc=/usr/local/cuda-13.3/bin
 [Independent 5090/RTX PRO 6000 Blackwell testing instructions](testing/REQUEST.md) document the opt-in `TF_CUDA_TEST_ATTN_MT2` switch. The override was added after these measurements; defaults are unchanged and no new GPU qualification is claimed.
 
 Local overnight [independent override bracket](qualification-20261031/independent-overrides/README.md) completed with matched tokens/features and all serving settings retained. It reports new matched medians separately from the earlier numbers above; the full CUDA suite is still resource-limited.
+
+The [unfiltered numerical/backend contract attempt](qualification-20261031/full-contract/README.md) now has a final SUMMARY:465 numerical kernels pass,322 controls caught,8 known findings; exit1 solely on223 limit-record problems. All three new launches pass their own live limits. This supersedes the older “SUMMARY outstanding” status; it does NOT establish a full backend pass.
