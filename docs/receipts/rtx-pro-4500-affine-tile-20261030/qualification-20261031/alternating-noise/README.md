@@ -1,3 +1,5 @@
+Raw evidence is packaged in [evidence.tar.gz](evidence.tar.gz) to keep the PR file list reviewable. It contains the complete original phase snapshot, including raw JSON/logs, reproduction sources/fixtures and their original SHA manifests. `archive-members.sha256.json` hashes every payload member. Extract into an empty directory with `tar -xzf evidence.tar.gz`, then verify those SHA256 values with Python/hashlib. Summaries below remain inline. No measurement or source input was changed; no executable, library or model weights are included.
+
 # Alternating MLP decode noise check
 
 In response to issue1700, six independent fresh-calibration stock/candidate/stock groups (18 native server processes). Same single-contribution native binary68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191, independently rebased onto main94b90c9db65dcb71bbc39715901d6fb1f00407d0. TF_CUDA_TEST_MLP128=0/1/0 in every group. Canonical greedy code/prose,256 output tokens, seven seeded repetitions and one warmup per prompt per process. All18 process token fingerprints match. No GDN or attention change in this binary.
