@@ -1,0 +1,128 @@
+[
+  {
+    "name": "stock-before-tile",
+    "source": "overnight-latest-tile",
+    "override": {
+      "TF_CUDA_TEST_MLP128": "0"
+    },
+    "basic": true,
+    "qual": true,
+    "long": false,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  },
+  {
+    "name": "candidate-tile",
+    "source": "overnight-latest-tile",
+    "override": {
+      "TF_CUDA_TEST_MLP128": "1"
+    },
+    "basic": true,
+    "qual": true,
+    "long": false,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  },
+  {
+    "name": "stock-after-tile",
+    "source": "overnight-latest-tile",
+    "override": {
+      "TF_CUDA_TEST_MLP128": "0"
+    },
+    "basic": true,
+    "qual": true,
+    "long": false,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  },
+  {
+    "name": "stock-before-attention",
+    "source": "overnight-latest-attention",
+    "override": {
+      "TF_CUDA_TEST_ATTN_MT2": "0"
+    },
+    "basic": true,
+    "qual": true,
+    "long": true,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  },
+  {
+    "name": "candidate-attention",
+    "source": "overnight-latest-attention",
+    "override": {
+      "TF_CUDA_TEST_ATTN_MT2": "1"
+    },
+    "basic": true,
+    "qual": true,
+    "long": true,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  },
+  {
+    "name": "stock-after-attention",
+    "source": "overnight-latest-attention",
+    "override": {
+      "TF_CUDA_TEST_ATTN_MT2": "0"
+    },
+    "basic": true,
+    "qual": true,
+    "long": true,
+    "sizes": [
+      "8192",
+      "32768"
+    ],
+    "drafts": [
+      true,
+      false
+    ],
+    "temperatures": [
+      0
+    ]
+  }
+]

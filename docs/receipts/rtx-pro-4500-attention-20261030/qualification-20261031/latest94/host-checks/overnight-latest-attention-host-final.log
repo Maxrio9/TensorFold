@@ -1,0 +1,1095 @@
+test-cuda-host
++- run test w
+GLM_KV_BYTES context=8192 capacity=8256 main_layers=11 bf16=296101376 fp8=245772800
+GLM_KV_BYTES context=65536 capacity=65600 main_layers=11 bf16=1044784640 fp8=644887040
+GLM_KV_BYTES context=199307 capacity=199360 main_layers=11 bf16=2791155200 fp8=1575856640
+GLM_KV_BYTES context=245760 capacity=245824 main_layers=11 bf16=3397789184 fp8=1899246080
+failed command: ./.zig-cache/o/f06d674b4a8ceb57a11017b197b9ae27/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-qwen35-draft-trees-host
++- run test 1 pass, 3 crash (4 total)
+error: 'qwen35_draft_equality.test.Qwen CUDA contracts: grown trees truncated to admitted nodes equal plain fresh resumed and concurrent' terminated with signal ABRT with stderr:
+       General protection exception (no address available)
+       /submission/memory-base/zig/src/families/qwen3_5/cuda_draft.zig:401:349: 0x13d39ef in factsFn (cuda.zig)
+               return .{ .depth = @intCast(d.c.block - 1), .step_ms = d.step_ms, .prior = &prior, .plain_guard = true, .batched = true, .stream_bytes = d.c.ringBytes() + d.target_taps + d.scratch_one, .trees = platform.c.getenv("TF_NO_TREES") == null, .window_costs = d.costs[0..d.n_costs], .lane_costs = d.costs[0..d.n_costs], .copy_match = copyMatch(d.e.g), .tree_nodes = @intCast(if (d.c.block == 16) tree.nodes() else 0) };
+                                                                                                                                                                                                                                                                                                                                                                   ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:84:42: 0x13d83d2 in facts (qwen35_draft_frame_host.zig)
+               var f = self(p).d.drafter().facts();
+                                                ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/src/core/lanes/drafted.zig:96:34: 0x135bde2 in facts (lanes.zig)
+               const d = x.drafter.facts();
+                                        ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:197:30: 0x12aef30 in run (qwen35_draft_frame_host.zig)
+           var facts = wrapped.facts(q.native.laneFacts(64, 128));
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:264:33: 0x14051ba in test.Qwen CUDA contracts: grown trees truncated to admitted nodes equal plain fresh resumed and concurrent (qwen35_draft_frame_host.zig)
+               const expected = try run(2, 0, 0, seed, 0);
+                                       ^
+       /opt/zig/lib/compiler/test_runner.zig:143:68: 0x1209d8a in mainServer (test_runner.zig)
+                       const status: TestResults.Status = if (test_fn.func()) |v| s: {
+                                                                          ^
+       /opt/zig/lib/compiler/test_runner.zig:72:26: 0x120abbd in main (test_runner.zig)
+               return mainServer(init) catch |err| panic("internal test runner failure: {t}", .{err});
+                                ^
+       /opt/zig/lib/std/start.zig:789:88: 0x12078c8 in callMain (std.zig)
+           if (fn_info.param_types[0].? == std.process.Init.Minimal) return wrapMain(root.main(.{
+                                                                                              ^
+       ???:?:?: 0x7feb1ae951c9 in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x7feb1ae9528a in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x14057e4 in _start (???)
+error: 'qwen35_draft_equality.test.Qwen CUDA contracts: grammar-pruned own trees preserve greedy and sampled equality' terminated with signal ABRT with stderr:
+       General protection exception (no address available)
+       /submission/memory-base/zig/src/families/qwen3_5/cuda_draft.zig:401:349: 0x13d39ef in factsFn (cuda.zig)
+               return .{ .depth = @intCast(d.c.block - 1), .step_ms = d.step_ms, .prior = &prior, .plain_guard = true, .batched = true, .stream_bytes = d.c.ringBytes() + d.target_taps + d.scratch_one, .trees = platform.c.getenv("TF_NO_TREES") == null, .window_costs = d.costs[0..d.n_costs], .lane_costs = d.costs[0..d.n_costs], .copy_match = copyMatch(d.e.g), .tree_nodes = @intCast(if (d.c.block == 16) tree.nodes() else 0) };
+                                                                                                                                                                                                                                                                                                                                                                   ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:84:42: 0x13d83d2 in facts (qwen35_draft_frame_host.zig)
+               var f = self(p).d.drafter().facts();
+                                                ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/src/core/lanes/drafted.zig:96:34: 0x135bde2 in facts (lanes.zig)
+               const d = x.drafter.facts();
+                                        ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:197:30: 0x12aef30 in run (qwen35_draft_frame_host.zig)
+           var facts = wrapped.facts(q.native.laneFacts(64, 128));
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:282:33: 0x13ebb7d in test.Qwen CUDA contracts: grammar-pruned own trees preserve greedy and sampled equality (qwen35_draft_frame_host.zig)
+               const expected = try run(2, 0, 0, seed, 0);
+                                       ^
+       /opt/zig/lib/compiler/test_runner.zig:143:68: 0x1209d8a in mainServer (test_runner.zig)
+                       const status: TestResults.Status = if (test_fn.func()) |v| s: {
+                                                                          ^
+       /opt/zig/lib/compiler/test_runner.zig:72:26: 0x120abbd in main (test_runner.zig)
+               return mainServer(init) catch |err| panic("internal test runner failure: {t}", .{err});
+                                ^
+       /opt/zig/lib/std/start.zig:789:88: 0x12078c8 in callMain (std.zig)
+           if (fn_info.param_types[0].? == std.process.Init.Minimal) return wrapMain(root.main(.{
+                                                                                              ^
+       ???:?:?: 0x7f276240d1c9 in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x7f276240d28a in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x14057e4 in _start (???)
+error: 'qwen35_draft_equality.test.Qwen CUDA contracts: the frame's candidate domain may change the proposals, never the reply' terminated with signal ABRT with stderr:
+       General protection exception (no address available)
+       /submission/memory-base/zig/src/families/qwen3_5/cuda_draft.zig:401:349: 0x13d39ef in factsFn (cuda.zig)
+               return .{ .depth = @intCast(d.c.block - 1), .step_ms = d.step_ms, .prior = &prior, .plain_guard = true, .batched = true, .stream_bytes = d.c.ringBytes() + d.target_taps + d.scratch_one, .trees = platform.c.getenv("TF_NO_TREES") == null, .window_costs = d.costs[0..d.n_costs], .lane_costs = d.costs[0..d.n_costs], .copy_match = copyMatch(d.e.g), .tree_nodes = @intCast(if (d.c.block == 16) tree.nodes() else 0) };
+                                                                                                                                                                                                                                                                                                                                                                   ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:84:42: 0x13d83d2 in facts (qwen35_draft_frame_host.zig)
+               var f = self(p).d.drafter().facts();
+                                                ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x135d0d0 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/src/core/lanes/drafted.zig:96:34: 0x135bde2 in facts (lanes.zig)
+               const d = x.drafter.facts();
+                                        ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:197:30: 0x12aef30 in run (qwen35_draft_frame_host.zig)
+           var facts = wrapped.facts(q.native.laneFacts(64, 128));
+                                    ^
+       /submission/memory-base/zig/qwen35_draft_equality.zig:309:26: 0x12b55b0 in test.Qwen CUDA contracts: the frame's candidate domain may change the proposals, never the reply (qwen35_draft_frame_host.zig)
+           const solo0 = try run(1, 3, 0, 17, 0);
+                                ^
+       /opt/zig/lib/compiler/test_runner.zig:143:68: 0x1209d8a in mainServer (test_runner.zig)
+                       const status: TestResults.Status = if (test_fn.func()) |v| s: {
+                                                                          ^
+       /opt/zig/lib/compiler/test_runner.zig:72:26: 0x120abbd in main (test_runner.zig)
+               return mainServer(init) catch |err| panic("internal test runner failure: {t}", .{err});
+                                ^
+       /opt/zig/lib/std/start.zig:789:88: 0x12078c8 in callMain (std.zig)
+           if (fn_info.param_types[0].? == std.process.Init.Minimal) return wrapMain(root.main(.{
+                                                                                              ^
+       ???:?:?: 0x7fbd8891f1c9 in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x7fbd8891f28a in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x14057e4 in _start (???)
+failed command: ./.zig-cache/o/e779d1ec06bfe462613b439f503246d2/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Rotary
+tf_h3_forward_host: BadH3Rotary
+tf_h3_forward: BadH3Rotary
+tf_h3_forward_host: BadH3Rotary
+tf_h3_forward: BadH3Keep
+tf_h3_forward_host: BadH3Keep
+tf_h3_forward: BadH3Keep
+tf_h3_forward_host: BadH3Keep
+tf_h3_forward: BadH3Blocks
+tf_h3_forward_host: BadH3Blocks
+tf_h3_forward: BadH3Scalar
+tf_h3_forward_host: BadH3Scalar
+tf_h3_forward: BadH3Scalar
+tf_h3_forward_host: BadH3Scalar
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward_host: BadH3Scalar
+H3 model retained at close: NotReady
+H3 geometry retained: NotReady
+tensor blocks.0.norm1.weight: MissingTensor
+tensor blocks.1.attn.qkv_proj.weight: MissingTensor
+tensor blocks.1.norm1.weight: MissingTensor
+failed command: ./.zig-cache/o/09177af482b17dfb12a9e65f788010c2/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-qwen35-live-host
++- run test 13 pass, 1 crash (14 total)
+error: 'qwen35_live_host.test.served scratch: one drafter frame does not allocate 128 streams of logits and attention' terminated with signal ABRT with stderr:
+       General protection exception (no address available)
+       /submission/memory-base/zig/src/families/qwen3_5/cuda_draft.zig:401:349: 0x12ce90f in factsFn (cuda.zig)
+               return .{ .depth = @intCast(d.c.block - 1), .step_ms = d.step_ms, .prior = &prior, .plain_guard = true, .batched = true, .stream_bytes = d.c.ringBytes() + d.target_taps + d.scratch_one, .trees = platform.c.getenv("TF_NO_TREES") == null, .window_costs = d.costs[0..d.n_costs], .lane_costs = d.costs[0..d.n_costs], .copy_match = copyMatch(d.e.g), .tree_nodes = @intCast(if (d.c.block == 16) tree.nodes() else 0) };
+                                                                                                                                                                                                                                                                                                                                                                   ^
+       /submission/memory-base/zig/src/core/lanes/drafter.zig:68:30: 0x1259c00 in facts (lanes.zig)
+               return d.vtable.facts(d.ptr);
+                                    ^
+       /submission/memory-base/zig/qwen35_live_host.zig:228:99: 0x125854b in test.served scratch: one drafter frame does not allocate 128 streams of logits and attention (qwen35_live_host.zig)
+           try std.testing.expectEqual(d.c.ringBytes() + d.target_taps + d.scratch_one, d.drafter().facts().stream_bytes);
+                                                                                                         ^
+       /opt/zig/lib/compiler/test_runner.zig:143:68: 0x11e9d8a in mainServer (test_runner.zig)
+                       const status: TestResults.Status = if (test_fn.func()) |v| s: {
+                                                                          ^
+       /opt/zig/lib/compiler/test_runner.zig:72:26: 0x11eabbd in main (test_runner.zig)
+               return mainServer(init) catch |err| panic("internal test runner failure: {t}", .{err});
+                                ^
+       /opt/zig/lib/std/start.zig:789:88: 0x11e78c8 in callMain (std.zig)
+           if (fn_info.param_types[0].? == std.process.Init.Minimal) return wrapMain(root.main(.{
+                                                                                              ^
+       ???:?:?: 0x7f36d86f31c9 in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x7f36d86f328a in ??? (/lib/x86_64-linux-gnu/libc.so.6)
+       ???:?:?: 0x12db894 in _start (???)
+failed command: ./.zig-cache/o/56924cf860002e5e65a610d56303b6c1/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+failed command: ./.zig-cache/o/c7b91e0d855bfcaee72bb345ff616fad/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+DEEPSEEK_CHAT_GOLDENS 178 committed encoding.py cases
+failed command: ./.zig-cache/o/cd8867fb72161814b6f74a31594c8ee1/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- test-glm-contract-host
+   +- run test w
+GLM 64-sums width=512 hc=false BF16 minimum=32832.12524461839x
+GLM 64-sums width=1536 hc=false BF16 minimum=32832.12524461839x
+GLM 64-sums width=4096 hc=false BF16 minimum=32832.12524461839x
+GLM 64-sums width=4096 hc=true BF16 minimum=32832.12524461839x
+failed command: ./.zig-cache/o/8a14c70b8c9a78cfd65c08a514c68a3a/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (err): rank 0: another rank's process ended (its line closed); this rank stops instead of waiting on it
+[default] (err): rank 0: rank 1 stopped (peer OOM); this rank stops too
+failed command: ./.zig-cache/o/d7c16e8634c3c17a30945f38fd4c7883/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+page deinit: context_waits=1, unsafe_frees=0
+all-on-pages third opening: capped=false, error=LaneMemory, allocations=3->3, slots=2
+all-on-pages third opening: capped=true, error=LaneMemory, allocations=3->3, slots=2
+failed command: ./.zig-cache/o/ac85e11935132bd4ef418bdcbbabb87f/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+failed command: ./.zig-cache/o/d35f59bcca57479badd8eaf96e5e56d6/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): slide pocket: a deleted fact's 1 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+[default] (warn): slide pocket: a deleted fact's 1 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+[default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+[default] (warn): slide pocket: a delete failed (UploadFailed), and its put-back did not reach the device (PutBackNotOnDevice)
+[default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+[default] (warn): slide pocket: a delete failed (UploadFailed), and its put-back did not reach the device (PutBackNotOnDevice)
+[default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+failed command: ./.zig-cache/o/f6219b92a76055ca3e0e1618d4923f2d/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+failed command: ./.zig-cache/o/a788db733878d635dd17dcd4b15f6225/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): libcublasLt.so.13 is required for CUDA vision towers (--vision) and CUDA cuBLASLt projections; install the NVIDIA CUDA 13 cuBLAS runtime; on Linux, add its directory to LD_LIBRARY_PATH; a driver-only host does not include it
+[default] (warn): libnccl.so.2 is required for CUDA ranks (including the GLM pair); install the NVIDIA NCCL 2 runtime compatible with CUDA 13; on Linux, add its directory to LD_LIBRARY_PATH
+[default] (warn): libibverbs.so.1 is required for RoCE/RDMA gathers; install rdma-core's libibverbs runtime and the provider for the network adapter
+[default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+[default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+[default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+failed command: ./.zig-cache/o/0911277e8cc7c585691b79d1366b576a/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+failed command: ./.zig-cache/o/07c4ac5c8a1e709d7f937c3438f96dd3/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+FAIL kernel-contract: unknown image name: unknown_image
+FAIL kernel-contract: unknown image name: glm_glu
+FAIL kernel-contract: unknown image name:
+FAIL kernel-contract: unknown image name: contract_control
+FAIL kernel-contract: unknown image name: GLM_GLUE
+failed command: ./.zig-cache/o/049907661fb2840e035925ad2e2c07b2/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): lm_head is 8-bit in groups of 64: CUDA reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+[default] (warn): backbone.embeddings is 8-bit in groups of 64: the Intel GPU engine reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+fake target: proposed=68 verified=68 accepted=68
+failed command: ./.zig-cache/o/9d27a0aca408d1ee6655550cb7976c9f/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+[default] (warn): qwen3_5: a kept state's host copy goes to the copy-source quarantine: a restore's copies did not drain
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+[default] (warn): qwen3_5: a lane's table did not take the kept pages: NotReady
+failed command: ./.zig-cache/o/0f09a93896224529afd77c67c1b4ffa3/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+VISION_LFM2 markers=104; every omitted entry refused
+VISION_LFM2_AUTO valid stays enabled; missing and non-added disable pictures with warning
+libjpeg-turbo 3.1.4.1 not found: LFM2's JPEG cases skipped
+libjpeg-turbo 3.1.4.1 not found: LFM2's JPEG cases skipped
+failed command: ./.zig-cache/o/fb7dc7a0ac4987899fac61ee682ebff3/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+[default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+codec requested 4, actual sizes { 4, 4, 4, 4, 1 }
+codec requested 16, actual sizes { 16, 1 }
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+Drama replay passed: eager/graphs, poison/reset, codec chunks and interleaved state
+[default] (warn): drama3: config hidden_size = 4096, the kernels need 2048
+[default] (warn): codec.pth pickle names os.system, outside the tensor state-dict allow-list
+failed command: ./.zig-cache/o/2025e4a0e11eabb07d30c24a648e68de/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+TOWER_SUM qkv f32 sequential worst=0e0
+TOWER_SUM qkv f16 sequential worst=3.390625e30
+TOWER_SUM qkv bf16 sequential worst=4.6875e28
+TOWER_SUM qkv f32 pairwise worst=0e0
+TOWER_SUM qkv f16 pairwise worst=3.390625e30
+TOWER_SUM qkv bf16 pairwise worst=1.5624999999999998e28
+TOWER_SUM qkv f32 strided worst=0e0
+TOWER_SUM qkv f16 strided worst=3.390625e30
+TOWER_SUM qkv bf16 strided worst=1.5624999999999998e28
+TOWER_SUM pool f32 sequential worst=0e0
+TOWER_SUM pool f16 sequential worst=inf
+TOWER_SUM pool bf16 sequential worst=2.38e32
+TOWER_SUM pool f32 pairwise worst=0e0
+TOWER_SUM pool f16 pairwise worst=inf
+TOWER_SUM pool bf16 pairwise worst=2.38e32
+TOWER_SUM pool f32 strided worst=0e0
+TOWER_SUM pool f16 strided worst=inf
+TOWER_SUM pool bf16 strided worst=2.38e32
+failed command: ./.zig-cache/o/61b37c255d09ecc2f66e23512c882df5/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+libwebp 1.6.0 not found: WebP pixel cases skipped
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+[default] (warn): model.layers.0.mlp.up_proj.weight: another spelling of module layers.0.mlp.up_proj declares a different width
+[default] (warn): layers.0.mlp.up_proj: another spelling of module layers.0.mlp.up_proj declares a different width
+[default] (warn): model.layers.0.mlp.up_proj: another spelling of module layers.0.mlp.up_proj declares a different width
+failed command: ./.zig-cache/o/6e6016cd0d50746d2be569f1686bb9e3/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+[default] (warn): qwen3_5: a kept state's host copy goes to the copy-source quarantine: a restore's copies did not drain
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+failed command: ./.zig-cache/o/1e016fa65be20b9b86c1b056392b4072/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+GLM_KV_BYTES context=8192 capacity=8256 main_layers=11 bf16=296101376 fp8=245772800
+GLM_KV_BYTES context=65536 capacity=65600 main_layers=11 bf16=1044784640 fp8=644887040
+GLM_KV_BYTES context=199307 capacity=199360 main_layers=11 bf16=2791155200 fp8=1575856640
+GLM_KV_BYTES context=245760 capacity=245824 main_layers=11 bf16=3397789184 fp8=1899246080
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 0 cannot exchange with rank 2; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 1 cannot exchange with rank 3; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 2 cannot exchange with rank 0; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 3 cannot exchange with rank 1; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+failed command: ./.zig-cache/o/77e3c4d9c6cc2e8cd0bfd1f9a6ca9903/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): lane host: stopping at a round boundary: 2 running and 1 queued request(s) end (server restarting: retry shortly)
+[default] (warn): lane host: stopping at a round boundary: 1 running and 0 queued request(s) end (server restarting: retry shortly)
+[default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+[default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+[default] (warn): 4 prompts together: SamplingRefused; each goes alone
+[default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+[default] (warn): lane host: a round failed (the planner refused): every admitted stream fails
+[default] (warn): lane host: a round failed (PlannerFull): every admitted stream fails
+[default] (warn): lane host: a decision score failed (EmptyLabels)
+[default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (drain deadline)
+[default] (warn): lane host: stopping at a round boundary: 0 running and 1 queued request(s) end (NoContext)
+[default] (warn): lane host: a round failed (OutOfMemory): every admitted stream fails
+[default] (warn): lane host: a round failed (AdmittedFailed): every admitted stream fails
+[default] (warn): lane host: a round failed (FinalsFailed): every admitted stream fails
+failed command: ./.zig-cache/o/b55a588adf168765376e6e89a6228aaf/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+discovery verbs: retained through TLS, atexit and destructor; child exit 0
+discovery grammar: retained through TLS, atexit and destructor; child exit 0
+1/7 qwen_cuda_weights_test.test.Qwen tower weights: existing MLX names and every byte match HF in one shard...OK
+2/7 qwen_cuda_weights_test.test.Qwen tower weights: indexed MLX fallback and sharded HF preserve every tensor...OK
+3/7 qwen_cuda_weights_test.test.Qwen tower weights: malformed selected shape and dtype fail without a fallback...model.visual.patch_embed.proj.weight: f16 { 2, 3, 2, 16, 16 }, expected bf16 { 2, 3, 2, 16, 16 }
+model.visual.patch_embed.proj.weight: bf16 { 2, 3, 2, 8, 32 }, expected bf16 { 2, 3, 2, 16, 16 }
+vision_tower.patch_embed.proj.weight: f16 { 2, 2, 16, 16, 3 }, expected bf16 { 2, 2, 16, 16, 3 }
+vision_tower.patch_embed.proj.weight: bf16 { 2, 2, 16, 8, 6 }, expected bf16 { 2, 2, 16, 16, 3 }
+OK
+4/7 qwen_cuda_weights_test.test.Qwen tower weights: missing selected tensor and unused selected tensors fail closed...checkpoint has no tensor vision_tower.blocks.0.mlp.linear_fc1.bias
+unused checkpoint tensor vision_tower.extra
+checkpoint has no tensor model.visual.blocks.0.mlp.linear_fc1.bias
+unused checkpoint tensor model.visual.extra
+OK
+5/7 qwen_cuda_weights_test.test.Qwen tower weights: HF patch keeps the authored precedence when both namespaces exist...OK
+6/7 qwen_cuda_weights_test.test.Qwen tower weights: every copy refusal and MLX retry release their host owners...OK
+7/7 qwen_cuda_weights_test.test.Qwen tower weights: allocation failures balance the fallback reader and transpose scratch...OK
+7 passed; 0 skipped; 0 failed.
+test-cuda-host
++- run test w
+[default] (warn): .zig-cache/o/481ee3ba031377e9c2f0bf42f808652d/libpicture-codec-wrong.so is not libjpeg-turbo 3.1.4.1; JPEG images are refused until it is
+[default] (warn): .zig-cache/o/481ee3ba031377e9c2f0bf42f808652d/libpicture-codec-wrong.so is not libwebp 1.6.0; WebP images are refused until it is
+failed command: ./.zig-cache/o/5459a22aa1fcb94809e25c2b89810a9d/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): lm_head is 8-bit in groups of 64: CUDA reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+[default] (warn): backbone.embeddings is 8-bit in groups of 64: the Intel GPU engine reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+failed command: ./.zig-cache/o/b8d245ab0a769622b50f0ecc3bb19f2a/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+PROVENANCE_FIELDS fixtures=3 fields=14 plus decision labels
+PROVENANCE_TIMING mode=raw one=0 bytes=409600 added=1000 rounds=12 ns_per=8873869
+PROVENANCE_TIMING mode=masked one=0 bytes=409600 added=1000 rounds=12 ns_per=8057534
+PROVENANCE_MASK_WORK one=0 spans=3 matcher=3 output=409603
+PROVENANCE_TIMING mode=raw one=1 bytes=409600 added=1000 rounds=12 ns_per=7354583
+PROVENANCE_TIMING mode=masked one=1 bytes=409600 added=1000 rounds=12 ns_per=8124018
+PROVENANCE_MASK_WORK one=1 spans=3 matcher=3 output=409603
+[default] (warn): TENSORFOLD_REQUEST_LOG .zig-cache/tmp/SRsspTmlIwlImJOo/taken.jsonl gets no requests: it is not a regular file only its owner can read
+DEEPSEEK_CHAT_GOLDENS 178 committed encoding.py cases
+VISION_MARKERS all 8 fields refuse plain vocabulary; unflagged additions pass
+[default] (warn): libtfgrammar.so is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[default] (warn): libtfgrammar.so is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[default] (warn): libtfgrammar.so is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+[default] (warn): libtfgrammar.so is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+invalid output: first-write inflight=0
+Busy: first-write inflight=0
+Closed: first-write inflight=0
+InvalidRequest: first-write inflight=0
+Unsupported: first-write inflight=0
+completed stream: first-write inflight=0
+[default] (warn): libtfgrammar.so is required for structured output and required tool calls (HTTP 400 when missing); restore the matching release archive's lib/ directory or run zig build grammar -Dxgrammar=DIR; prepare DIR with git clone --branch v0.2.8 --recurse-submodules https://github.com/mlc-ai/xgrammar
+failed command: ./.zig-cache/o/76fc69dc0dacf229f5bce41c8245dd24/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+test-cuda-host
++- run test w
+DEPTH_REPLAY n=2 intercept=50 slope=3 head=1 probe=false deepest=6 crossed={ 62, 62 } last={ 6, 6 } trimmed=0
+DEPTH_REPLAY n=2 intercept=50 slope=3 head=1 probe=true deepest=8 crossed={ 59, 57 } last={ 7, 8 } trimmed=11
+DEPTH_REPLAY n=4 intercept=50 slope=3 head=1 probe=false deepest=4 crossed={ 83, 83, 83, 83 } last={ 4, 4, 4, 4 } trimmed=0
+DEPTH_REPLAY n=4 intercept=50 slope=3 head=1 probe=true deepest=5 crossed={ 75, 83, 83, 76 } last={ 5, 5, 5, 5 } trimmed=9
+DEPTH_REPLAY n=2 intercept=55 slope=2.8 head=1 probe=false deepest=6 crossed={ 61, 61 } last={ 6, 6 } trimmed=0
+DEPTH_REPLAY n=2 intercept=55 slope=2.8 head=1 probe=true deepest=8 crossed={ 54, 56 } last={ 8, 8 } trimmed=2
+DEPTH_REPLAY n=4 intercept=55 slope=2.8 head=1 probe=false deepest=4 crossed={ 82, 82, 82, 82 } last={ 4, 4, 4, 4 } trimmed=0
+DEPTH_REPLAY n=4 intercept=55 slope=2.8 head=1 probe=true deepest=6 crossed={ 75, 71, 72, 74 } last={ 5, 6, 5, 5 } trimmed=9
+DEPTH_REPLAY n=8 intercept=100 slope=0 head=0 probe=false deepest=3 crossed={ 100, 100, 100, 100, 100, 100, 100, 100 } last={ 3, 3, 3, 3, 3, 3, 3, 3 } trimmed=0
+DEPTH_REPLAY n=8 intercept=100 slope=0 head=0 probe=true deepest=3 crossed={ 100, 100, 100, 100, 100, 100, 100, 100 } last={ 3, 3, 3, 3, 3, 3, 3, 3 } trimmed=0
+failed command: ./.zig-cache/o/e5d3c360f51066eb44ec6346023a811a/test --cache-dir=./.zig-cache --seed=0xf00f9020 --listen=-
+
+Build Summary: 281/285 steps succeeded (2 failed); 4040/4053 tests passed (9 skipped, 4 crashed)
+test-qwen35-launch-args-host success
++- run test 4 pass (4 total) 136ms MaxRSS:15M
+   +- compile test debug native success 1s MaxRSS:202M
+      +- WriteFile draft_ids.txt success
+      +- options cached
+test-qwen35-attn-contract-host success
++- run test 3 pass (3 total) 11ms MaxRSS:7M
+   +- compile test debug native success 1s MaxRSS:193M
+      +- options (reused)
+test-qwen35-verify-contract-host success
++- run test 8 pass (8 total) 18ms MaxRSS:9M
+   +- compile test debug native success 12s MaxRSS:209M
+      +- options (reused)
+test-qwen35-live-host transitive failure
++- run test 13 pass, 1 crash (14 total)
+   +- compile test debug native success 1s MaxRSS:216M
+      +- options (reused)
+      +- WriteFile draft_ids.txt (reused)
+test-qwen35-verify-host success
++- run test 7 pass (7 total) 32ms MaxRSS:8M
+   +- compile test debug native success 989ms MaxRSS:206M
+      +- options (reused)
+      +- WriteFile draft_ids.txt (reused)
+test-qwen35-draft-trees-host transitive failure
++- run test 1 pass, 3 crash (4 total)
+   +- compile test debug native success 2s MaxRSS:244M
+      +- options (reused)
+      +- WriteFile draft_ids.txt (reused)
+test-qwen35-formats-host success
++- run test 9 pass (9 total) 69ms MaxRSS:7M
+   +- compile test debug native success 1s MaxRSS:211M
+      +- options (reused)
+test-cuda-host success
++- run test 2 pass (2 total) 19ms MaxRSS:10M
+|  +- compile test debug native success 1s MaxRSS:187M
++- run test 1 pass (1 total) 13ms MaxRSS:15M
+|  +- compile test debug native success 950ms MaxRSS:160M
++- run test 12 pass (12 total) 33ms MaxRSS:13M
+|  +- compile test debug native success 787ms MaxRSS:183M
++- run test 2 pass (2 total) 9ms MaxRSS:9M
+|  +- compile test debug native success 693ms MaxRSS:167M
++- run exe runtime-discovery-exit success 22ms
+|  +- compile exe runtime-discovery-exit debug native success 1s MaxRSS:160M
+|     +- options success
+|        +- compile lib runtime-discovery-mock debug native success 197ms MaxRSS:73M
++- run exe rpc-warning-check success 18ms
+|  +- compile exe rpc-warning-check debug native success 818ms MaxRSS:162M
+|     +- options success
+|        +- compile lib rpc-mock-complete debug native success 51ms MaxRSS:64M
+|        +- compile lib rpc-mock-abi debug native success 58ms MaxRSS:65M
+|        +- compile lib rpc-mock-wait debug native success 74ms MaxRSS:64M
+|        +- compile lib rpc-mock-store debug native success 77ms MaxRSS:64M
+|        +- compile lib rpc-mock-wrong debug native success 78ms MaxRSS:64M
++- run test 11 pass (11 total) 17ms MaxRSS:13M
+|  +- compile test debug native success 1s MaxRSS:172M
+|     +- options (+5 more reused dependencies)
++- run exe grammar-warning-check success 15ms
+|  +- compile exe grammar-warning-check debug native success 680ms MaxRSS:163M
+|     +- options success
++- run test 3 pass (3 total) 20ms MaxRSS:23M
+|  +- compile test debug native success 845ms MaxRSS:168M
+|     +- options success
++- run test 3 pass (3 total) 19ms MaxRSS:23M
+|  +- compile test debug native success 599ms MaxRSS:172M
+|     +- options success
+|        +- compile lib picture-codec-wrong debug native success 79ms MaxRSS:67M
++- run test 3 pass (3 total) 38ms MaxRSS:23M
+|  +- compile test debug native success 1s MaxRSS:163M
+|     +- options success
+|        +- compile lib picture-codec-symbols debug native success 119ms MaxRSS:65M
++- run test 3 pass (3 total) 25ms MaxRSS:23M
+|  +- compile test debug native success 824ms MaxRSS:164M
+|     +- options success
+|        +- compile lib picture-codec-ready debug native success 64ms MaxRSS:66M
++- run test 1 pass (1 total) 15ms MaxRSS:12M
+|  +- compile test debug native success 1s MaxRSS:167M
++- run test 30 pass (30 total) 70ms MaxRSS:8M
+|  +- compile test debug native success 1s MaxRSS:260M
+|     +- WriteFile h3-compile-only.fatbin success
+|     +- options (reused)
++- run test 3 pass (3 total) 1s MaxRSS:75M
+|  +- compile test debug native success 563ms MaxRSS:186M
++- run test 4 pass (4 total) 127ms MaxRSS:7M
+|  +- compile test debug native success 1s MaxRSS:190M
++- run test 2 pass (2 total) 89ms MaxRSS:15M
+|  +- compile test debug native success 955ms MaxRSS:160M
++- run test 1 pass (1 total) 136ms MaxRSS:23M
+|  +- compile test debug native success 775ms MaxRSS:180M
++- run test 6 pass (6 total) 19ms MaxRSS:14M
+|  +- compile test debug native success 13s MaxRSS:208M
+|     +- WriteFile qwen4_projection.fatbin success
+|     +- WriteFile dsv41_exl3_experts.fatbin success
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- WriteFile dsv41_exl3_experts.fatbin (reused)
+|     +- options cached
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- options cached
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
+|     +- WriteFile qwen4_projection.fatbin (reused)
++- run test success 790ms
+|  +- compile test debug native success 1s MaxRSS:188M
++- run test 10 pass (10 total) 17ms MaxRSS:16M
+|  +- compile test debug native success 802ms MaxRSS:227M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 90 pass (90 total) 8s MaxRSS:29M
+|  +- compile test debug native success 1s MaxRSS:249M
+|     +- options (reused)
++- run test 3 pass (3 total) 32ms MaxRSS:17M
+|  +- compile test debug native success 1s MaxRSS:180M
+|     +- options (reused)
++- run test 1 pass (1 total) 15ms MaxRSS:18M
+|  +- compile test debug native success 998ms MaxRSS:189M
+|     +- options (reused)
++- run test (+1 more reused dependencies)
++- test-glm-contract-host success
+|  +- run test 7 pass (7 total) 626ms MaxRSS:9M
+|     +- compile test debug native success 1s MaxRSS:188M
+|        +- options (reused)
++- run test 35 pass, 3 skip (38 total) 1s MaxRSS:19M
+|  +- compile test debug native success 1s MaxRSS:240M
+|     +- options (reused)
++- run test 11 pass (11 total) 27ms MaxRSS:16M
+|  +- compile test debug native success 549ms MaxRSS:199M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 10 pass (10 total) 18ms MaxRSS:17M
+|  +- compile test debug native success 636ms MaxRSS:187M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 3 pass (3 total) 234ms MaxRSS:18M
+|  +- compile test debug native success 1s MaxRSS:214M
+|     +- options success
+|     |  +- compile exe qwen-round-timing-probe debug native success 1s MaxRSS:217M
+|     |     +- WriteFile draft_ids.txt (reused)
+|     |     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 11 pass (11 total) 11ms MaxRSS:9M
+|  +- compile test debug native success 689ms MaxRSS:206M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 12 pass (12 total) 2s MaxRSS:17M
+|  +- compile test debug native success 759ms MaxRSS:185M
+|     +- options (reused)
++- run test (+1 more reused dependencies)
++- run test 5 pass (5 total) 13ms MaxRSS:9M
+|  +- compile test debug native success 864ms MaxRSS:209M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 8 pass (8 total) 16ms MaxRSS:10M
+|  +- compile test debug native success 1s MaxRSS:217M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 6 pass (6 total) 67ms MaxRSS:8M
+|  +- compile test debug native success 978ms MaxRSS:210M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test (+1 more reused dependencies)
++- run test 10 pass (10 total) 561ms MaxRSS:14M
+|  +- compile test debug native success 1s MaxRSS:228M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 10 pass (10 total) 75ms MaxRSS:19M
+|  +- compile test debug native success 864ms MaxRSS:207M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- compile obj exl3_host_compile debug native success 521ms MaxRSS:126M
+|  +- options (reused)
++- run test 8 pass (8 total) 14ms MaxRSS:8M
+|  +- compile test debug native success 1s MaxRSS:199M
+|     +- options (reused)
++- run test 2 pass (2 total) 20ms MaxRSS:14M
+|  +- compile test debug native success 1s MaxRSS:201M
+|     +- options (reused)
++- run test 9 pass (9 total) 796ms MaxRSS:31M
+|  +- compile test debug native success 1s MaxRSS:204M
+|     +- options (reused)
++- run test 23 pass (23 total) 18ms MaxRSS:18M
+|  +- compile test debug native success 1s MaxRSS:218M
+|     +- options (reused)
++- run test 6 pass (6 total) 230ms MaxRSS:22M
+|  +- compile test debug native success 917ms MaxRSS:191M
+|     +- options (reused)
++- run test 4 pass (4 total) 34ms MaxRSS:14M
+|  +- compile test debug native success 1s MaxRSS:184M
+|     +- options (reused)
++- run test 2 pass (2 total) 52ms MaxRSS:11M
+|  +- compile test debug native success 1s MaxRSS:192M
+|     +- options (reused)
++- run test 5 pass (5 total) 17ms MaxRSS:19M
+|  +- compile test debug native success 608ms MaxRSS:191M
+|     +- options (reused)
++- run test 2 pass (2 total) 18ms MaxRSS:17M
+|  +- compile test debug native success 631ms MaxRSS:173M
+|     +- options (reused)
++- run test 3 pass (3 total) 16ms MaxRSS:14M
+|  +- compile test debug native success 1s MaxRSS:188M
+|     +- options (reused)
++- run test 3 pass (3 total) 21ms MaxRSS:8M
+|  +- compile test debug native success 900ms MaxRSS:186M
+|     +- options (reused)
++- run test 3 pass (3 total) 14ms MaxRSS:9M
+|  +- compile test debug native success 650ms MaxRSS:180M
+|     +- options (reused)
++- run test 9 pass (9 total) 15ms MaxRSS:19M
+|  +- compile test debug native success 1s MaxRSS:195M
+|     +- options (reused)
++- run test 1 pass (1 total) 19ms MaxRSS:14M
+|  +- compile test debug native success 1s MaxRSS:183M
+|     +- options (reused)
++- run test 1 pass (1 total) 12ms MaxRSS:10M
+|  +- compile test debug native success 912ms MaxRSS:189M
+|     +- options (reused)
++- run test 1 pass (1 total) 16ms MaxRSS:19M
+|  +- compile test debug native success 757ms MaxRSS:186M
+|     +- options (reused)
++- run test 1 pass (1 total) 17ms MaxRSS:18M
+|  +- compile test debug native success 1s MaxRSS:186M
+|     +- options (reused)
++- run test 2 pass (2 total) 42ms MaxRSS:8M
+|  +- compile test debug native success 985ms MaxRSS:167M
++- run test 8 pass (8 total) 21ms MaxRSS:11M
+|  +- compile test debug native success 923ms MaxRSS:187M
++- run test 3 pass (3 total) 400ms MaxRSS:12M
+|  +- compile test debug native success 856ms MaxRSS:181M
++- run test 8 pass (8 total) 76ms MaxRSS:7M
+|  +- compile test debug native success 1s MaxRSS:183M
++- run test 1 pass (1 total) 14ms MaxRSS:15M
+|  +- compile test debug native success 689ms MaxRSS:186M
+|     +- options (reused)
++- run test 1 pass (1 total) 13ms MaxRSS:16M
+|  +- compile test debug native success 564ms MaxRSS:176M
+|     +- options (reused)
++- run test success 14ms MaxRSS:11M
+|  +- compile test debug native success 1s MaxRSS:184M
+|     +- options (reused)
++- run test 9 pass (9 total) 202ms MaxRSS:16M
+|  +- compile test debug native success 613ms MaxRSS:183M
+|     +- options (reused)
++- run test 4 pass (4 total) 10ms MaxRSS:8M
+|  +- compile test debug native success 1s MaxRSS:189M
+|     +- options (reused)
++- run test 1 pass (1 total) 169ms MaxRSS:10M
+|  +- compile test debug native success 915ms MaxRSS:192M
+|     +- options (reused)
++- run test 4 pass (4 total) 2ms MaxRSS:13M
+|  +- compile test fast native success 29s MaxRSS:535M
+|     +- options (reused)
++- run test 1 pass (1 total) 17ms MaxRSS:12M
+|  +- compile test fast native success 31s MaxRSS:527M
+|     +- options (reused)
++- compile obj bolt_host_compile debug x86_64-linux-gnu success 2s MaxRSS:155M
+|  +- options cached
+|  +- WriteFile draft_ids.txt (reused)
++- run test 2 pass (2 total) 12ms MaxRSS:13M
+|  +- compile test debug native success 724ms MaxRSS:164M
++- run test 39 pass (39 total) 1s MaxRSS:15M
+|  +- compile test debug native success 1s MaxRSS:209M
+|     +- options (reused)
++- run test 111 pass (111 total) 12s MaxRSS:42M
+|  +- compile test debug native success 1s MaxRSS:233M
++- run test 4 pass (4 total) 14ms MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:197M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 4 pass (4 total) 7s MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:268M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run exe qwen-cost-key-process success 4s
+|  +- compile exe qwen-cost-key-process debug native success 1s MaxRSS:209M
+|  |  +- WriteFile draft_ids.txt (reused)
+|  |  +- options (reused)
+|  +- WriteFile target/config.json success
++- run test 1 pass (1 total) 18ms MaxRSS:11M
+|  +- compile test debug native success 778ms MaxRSS:190M
++- compile obj drama_cuda_native_host debug native success 720ms MaxRSS:148M
+|  +- options (reused)
++- run test 6 pass (6 total) 16ms MaxRSS:10M
+|  +- compile test debug native success 1s MaxRSS:230M
+|     +- options (reused)
++- run test 8 pass (8 total) 49ms MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:236M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 5 pass (5 total) 14ms MaxRSS:11M
+|  +- compile test debug native success 859ms MaxRSS:166M
++- run test 28 pass, 1 skip (29 total) 7s MaxRSS:21M
+|  +- compile test debug native success 2s MaxRSS:303M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 5 pass (5 total) 259ms MaxRSS:23M
+|  +- compile test debug native success 1s MaxRSS:189M
++- run test 4 pass (4 total) 16ms MaxRSS:12M
+|  +- compile test debug native success 905ms MaxRSS:193M
++- run test 879 pass (879 total) 2m MaxRSS:150M
+|  +- compile test debug native success 10s MaxRSS:539M
++- run test 5 pass (5 total) 17ms MaxRSS:24M
+|  +- compile test debug native success 870ms MaxRSS:167M
++- run test 263 pass (263 total) 506ms MaxRSS:11M
+|  +- compile test debug native success 2s MaxRSS:223M
+|     +- options (reused)
++- run test 439 pass (439 total) 47s MaxRSS:192M
+|  +- compile test debug native success 15s MaxRSS:294M
++- run test 277 pass (277 total) 37s MaxRSS:48M
+|  +- compile test debug native success 1s MaxRSS:232M
++- run test 75 pass, 1 skip (76 total) 309ms MaxRSS:14M
+|  +- compile test debug native success 2s MaxRSS:252M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 117 pass, 2 skip (119 total) 17s MaxRSS:29M
+|  +- compile test debug native success 1s MaxRSS:266M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 12 pass (12 total) 27ms MaxRSS:22M
+|  +- compile test debug native success 963ms MaxRSS:203M
+|     +- options (reused)
++- run test 167 pass (167 total) 1s MaxRSS:145M
+|  +- compile test debug native success 1s MaxRSS:259M
+|     +- options (reused)
++- run test 15 pass (15 total) 9s MaxRSS:15M
+|  +- compile test debug native success 1s MaxRSS:207M
+|     +- options (reused)
++- run test 31 pass (31 total) 9s MaxRSS:1G
+|  +- compile test debug native success 1s MaxRSS:206M
+|     +- options (reused)
++- run test 5 pass (5 total) 17ms MaxRSS:13M
+|  +- compile test debug native success 778ms MaxRSS:175M
++- run test 40 pass (40 total) 1s MaxRSS:20M
+|  +- compile test debug native success 1s MaxRSS:195M
++- run test 423 pass (423 total) 1m MaxRSS:45M
+|  +- compile test debug native success 2s MaxRSS:262M
++- run test 110 pass (110 total) 312ms MaxRSS:41M
+|  +- compile test debug native success 2s MaxRSS:399M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 3 pass (3 total) 17ms MaxRSS:15M
+|  +- compile test debug native success 752ms MaxRSS:170M
++- run test 1 pass (1 total) 16ms MaxRSS:11M
+|  +- compile test debug native success 889ms MaxRSS:181M
++- run test 5 pass (5 total) 15ms MaxRSS:11M
+|  +- compile test debug native success 919ms MaxRSS:169M
++- run test 9 pass (9 total) 20ms MaxRSS:18M
+|  +- compile test debug native success 889ms MaxRSS:197M
+|     +- options (reused)
++- run test 14 pass (14 total) 34ms MaxRSS:7M
+|  +- compile test debug native success 1s MaxRSS:205M
+|     +- options (reused)
++- run test 11 pass (11 total) 18ms MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:200M
+|     +- options (reused)
++- run test 12 pass (12 total) 57ms MaxRSS:10M
+|  +- compile test debug native success 7s MaxRSS:238M
+|     +- options (reused)
++- run test 2 pass (2 total) 14ms MaxRSS:15M
+|  +- compile test debug native success 648ms MaxRSS:201M
+|     +- options (reused)
++- run test 2 pass (2 total) 49ms MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:258M
+|     +- options (reused)
++- run test 143 pass (143 total) 302ms MaxRSS:19M
+|  +- compile test debug native success 4s MaxRSS:277M
+|     +- options (reused)
++- run test 19 pass, 1 skip (20 total) 36ms MaxRSS:16M
+|  +- compile test debug native success 791ms MaxRSS:205M
+|     +- options (reused)
++- run test 47 pass (47 total) 538ms MaxRSS:22M
+|  +- compile test debug native success 1s MaxRSS:219M
+|     +- options (reused)
++- run test 8 pass (8 total) 30ms MaxRSS:22M
+|  +- compile test debug native success 952ms MaxRSS:196M
+|     +- options (reused)
++- run test 5 pass (5 total) 46ms MaxRSS:8M
+|  +- compile test debug native success 974ms MaxRSS:169M
++- run test 13 pass (13 total) 12ms MaxRSS:24M
+|  +- compile test debug native success 710ms MaxRSS:192M
++- run test 41 pass (41 total) 16s MaxRSS:19M
+|  +- compile test debug native success 1s MaxRSS:202M
++- run test 21 pass (21 total) 172ms MaxRSS:17M
+|  +- compile test debug native success 5s MaxRSS:363M
++- run test 55 pass (55 total) 2s MaxRSS:13M
+|  +- compile test debug native success 1s MaxRSS:200M
++- run test 52 pass, 1 skip (53 total) 4s MaxRSS:23M
+|  +- compile test debug native success 1s MaxRSS:196M
++- run test 1 pass (1 total) 18ms MaxRSS:17M
+|  +- compile test debug native success 687ms MaxRSS:207M
+|     +- options cached
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile exlr8_alias.zig cached
++- run test 12 pass (12 total) 17ms MaxRSS:19M
+   +- compile test debug native success 990ms MaxRSS:232M
+      +- WriteFile exlr8_alias.zig cached
+      +- options (reused)
+      +- WriteFile draft_ids.txt (reused)

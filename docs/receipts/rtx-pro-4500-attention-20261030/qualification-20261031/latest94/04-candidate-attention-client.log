@@ -1,0 +1,35 @@
+community-v1: code and chat, 2 temperatures, 5 repeats after warm-up.
+This generates model replies; use Ctrl-C to cancel. Nothing is uploaded unless you publish.
+code T=1 warm-up: ok 207.37 delivery tok/s
+code T=1 repeat 1/5: ok 217.15 delivery tok/s
+code T=1 repeat 2/5: ok 324.21 delivery tok/s
+code T=1 repeat 3/5: ok 232.34 delivery tok/s
+code T=1 repeat 4/5: ok 221.45 delivery tok/s
+code T=1 repeat 5/5: ok 249.54 delivery tok/s
+chat T=1 warm-up: ok 149.92 delivery tok/s
+chat T=1 repeat 1/5: ok 154.58 delivery tok/s
+chat T=1 repeat 2/5: ok 133.24 delivery tok/s
+chat T=1 repeat 3/5: ok 147.68 delivery tok/s
+chat T=1 repeat 4/5: ok 141.00 delivery tok/s
+chat T=1 repeat 5/5: ok 144.05 delivery tok/s
+code T=0 warm-up: ok 217.89 delivery tok/s
+code T=0 repeat 1/5: ok 222.19 delivery tok/s
+code T=0 repeat 2/5: ok 212.54 delivery tok/s
+code T=0 repeat 3/5: ok 216.90 delivery tok/s
+code T=0 repeat 4/5: ok 216.72 delivery tok/s
+code T=0 repeat 5/5: ok 217.26 delivery tok/s
+chat T=0 warm-up: ok 165.74 delivery tok/s
+chat T=0 repeat 1/5: ok 165.68 delivery tok/s
+chat T=0 repeat 2/5: ok 165.61 delivery tok/s
+chat T=0 repeat 3/5: ok 165.67 delivery tok/s
+chat T=0 repeat 4/5: ok 165.71 delivery tok/s
+chat T=0 repeat 5/5: ok 165.43 delivery tok/s
+Run 5ab77856-2379-4b54-acf1-6d13a54e706f | cuda | TensorFold/Qwen3.8-27B-MLX-4bit
+Workload       Temp    Stream delivery tok/s    First text, s    Status
+code           1      232.34                    0.054            complete
+chat           1      144.05                    0.073            complete
+code           0      216.90                    0.054            complete
+chat           0      165.67                    0.072            complete
+Stream delivery includes transport buffering; it is not an engine token clock.
+Attached-server hardware and checkpoint revisions are unknown; this result is unranked.
+Receipt saved: /task/results/04-candidate-attention.json

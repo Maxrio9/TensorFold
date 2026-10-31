@@ -1,0 +1,9 @@
+{
+  "tile": {
+    "exit_code": -9,
+    "elapsed_s": 6005.250883817673,
+    "peak_process_rss_bytes": 25683369984,
+    "binary_sha256": "fd3d6c72b2a25ec5f896f9680fb7826df1336cf12beeb375a6ec760b146aa379",
+    "summary": []
+  }
+}
