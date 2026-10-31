@@ -1,5 +1,5 @@
 {
-  "README.md": "2ebed55a4f97aeae11b3ace62e1c429d6df660c33d05e91e00d0a689c286239d",
+  "README.md": "4472816336c7f303bf1cc055aac29f51067fc16d6b5139f6520b67e1746fbe53",
   "checks/base-lean.txt": "d920cfe48f0d4f74308bbf4f9b8f7f9d45cf8a5acdb985fa134687d058275288",
   "checks/base-live-host-inherited.log": "af1aba73009c03ae14ef95b07b9a176f82df4b45b10afdc048f90100d4bda3ab",
   "checks/integration-failures.json": "602271d2b65a48f06ceaaf47e9bc5373f9d66e764129cb7da1c144e168652eb7",
@@ -154,6 +154,11 @@
   "served/02-stock-after-tile-vision-webp.json": "6bf771761bb75aeeab8685bcdaa9898e6f0779a36c80a6dde47200e9b55c8bed",
   "served/02-stock-after-tile.json": "f4c26361094b1bc06797081b1a89f1a1a0a291080df21e939e7048b263eeb7b2",
   "served/state.json": "8a657cbf5e64e684880cee990148d6523ca399ae8f2d1c6adb8fb41b4a6ec0d9",
+  "testing/REQUEST.md": "cec27daa7af810120765a135cce256ab5197b7923f223db72b4c622ba61ae655",
+  "testing/fixture-32768.json": "7afda0a840824d7dc2fe3f7c71e85950c250edd161604699db5fb497866054f3",
+  "testing/fixture-8192.json": "4c009ffc85fe20a713b51c14d17ffaf262fd4e2ceaa4be6937aa865d954f557f",
+  "testing/override-host.log": "99fb04a7c6a11c4139400cb8207ab1b866d370cc06ace05965b995254e1044ad",
+  "testing/replay_long.py": "0aa5e12af8506d07a1f2600cc53e8e142bc33421b9131fb96f91c2c192e0c892",
   "tile-coordination.json": "c86bef5b8fe17eadd47747a8ea03f1453bcd27a94bf565d56f1f81cc6a3f17b5",
   "tile-source-identity.json": "5faf0fd4cb22ced4d9d1a7a579a1fe46e3d8fd92188e8b99fcd3b7deb830e4e3",
   "toolchain.txt": "1adca521952877459f0c0af64a02802f38d80ce80b3136aa88e660838a111dce"

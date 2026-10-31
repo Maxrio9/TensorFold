@@ -59,14 +59,16 @@ pub const Affine4Kernels = struct {
         a.mlp128_fn = try group_mod.function("_ZN12tf_qmm_group12group_kernelILi64ELi16ELi128ELi1ELi8ELi4ELb0ELb0ELb0ELb0EEEvPK13__nv_bfloat16PKfNS_5PartsEiiiii");
         try a.mlp128_fn.allowDynamicShared(26880);
         a.mlp128 = false;
-        if (sms == 82) {
+        const test_override = std.c.getenv("TF_CUDA_TEST_MLP128");
+        if (sms == 82 or test_override != null) {
             var device: @import("abi.zig").Device = 0;
             try d.check(d.api.cuCtxGetDevice(&device), "cuCtxGetDevice");
             var major: c_int = 0;
             var minor: c_int = 0;
             try d.check(d.api.cuDeviceGetAttribute(&major, .compute_capability_major, device), "cuDeviceGetAttribute");
             try d.check(d.api.cuDeviceGetAttribute(&minor, .compute_capability_minor, device), "cuDeviceGetAttribute");
-            a.mlp128 = mlp128Device(@intCast(10 * major + minor), sms);
+            a.mlp128 = @import("sm120_test_override.zig").enabled(@intCast(10 * major + minor), sms, if (test_override) |v| std.mem.span(v) else null);
+            if (test_override) |v| std.log.info("experimental MLP128 override={s}, enabled={}", .{ std.mem.span(v), a.mlp128 });
         }
         a.verify_fn = try group_mod.function(symbols.verify32);
         a.verify64_fn = try group_mod.function(symbols.verify64);
@@ -322,7 +324,7 @@ pub const Affine4Kernels = struct {
 
 /// The measured device envelope; other SM120 cards keep the existing tile.
 pub fn mlp128Device(sm: u32, sms: usize) bool {
-    return sm == 120 and sms == 82;
+    return @import("sm120_test_override.zig").enabled(sm, sms, null);
 }
 
 /// A single K slice and a complete dense 27B MLP output panel.
