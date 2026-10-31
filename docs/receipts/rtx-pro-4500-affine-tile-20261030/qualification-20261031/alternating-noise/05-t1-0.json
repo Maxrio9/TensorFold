@@ -1,0 +1,182 @@
+[
+ {
+  "label": "",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 216.82440114457992,
+  "decode_tps_all": [
+   217.43,
+   212.61,
+   216.88,
+   216.83,
+   212.49,
+   216.82,
+   216.68
+  ],
+  "ttft_s_median": 0.05413989900262095,
+  "prefill_tps_median": 258.589,
+  "itl_mean_ms_median": 4.612,
+  "itl_p50_ms_median": 0.0,
+  "itl_p95_ms_median": 26.172,
+  "round_gap_p50_ms_median": 26.111,
+  "round_gap_p95_ms_median": 26.309,
+  "tokens_per_chunk_median": 5.565,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "2b28aa2108de",
+    "output_sha256": "aafe5ed4d4636e0ee4268bf2173d5de3929d2acfae0d404b79b67567f06e98dd"
+   }
+  ],
+  "sample": "\n\n<think>\nThe user wants a short Python function that computes the Fibonacci sequence, along with an explanation. Let me think about what would be most useful:\n"
+ },
+ {
+  "label": "",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 165.4938614262941,
+  "decode_tps_all": [
+   165.59,
+   163.01,
+   165.49,
+   165.54,
+   165.61,
+   165.48,
+   162.92
+  ],
+  "ttft_s_median": 0.07285685100941919,
+  "prefill_tps_median": 425.492,
+  "itl_mean_ms_median": 6.043,
+  "itl_p50_ms_median": 0.0,
+  "itl_p95_ms_median": 26.798,
+  "round_gap_p50_ms_median": 26.7,
+  "round_gap_p95_ms_median": 26.94,
+  "tokens_per_chunk_median": 4.339,
+  "evidence": [
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f58d62146605",
+    "output_sha256": "0e8efcea310cafab994ce37c9884fe63033fc3a0fd148e30c131211576c6261a"
+   }
+  ],
+  "sample": "### How Matrix Multiplication Uses a GPU (In Plain English)\n\nTo understand how a GPU handles matrix multiplication, it helps to compare it to a CPU (the main pr"
+ }
+]

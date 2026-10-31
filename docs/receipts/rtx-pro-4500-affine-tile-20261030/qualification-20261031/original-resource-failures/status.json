@@ -1,0 +1,23 @@
+{
+  "attention": {
+    "exit_code": -9,
+    "elapsed_s": 1990.3052771091461,
+    "peak_process_rss_bytes": 9567514624,
+    "binary_sha256": "fd6d0b91a6f5a4a5e35c50e48c63b9d5283e4159b9afde0c5dd9736915bdcd71",
+    "summary": []
+  },
+  "base": {
+    "exit_code": -9,
+    "elapsed_s": 1990.3111658096313,
+    "peak_process_rss_bytes": 9488859136,
+    "binary_sha256": "3bc0ada849f3511d00030a1ffde621301760c8e206c009c37f5f7ee1c45a45c5",
+    "summary": []
+  },
+  "tile": {
+    "exit_code": -9,
+    "elapsed_s": 4582.616394042969,
+    "peak_process_rss_bytes": 25616699392,
+    "binary_sha256": "d66295dda275d56c8dac63404c910dc6af4c6f49c5811e94520ab6e610275315",
+    "summary": []
+  }
+}

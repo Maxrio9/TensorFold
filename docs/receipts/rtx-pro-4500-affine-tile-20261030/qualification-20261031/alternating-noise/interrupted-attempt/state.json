@@ -1,0 +1,550 @@
+{
+  "complete": false,
+  "boots": [
+    {
+      "name": "00-t0-0",
+      "triplet": 0,
+      "override": "0",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:39:36.825097+00:00",
+      "health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24406739748,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "manifest": {
+        "schema_version": 1,
+        "runtime": {
+          "tensorfold_version": "1.1.6",
+          "backend": "cuda",
+          "python_version": "none",
+          "platform": "linux",
+          "driver": "615.78.08"
+        },
+        "model": {
+          "revision": "22d8d538154e0e5b6f8dcb1fcc74a60a0798104c",
+          "config_sha256": "14b65a0ee06517060a6bbd979bb1a8ff54e7b304b1a1f01d54344b88b8285e85",
+          "tokenizer_sha256": "49d8f5dc9c3e0a89091f4f189ecfd308c8f0250929b815e125d4700bded4df2c"
+        },
+        "hardware": {
+          "cpu_model": "AMD Ryzen 9 5900X 12-Core Processor",
+          "system_memory_bytes": 33539235840,
+          "memory_type": "dedicated",
+          "gpus": [
+            {
+              "name": "NVIDIA RTX PRO 4500 Blackwell",
+              "memory_bytes": 34207694848,
+              "cores": null
+            }
+          ],
+          "gpu_count": 1,
+          "source": "detected"
+        }
+      },
+      "command": [
+        "python3",
+        "/submission/base/tools/bench_openai.py",
+        "http://127.0.0.1:18080",
+        "qwen-community",
+        "--tokens",
+        "256",
+        "--reps",
+        "7",
+        "--temperatures",
+        "0",
+        "--output",
+        "/task/results/00-t0-0.json"
+      ],
+      "override_startup_confirmed": true,
+      "token_parity": true,
+      "final_health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24129325860,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 158.0,
+          "prefill_tokens_per_second": 439.4
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "memory": {
+        "VmHWM": 13780385792,
+        "VmRSS": 995033088
+      },
+      "complete": true,
+      "end_utc": "2026-10-31T08:40:37.775864+00:00"
+    },
+    {
+      "name": "01-t0-1",
+      "triplet": 0,
+      "override": "1",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:40:39.776286+00:00",
+      "health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24406739748,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "manifest": {
+        "schema_version": 1,
+        "runtime": {
+          "tensorfold_version": "1.1.6",
+          "backend": "cuda",
+          "python_version": "none",
+          "platform": "linux",
+          "driver": "615.78.08"
+        },
+        "model": {
+          "revision": "22d8d538154e0e5b6f8dcb1fcc74a60a0798104c",
+          "config_sha256": "14b65a0ee06517060a6bbd979bb1a8ff54e7b304b1a1f01d54344b88b8285e85",
+          "tokenizer_sha256": "49d8f5dc9c3e0a89091f4f189ecfd308c8f0250929b815e125d4700bded4df2c"
+        },
+        "hardware": {
+          "cpu_model": "AMD Ryzen 9 5900X 12-Core Processor",
+          "system_memory_bytes": 33539235840,
+          "memory_type": "dedicated",
+          "gpus": [
+            {
+              "name": "NVIDIA RTX PRO 4500 Blackwell",
+              "memory_bytes": 34207694848,
+              "cores": null
+            }
+          ],
+          "gpu_count": 1,
+          "source": "detected"
+        }
+      },
+      "command": [
+        "python3",
+        "/submission/base/tools/bench_openai.py",
+        "http://127.0.0.1:18080",
+        "qwen-community",
+        "--tokens",
+        "256",
+        "--reps",
+        "7",
+        "--temperatures",
+        "0",
+        "--output",
+        "/task/results/01-t0-1.json"
+      ],
+      "override_startup_confirmed": true,
+      "token_parity": true,
+      "final_health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24129325860,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 158.0,
+          "prefill_tokens_per_second": 434.5
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "memory": {
+        "VmHWM": 15680925696,
+        "VmRSS": 1006850048
+      },
+      "complete": true,
+      "end_utc": "2026-10-31T08:41:36.615133+00:00"
+    },
+    {
+      "name": "02-t0-0",
+      "triplet": 0,
+      "override": "0",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:41:38.615917+00:00",
+      "health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24406739748,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "manifest": {
+        "schema_version": 1,
+        "runtime": {
+          "tensorfold_version": "1.1.6",
+          "backend": "cuda",
+          "python_version": "none",
+          "platform": "linux",
+          "driver": "615.78.08"
+        },
+        "model": {
+          "revision": "22d8d538154e0e5b6f8dcb1fcc74a60a0798104c",
+          "config_sha256": "14b65a0ee06517060a6bbd979bb1a8ff54e7b304b1a1f01d54344b88b8285e85",
+          "tokenizer_sha256": "49d8f5dc9c3e0a89091f4f189ecfd308c8f0250929b815e125d4700bded4df2c"
+        },
+        "hardware": {
+          "cpu_model": "AMD Ryzen 9 5900X 12-Core Processor",
+          "system_memory_bytes": 33539235840,
+          "memory_type": "dedicated",
+          "gpus": [
+            {
+              "name": "NVIDIA RTX PRO 4500 Blackwell",
+              "memory_bytes": 34207694848,
+              "cores": null
+            }
+          ],
+          "gpu_count": 1,
+          "source": "detected"
+        }
+      },
+      "command": [
+        "python3",
+        "/submission/base/tools/bench_openai.py",
+        "http://127.0.0.1:18080",
+        "qwen-community",
+        "--tokens",
+        "256",
+        "--reps",
+        "7",
+        "--temperatures",
+        "0",
+        "--output",
+        "/task/results/02-t0-0.json"
+      ],
+      "override_startup_confirmed": true,
+      "token_parity": true,
+      "final_health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24129325860,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 161.5,
+          "prefill_tokens_per_second": 433.4
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "memory": {
+        "VmHWM": 15680958464,
+        "VmRSS": 1005232128
+      },
+      "complete": true,
+      "end_utc": "2026-10-31T08:42:31.494571+00:00"
+    },
+    {
+      "name": "03-t1-0",
+      "triplet": 1,
+      "override": "0",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:42:33.495248+00:00",
+      "health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24406739748,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "manifest": {
+        "schema_version": 1,
+        "runtime": {
+          "tensorfold_version": "1.1.6",
+          "backend": "cuda",
+          "python_version": "none",
+          "platform": "linux",
+          "driver": "615.78.08"
+        },
+        "model": {
+          "revision": "22d8d538154e0e5b6f8dcb1fcc74a60a0798104c",
+          "config_sha256": "14b65a0ee06517060a6bbd979bb1a8ff54e7b304b1a1f01d54344b88b8285e85",
+          "tokenizer_sha256": "49d8f5dc9c3e0a89091f4f189ecfd308c8f0250929b815e125d4700bded4df2c"
+        },
+        "hardware": {
+          "cpu_model": "AMD Ryzen 9 5900X 12-Core Processor",
+          "system_memory_bytes": 33539235840,
+          "memory_type": "dedicated",
+          "gpus": [
+            {
+              "name": "NVIDIA RTX PRO 4500 Blackwell",
+              "memory_bytes": 34207694848,
+              "cores": null
+            }
+          ],
+          "gpu_count": 1,
+          "source": "detected"
+        }
+      },
+      "command": [
+        "python3",
+        "/submission/base/tools/bench_openai.py",
+        "http://127.0.0.1:18080",
+        "qwen-community",
+        "--tokens",
+        "256",
+        "--reps",
+        "7",
+        "--temperatures",
+        "0",
+        "--output",
+        "/task/results/03-t1-0.json"
+      ],
+      "override_startup_confirmed": true,
+      "token_parity": true,
+      "final_health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24129325860,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 158.0,
+          "prefill_tokens_per_second": 433.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "memory": {
+        "VmHWM": 15685943296,
+        "VmRSS": 1012854784
+      },
+      "complete": true,
+      "end_utc": "2026-10-31T08:43:24.872000+00:00"
+    },
+    {
+      "name": "04-t1-1",
+      "triplet": 1,
+      "override": "1",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:43:26.872786+00:00",
+      "health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24406739748,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "manifest": {
+        "schema_version": 1,
+        "runtime": {
+          "tensorfold_version": "1.1.6",
+          "backend": "cuda",
+          "python_version": "none",
+          "platform": "linux",
+          "driver": "615.78.08"
+        },
+        "model": {
+          "revision": "22d8d538154e0e5b6f8dcb1fcc74a60a0798104c",
+          "config_sha256": "14b65a0ee06517060a6bbd979bb1a8ff54e7b304b1a1f01d54344b88b8285e85",
+          "tokenizer_sha256": "49d8f5dc9c3e0a89091f4f189ecfd308c8f0250929b815e125d4700bded4df2c"
+        },
+        "hardware": {
+          "cpu_model": "AMD Ryzen 9 5900X 12-Core Processor",
+          "system_memory_bytes": 33539235840,
+          "memory_type": "dedicated",
+          "gpus": [
+            {
+              "name": "NVIDIA RTX PRO 4500 Blackwell",
+              "memory_bytes": 34207694848,
+              "cores": null
+            }
+          ],
+          "gpu_count": 1,
+          "source": "detected"
+        }
+      },
+      "command": [
+        "python3",
+        "/submission/base/tools/bench_openai.py",
+        "http://127.0.0.1:18080",
+        "qwen-community",
+        "--tokens",
+        "256",
+        "--reps",
+        "7",
+        "--temperatures",
+        "0",
+        "--output",
+        "/task/results/04-t1-1.json"
+      ],
+      "override_startup_confirmed": true,
+      "token_parity": true,
+      "final_health": {
+        "status": "ok",
+        "model": "qwen-community",
+        "model_ids": [
+          "qwen-community",
+          "qwen-community-alias"
+        ],
+        "max_batch_size": 1,
+        "warming": false,
+        "memory": {
+          "active": 24129325860,
+          "cache": 0,
+          "peak": 24556349220
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 158.0,
+          "prefill_tokens_per_second": 433.1
+        },
+        "version": "1.1.6",
+        "backend": "cuda",
+        "device": "NVIDIA RTX PRO 4500 Blackwell"
+      },
+      "memory": {
+        "VmHWM": 15684923392,
+        "VmRSS": 1014534144
+      },
+      "complete": true,
+      "end_utc": "2026-10-31T08:44:18.099493+00:00"
+    },
+    {
+      "name": "05-t1-0",
+      "triplet": 1,
+      "override": "0",
+      "source": "overnight-latest-tile",
+      "binary_sha256": "68553364dc2a4e50bc609505453486aa6f4d51d4f643864e9dd555bb3855b191",
+      "start_utc": "2026-10-31T08:44:20.100268+00:00"
+    }
+  ],
+  "protocol": "Six independently calibrated stock/candidate/stock triplets, all18boots predefined. Greedy code/prose256tokens, seven seeded repetitions plus warmup per prompt. Boot is unit; no per-token/repetition pseudoreplication. All attempts retained. Native binary unchanged. Full serving features and131072context retained.",
+  "started_utc": "2026-10-31T08:39:36.825078+00:00"
+}

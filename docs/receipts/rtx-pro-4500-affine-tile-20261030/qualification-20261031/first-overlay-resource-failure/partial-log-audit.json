@@ -1,0 +1,8 @@
+{
+  "log_sha256": "9d21913f860beffa1204b485b2f70b0836ccb49fd478e5adeb49eff2fee6be7a",
+  "fail_lines": 325,
+  "controls_red": 319,
+  "known_lines": 6,
+  "unmatched_fail_lines": [],
+  "scope": "Text audit of the incomplete log, not a final SUMMARY or complete numerical/limit qualification."
+}
