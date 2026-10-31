@@ -69,3 +69,7 @@ Use Zig 0.17.0 and the pinned source/checkpoint revisions. Build with `zig build
 For device qualification run `zig build -Dsm=120 -Dnvcc=/usr/local/cuda-13.3/bin/nvcc`, then `zig-out/bin/tf-cuda-test kernel-contract` on an isolated/admitted GPU and attach the actual SUMMARY. This is still outstanding here.
 
 [Coordination and supplemental overlap checks](attention-coordination.json). Every file except the manifest itself is covered by [sha256.json](sha256.json). Kernel resource records use live-driver attributes on SM120; raw cuobjdump totals and their accounting difference are retained. SM121 records do not establish a physical device qualification.
+
+## Additional GPU testing
+
+[Independent 5090/RTX PRO 6000 Blackwell testing instructions](testing/REQUEST.md) document the opt-in `TF_CUDA_TEST_ATTN_MT2` switch. The override was added after these measurements; defaults are unchanged and no new GPU qualification is claimed.

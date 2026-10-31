@@ -1,5 +1,5 @@
 {
-  "README.md": "867bed81cfc102a7c3b7802a3b1a8b0f60f3d763bfc0652a46576126b8fea975",
+  "README.md": "58c08b968275e4b3b33f5880624e23717f120ee8fe0164668a7bc3cb4a3697a4",
   "attention-coordination.json": "420d79fbeabf2e418d2002e9ec2ef4143b57976b39a9b4773b663c8b63dfb28b",
   "attention-source-identity.json": "feb7c54d076f1c69ad2e13ea0fac46c5dd52f46a5eda7e7af6693f34a1ad455d",
   "checks/attention-checks.json": "7c38fb4ebf4eb6148f9ffecc24bb6f4b9e3fd90e708f2a22838a3570bfd565dc",
@@ -186,5 +186,10 @@
   "served/05-stock-after-attention-vision-webp.json": "91e928c5c00960c6df37ebd6843cbd43477aa2a8c6f1be0efb980faf65288ec5",
   "served/05-stock-after-attention.json": "7ee8e91097848e6d37e25cd582879de15c4d930fe38431b45c493f27be2b2544",
   "served/state.json": "82700d5442577cf30573af1d982a45ab107903eee2186ecb372864bcc249f820",
+  "testing/REQUEST.md": "782710e393ccae5c8ece13e1316d05e08ab5eea7c81fbf2266859e71d689c2ab",
+  "testing/fixture-32768.json": "7afda0a840824d7dc2fe3f7c71e85950c250edd161604699db5fb497866054f3",
+  "testing/fixture-8192.json": "4c009ffc85fe20a713b51c14d17ffaf262fd4e2ceaa4be6937aa865d954f557f",
+  "testing/override-host.log": "919e71af25e12d245432094b53fcc23b82efbe0bf4b26665630fb9c9fe15b352",
+  "testing/replay_long.py": "0aa5e12af8506d07a1f2600cc53e8e142bc33421b9131fb96f91c2c192e0c892",
   "toolchain.txt": "1adca521952877459f0c0af64a02802f38d80ce80b3136aa88e660838a111dce"
 }

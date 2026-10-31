@@ -221,7 +221,9 @@ pub const Engine = struct {
         const sms: usize = @intCast(try ctx.attribute(.multiprocessor_count));
         const major = try ctx.attribute(.compute_capability_major);
         const minor = try ctx.attribute(.compute_capability_minor);
-        e.mt2_attention = major == 12 and minor == 0 and sms == 82 and @import("cuda_geometry.zig").dense27(g);
+        const test_override = std.c.getenv("TF_CUDA_TEST_ATTN_MT2");
+        e.mt2_attention = cuda.sm120_test_override.enabled(@intCast(10 * major + minor), sms, if (test_override) |v| std.mem.span(v) else null) and @import("cuda_geometry.zig").dense27(g);
+        if (test_override) |v| std.log.info("experimental MT2 override={s}, enabled={}", .{ std.mem.span(v), e.mt2_attention });
         e.mt2_paged = try e.mods[9].function("tf_q35_attn_rows8_mt2");
         e.mt2_whole = try e.mods[9].function("tf_q35_attn_rows8_mt2_whole");
         const gb10 = major == 12 and minor == 1;
