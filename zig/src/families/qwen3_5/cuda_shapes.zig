@@ -26,7 +26,7 @@ pub const Shape = struct {
     }
 };
 
-/// The measured FP8 row-tile envelope (8,192 cached tokens and up, one row included); context limits and prompt tiles are unchanged.
+/// The measured FP8 row-tile envelope: 8,192+ cached tokens, one row included; limits and prompt tiles unchanged.
 pub fn useMt2(qualified: bool, fp8: bool, prompt: bool, rows: usize, segments: usize, cached: usize) bool {
     return qualified and fp8 and !prompt and segments == 1 and rows > 0 and
         cached >= 8192 and (rows == 1 or (rows <= 16 and cached < 65536));
