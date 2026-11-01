@@ -111,6 +111,8 @@ pub const Model = struct {
     slots: u32 = 1,
     /// TF_DSV41_ARENA's sub-allocator (dev_arena.zig), for the process's lifetime
     dev_arena: ?*@import("dev_arena.zig").Installed = null,
+    supervisor: ?@import("model_supervisor.zig").Supervisor = null,
+    progress: @import("round_progress.zig").Progress,
     /// the boot check's figures before the pool, for its measured end (kv_state.afterBoot)
     boot_check: ?kvs.Boot = null,
     slot_set: ?*slots_mod.SlotSet = null,
@@ -146,6 +148,8 @@ pub const Model = struct {
         m.retained = false;
         m.boot_complete = false;
         m.io = io;
+        m.progress = .{ .io = io };
+        const stall_ns = try @import("round_progress.zig").timeoutNs(if (std.c.getenv("TF_DSV41_STALL_EXIT_S")) |v| std.mem.span(v) else null);
         // gpa.create applies no field defaults: optional parts start null so close() never frees garbage
         m.pass = null;
         m.l2pf = null;
@@ -156,6 +160,7 @@ pub const Model = struct {
         m.slot_pass = null;
         m.sampler = null;
         m.dev_arena = null;
+        m.supervisor = null;
         m.arena = std.heap.ArenaAllocator.init(gpa);
         errdefer if (!keep_owner) m.arena.deinit();
         const a = m.arena.allocator();
@@ -174,17 +179,32 @@ pub const Model = struct {
         else
             &.{};
         try m.session.open(&m.driver, m.tcfg, image);
+        m.supervisor = .{ .io = io, .ctx = m, .healthy = @import("model_health.zig").context, .fail = @import("model_health.zig").failed, .progress = if (stall_ns > 0) &m.progress else null, .stall_ns = stall_ns };
+        m.supervisor.?.start() catch |err| {
+            m.session.bootFailed(err);
+            return err;
+        };
+        errdefer {
+            m.supervisor.?.stop();
+            m.supervisor = null;
+        }
         // TF_DSV41_ARENA: every device buffer from here on (weights, forms, roles, scratch) carved from large chunks
         m.dev_arena = try @import("dev_arena.zig").install(gpa, &m.ctx, m.tcfg.rank);
         // a failure from here to serving: every rank down with its reason, the session closed before `m` is freed
         m.boot(gpa, io, pack_dir, assets, o) catch |err| {
-            if (m.ctx.synchronize()) |_| {
-                m.session.bootFailed(err);
-            } else |_| {}
+            m.bootAborted(err);
             return err;
         };
+        @import("model_health.zig").watch(m);
         m.boot_complete = true;
         return m;
+    }
+
+    /// A boot that failed under the supervisor: it reports a lost context, then joins before the session closes.
+    pub fn bootAborted(m: *Model, err: anyerror) void {
+        _ = m.supervisor.?.check();
+        m.supervisor.?.stop();
+        if (m.ctx.synchronize()) |_| m.session.bootFailed(err) else |_| {}
     }
 
     /// `open` from the session up: the pack, weights, forward, buffers, assets and serving parts of this rank.
@@ -195,7 +215,13 @@ pub const Model = struct {
         tr.step("start", cuda.usage(false));
         const comm = m.session.comm();
         const world: u32 = @intCast(comm.world());
+        try @import("session_protocol.zig").preflight(&m.session.plan);
         m.cfg = try Config.read(gpa, io, pack_dir);
+        // the release's FP8 blocks parse (Metal runs them); refused here, before any pack or launch on CUDA
+        if (@import("cuda_format.zig").problem(&m.cfg)) |text| {
+            if (!quiet) std.log.err("{s}", .{text});
+            return error.UnsupportedCheckpoint;
+        }
         if (o.own_prefill) try @import("block_admission.zig").nativePrefill(&m.cfg, world);
         m.pack = try Pack.open(gpa, io, pack_dir);
         const backbone = if (o.layers) |ls| try a.dupe(u32, ls) else blk: {
@@ -483,6 +509,8 @@ pub const Model = struct {
         m.aot.deinit();
         m.pl.deinit();
         m.pack.deinit();
+        if (m.supervisor) |*s| s.stop();
+        m.supervisor = null;
         m.session.close();
         m.kernels.deinit();
         m.stream.deinit();

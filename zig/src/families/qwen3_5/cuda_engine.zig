@@ -81,6 +81,8 @@ pub const Engine = struct {
     stream: cuda.Stream,
     mods: [19]cuda.Module,
     kv8: bool, // attention caches as e4m3 rows with a scale each
+    rope_table: u64 = 0, // YaRN's attention factor and 32 frequencies on the device (cuda_rope.zig); 0: plain rope
+    rope_buf: ?cuda.DeviceBuffer = null, // the table's buffer (cuda_rope_table.zig)
     fp8: Kv8,
     prompt_attn: @import("cuda_prompt.zig").Fns, // a prompt chunk's attention tiles and delta-rule chain
     int8: @import("cuda_prompt_int8.zig").State = .{}, // prompt projections with int8 activations, when on
@@ -137,9 +139,7 @@ pub const Engine = struct {
     pl: u64,
     po: u64,
     logits: u64,
-    mt2_attention: bool = false,
-    mt2_paged: cuda.Function,
-    mt2_whole: cuda.Function,
+    mt2: @import("cuda_mt2.zig").Mt2,
     routed: routed.Scratch = .{}, // qwen3_5_moe's routed rows
     amax: u64, // the argmax slices' bests: most_verify rows of argmaxSlices(vocab) (f32, i32)
     picks: u64, // drawRows' slice scratch: most_verify rows of cuda.sample.Draws.row_scratch
@@ -194,9 +194,13 @@ pub const Engine = struct {
         e.geo = .{ .hid = @intCast(g.hidden), .nk = @intCast(g.k_heads), .nv = @intCast(g.v_heads), .qh = @intCast(g.q_heads), .kvh = @intCast(g.kv_heads), .nl = @intCast(g.deltas()) };
         e.verify_rows = most_verify;
         e.kv8 = kv8;
+        e.rope_table = 0; // plain rope until cuda_rope.zig uploads a YaRN table (the engine starts undefined)
+        e.rope_buf = null;
         e.window_rows = most_window;
         e.arena_at = 0;
         e.graphs = .empty;
+        try @import("cuda_rope_table.zig").set(e, g.rope); // a YaRN config's table, before any weight or forward
+        errdefer @import("cuda_rope_table.zig").free(e);
         e.penalties = .{};
         e.rec_scratch = recurrent.Pool.init(gpa, @intFromPtr(e));
         e.n_taps = 0;
@@ -221,11 +225,7 @@ pub const Engine = struct {
         const sms: usize = @intCast(try ctx.attribute(.multiprocessor_count));
         const major = try ctx.attribute(.compute_capability_major);
         const minor = try ctx.attribute(.compute_capability_minor);
-        const test_override = std.c.getenv("TF_CUDA_TEST_ATTN_MT2");
-        e.mt2_attention = cuda.sm120_test_override.enabled(@intCast(10 * major + minor), sms, if (test_override) |v| std.mem.span(v) else null) and @import("cuda_geometry.zig").dense27(g);
-        if (test_override) |v| std.log.info("experimental MT2 override={s}, enabled={}", .{ std.mem.span(v), e.mt2_attention });
-        e.mt2_paged = try e.mods[9].function("tf_q35_attn_rows8_mt2");
-        e.mt2_whole = try e.mods[9].function("tf_q35_attn_rows8_mt2_whole");
+        e.mt2 = try @import("cuda_mt2.zig").Mt2.resolve(e.mods[9], @intCast(10 * major + minor), sms, geometry.dense27(g));
         const gb10 = major == 12 and minor == 1;
         e.affine = try cuda.qlinear.Affine4Kernels.resolve(d, e.mods[0], e.mods[1], e.mods[2], e.mods[3], sms, gb10);
         e.affine.half_prompt = !gb10; // the 27B's prompt tile (Tile<64, 128, 128, 2, 2, 2>), quicker on an RTX 5090
@@ -248,7 +248,7 @@ pub const Engine = struct {
         e.prompt_attn = try @import("cuda_prompt.zig").resolve(e.mods[16], e.mods[17]);
         try e.int8.resolve(e.mods[18]);
         e.fp8 = .{ .rope = try e.mods[9].function("tf_q35_rope8"), .attn_partial = try e.mods[9].function("tf_q35_attn_partial8"), .attn_rows = try e.mods[9].function("tf_q35_attn_rows8"), .attn_partial8_whole = try e.mods[9].function("tf_q35_attn_partial8_whole"), .attn_rows8_whole = try e.mods[9].function("tf_q35_attn_rows8_whole"), .compact = try e.mods[9].function("tf_q35k_compact8") };
-        e.mo = if (g.kinds.modelopt) try modelopt.Kernels.load(d, @intCast(10 * major + minor)) else null;
+        e.mo = if (g.kinds.modelopt) try modelopt.Kernels.load(d, @intCast(10 * major + minor), sms, g.moe()) else null;
         errdefer if (e.mo) |*m| m.unload();
         e.layers = try gpa.alloc(Layer, g.layers);
         errdefer gpa.free(e.layers);
@@ -290,6 +290,7 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         recurrent.shutdown(e);
+        @import("cuda_rope_table.zig").free(e);
         if (e.kit) |k| k.deinit(e.gpa);
         e.pockets.deinit();
         var it = e.graphs.valueIterator();
@@ -495,7 +496,7 @@ pub const Engine = struct {
         };
         shape.hidden = keep == .hidden;
         shape.paged = @import("cuda_attention.zig").hasPages(segs);
-        shape.mt2 = @import("cuda_shapes.zig").useMt2(e.mt2_attention, e.kv8, prompt, total, parts.len, parts[0].cache.len);
+        shape.mt2 = @import("cuda_shapes.zig").useMt2(e.mt2.enabled, e.kv8, prompt, total, parts.len, parts[0].cache.len);
         if (e.learning != null or e.pockets.any()) {
             var exact = shape;
             exact.total = @intCast(total);

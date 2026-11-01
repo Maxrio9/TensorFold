@@ -26,10 +26,10 @@ pub const Shape = struct {
     }
 };
 
-/// The measured FP8 row-tile envelope; context limits and prompt tiles are unchanged.
+/// The measured FP8 row-tile envelope (8,192 cached tokens and up, one row included); context limits and prompt tiles are unchanged.
 pub fn useMt2(qualified: bool, fp8: bool, prompt: bool, rows: usize, segments: usize, cached: usize) bool {
     return qualified and fp8 and !prompt and segments == 1 and rows > 0 and
-        (rows == 1 or (rows <= 16 and cached >= 8192 and cached < 65536));
+        cached >= 8192 and (rows == 1 or (rows <= 16 and cached < 65536));
 }
 
 test "MT2 dispatch keeps context boundaries and graph identities separate" {
@@ -39,7 +39,8 @@ test "MT2 dispatch keeps context boundaries and graph identities separate" {
     try std.testing.expectEqual(@as(u32, 1) << 29, before.key() ^ after.key());
     for ([_]usize{ 8192, 32768, 65535 }) |n| try std.testing.expect(useMt2(true, true, false, 16, 1, n));
     for ([_]usize{ 0, 8191, 65536, 131071 }) |n| try std.testing.expect(!useMt2(true, true, false, 16, 1, n));
-    try std.testing.expect(useMt2(true, true, false, 1, 1, 131071));
+    for ([_]usize{ 0, 1, 512, 8191 }) |n| try std.testing.expect(!useMt2(true, true, false, 1, 1, n));
+    for ([_]usize{ 8192, 32768, 131071 }) |n| try std.testing.expect(useMt2(true, true, false, 1, 1, n));
     try std.testing.expect(!useMt2(false, true, false, 16, 1, 8192));
     try std.testing.expect(!useMt2(true, false, false, 16, 1, 8192));
     try std.testing.expect(!useMt2(true, true, true, 16, 1, 8192));

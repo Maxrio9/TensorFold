@@ -168,7 +168,7 @@ fn readArg(a: std.mem.Allocator, tokens: []const Tok, text: []const u8, span: Sp
         if (tokens[k].tag != .identifier or tokens[k + 1].tag != .period or tokens[k + 3].tag != .period) continue;
         if (tokens[k + 2].tag != .identifier or tokens[k + 4].tag != .identifier) continue;
         const middle = text[tokens[k + 2].loc.start..tokens[k + 2].loc.end];
-        if (!std.mem.eql(u8, middle, "fns") and !std.mem.eql(u8, middle, "fp8")) continue;
+        if (!std.mem.eql(u8, middle, "fns") and !std.mem.eql(u8, middle, "fp8") and !std.mem.eql(u8, middle, "mt2")) continue;
         try handles.append(a, text[tokens[k].loc.start..tokens[k + 4].loc.end]);
         k += 4;
     }
@@ -383,7 +383,7 @@ test "the launch scanner counts a tuple's elements and finds a local one" {
 
 test "the launch scanner follows local choices and direct engine handles" {
     const source =
-        \\const selected = if (small) e.mt2_paged else e.fp8.attn_rows;
+        \\const selected = if (small) e.mt2.paged else e.fp8.attn_rows;
         \\const args = .{ geo, e.qn };
         \\try launch(e, selected, sig.attn_rows8, .{1,1,1}, .{128,1,1}, args);
     ;

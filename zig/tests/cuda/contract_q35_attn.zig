@@ -50,7 +50,7 @@ pub fn spec(f: Form) c.Spec {
         .fp8 => "cuda qwen35 decode attention, fp8 cache (tf_q35_attn_partial8, tf_q35_attn_merge)",
     };
     // a DFlash2 window past 2,048 keys, four streams' windows, a 128-row prompt chunk, 256-key chunks past 8,192
-    const served: []const c.Shape = if (f.mt2) &.{ .{ .rows = 1, .n = qh, .k = 8191 }, .{ .rows = 1, .n = qh, .k = 8192 }, .{ .rows = 3, .n = qh, .k = 32768 }, .{ .rows = 5, .n = qh, .k = 9000 }, .{ .rows = 6, .n = qh, .k = 9000 }, .{ .rows = 16, .n = qh, .k = 65535 }, .{ .rows = 1, .n = qh, .k = 122779 } } else &.{ .{ .rows = 16, .n = qh, .k = 2100 }, .{ .rows = 64, .n = qh, .k = 700 }, .{ .rows = 128, .n = qh, .k = 300 }, .{ .rows = 16, .n = qh, .k = 9000 }, .{ .rows = 64, .n = qh, .k = 9000 } };
+    const served: []const c.Shape = if (f.mt2) &.{ .{ .rows = 1, .n = qh, .k = 512 }, .{ .rows = 1, .n = qh, .k = 8191 }, .{ .rows = 1, .n = qh, .k = 8192 }, .{ .rows = 3, .n = qh, .k = 32768 }, .{ .rows = 5, .n = qh, .k = 9000 }, .{ .rows = 6, .n = qh, .k = 9000 }, .{ .rows = 16, .n = qh, .k = 65535 }, .{ .rows = 1, .n = qh, .k = 122779 } } else &.{ .{ .rows = 16, .n = qh, .k = 2100 }, .{ .rows = 64, .n = qh, .k = 700 }, .{ .rows = 128, .n = qh, .k = 300 }, .{ .rows = 16, .n = qh, .k = 9000 }, .{ .rows = 64, .n = qh, .k = 9000 } };
     return .{ .name = name, .accum = .f32, .depth = keyChain, .ops = 3, .out = .bf16, .replaces = if (f.mt2) "the four-MMA FP8 row tile" else "the chunk-major grid (each row alone)", .tiles = .{ .{ .size = if (f.mt2) 32 / group else width }, .{}, .{ .size = 128 } }, .served = served, .sums = .{ .why = attn.why }, .known = .{ .gate = .nonfinite, .finding = nan_key } };
 }
 
