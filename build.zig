@@ -103,13 +103,16 @@ pub fn build(b: *std.Build) void {
     @import("zig/build/digest.zig").steps(b, test_step, draft_ids, build_options);
     @import("zig/build/flashnext_budget.zig").steps(b, test_step);
     @import("zig/build/flashnext_batch_host.zig").tests(b, test_step);
+    @import("zig/build/lfm3_host.zig").steps(b, test_step);
     if (b.graph.host.result.os.tag == .macos) {
         const budget_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids);
         const budget_empty = b.addWriteFiles().add("budget-compile-only.metallib", "");
         budget_mods.sources.addImport("nemotron_packed_metallib", embedded(b, budget_empty, "nemotron_packed.metallib"));
         @import("zig/build/fsr.zig").deviceSteps(b, budget_mods.metal, budget_mods.engine, budget_mods.sources);
+        b.step("test-shared-head-cost-metal-host", "Metal family head-cost grants without device execution").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = budget_mods.engine, .filters = &.{"shared head costs:"} })).step);
         @import("zig/build/flashnext_budget.zig").compileHost(b, budget_mods.metal, budget_mods.engine, budget_mods.lanes);
         @import("zig/build/residency_host.zig").compileHost(b, budget_mods.metal, budget_mods.engine, budget_mods.lanes);
+        @import("zig/build/slide_host.zig").metal(b, budget_mods);
     }
     // every tracked path checks out on Windows too
     const names_run = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/tests/portable_names.zig"), .target = target }) }));
@@ -119,6 +122,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/native/xpu_admit.zig"), .target = target }) })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/xpu/safetensors.zig"), .target = target }) })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/xpu/limits.zig"), .target = target }) })).step);
+    // MOSS-Image's seeded starting latents against x86 torch's, a host computation on every platform
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/families/moss_image/noise.zig"), .target = target }) })).step);
     const cost_cases = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/cost_rule_cases.zig"),
         .target = target,

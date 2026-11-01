@@ -58,9 +58,14 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
         text = tf.flashnext_vision_contract.source(w);
         return .{ .decl = d, .function = fun, .here = text, .pre_m5 = text };
     }
+    if (try @import("metal_dsv41_limits.zig").launchOf(a, device, d, fun)) |l| return l;
     if (std.mem.startsWith(u8, d.name, "metal lfm2 ")) return .{ .decl = d, .function = fun, .here = sources.lfm2, .pre_m5 = sources.lfm2 };
     if (std.mem.startsWith(u8, d.name, "nemotron paged ")) return pagedLaunch(a, device, d, fun);
     if (std.mem.startsWith(u8, d.name, "nemotron attention ")) return attentionLaunch(a, device, d, fun);
+    if (std.mem.startsWith(u8, d.name, "minimax_m3 ")) {
+        const t = try @import("metal_minimax.zig").limitsText(a, device, d.name);
+        return .{ .decl = d, .function = fun, .here = t.here, .pre_m5 = t.pre_m5 };
+    }
     if (std.mem.startsWith(u8, d.name, "drama3 ")) {
         const text_d3 = try @import("metal_drama3.zig").source(a, d.name);
         return .{ .decl = d, .function = fun, .here = text_d3, .pre_m5 = text_d3 };
@@ -95,6 +100,8 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
     } else if (std.mem.startsWith(u8, d.name, "moss image gemm ")) {
         text = sources.core_qwen_vision;
         frags = true;
+    } else if (std.mem.startsWith(u8, d.name, "moss image decoder ")) {
+        text = sources.moss_image_decoder;
     } else if (std.mem.startsWith(u8, d.name, "moss image ")) {
         text = sources.moss_image;
         frags = true;
@@ -133,8 +140,9 @@ fn attentionLaunch(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaun
         const text = for (sources.nemotron.all) |k| {
             if (std.mem.eql(u8, k.function, fun)) break k.source;
         } else return error.UnknownLaunch;
-        const pre = if (std.mem.indexOf(u8, d.name, " partial ") != null) try tf.nemotron.simd_attention.rewrite(a, text) else text;
-        return .{ .decl = d, .function = fun, .here = if (tensor) text else pre, .pre_m5 = pre };
+        const pre = if (std.mem.indexOf(u8, d.name, " partial ") != null) try tf.nemotron.simd_attention.layout(a, text) else text;
+        const here = if (tensor) text else if (std.mem.indexOf(u8, d.name, " partial ") != null) try tf.nemotron.simd_attention.forGeneration(a, device.generation(), text) else pre;
+        return .{ .decl = d, .function = fun, .here = here, .pre_m5 = pre };
     }
     if (std.mem.indexOf(u8, d.name, " tree ") != null) {
         const pre = try std.mem.concat(a, u8, &.{ "#define TF_SIMD_LAYOUT 1\n", sources.nemotron_tree });
