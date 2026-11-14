@@ -354,7 +354,7 @@ pub const Engine = struct {
     pub fn setTaps(e: *Engine, taps: []const u32) !void {
         if (e.g.whole != 0 and taps.len > 0) return error.StageTaps; // v1 stages serve no drafter
         if (taps.len > e.taps.len) return error.TooManyTaps;
-        for (taps) |t| if (t >= e.g.layers) return error.BadTap;
+        for (taps) |t| if (t > e.g.layers) return error.BadTap;
         @memcpy(e.taps[0..taps.len], taps);
         e.n_taps = taps.len;
     }

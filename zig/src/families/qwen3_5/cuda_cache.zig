@@ -130,6 +130,7 @@ pub const Cache = struct {
     kv: DeviceBuffer,
     /// A drafter's tapped rows (`Engine.taps`), a ring of tap_rows: the row at position p in slot p % tap_rows.
     tap: ?DeviceBuffer = null,
+    tap_host: []u8 = &.{},
     /// The newest verify window's records (qwen35.cuh's LogRow), held until its keep completes.
     log: DeviceBuffer,
     cap: usize,
@@ -280,6 +281,7 @@ pub const Cache = struct {
         if (self.paged) |*p| freePaged(gpa, p);
         self.log.free();
         if (self.tap) |*t| t.free();
+        gpa.free(self.tap_host);
         if (self.pbuf) |*b| b.free();
         gpa.free(self.logits);
     }
@@ -334,6 +336,8 @@ pub const Cache = struct {
         }
         try e.run(e.keeps.conv, .{ g.deltas(), (g.convBytes() / 2 + 255) / 256, 1 }, .{ 256, 1, 1 }, .{ e.geo, sg, @as(c_int, @intCast(path[path.len - 1])) });
         if (!prefix and g.attentions() > 0) try e.run(if (e.kv8) e.fp8.compact else e.keeps.compact, .{ g.attentions(), g.kv_heads, 1 }, .{ geometry.head_dim, 1, 1 }, .{ e.geo, sg, p });
+        // Keep tapped residual rows in the same selected tree-path order as KV.
+        if (!prefix) if (self.tap) |tap| try @import("tap_compact.zig").apply(tap, e.stream.handle, last.start, path, tap_rows, e.n_taps * g.hidden * 2);
         if (deferred) try self.pendRows(e, sg.log, path);
         self.last = null;
         self.len = last.start + path.len;

@@ -127,6 +127,8 @@ pub const Backend = struct {
         prepare_features: ?*const fn (ptr: *anyopaque, taps: []const u32) anyerror!void = null,
         /// Cache rows [start, start + count) of the prepared taps, within what `Features` says is held (null: none).
         features: ?*const fn (ptr: *anyopaque, s: *Stream, taps: []const u32, start: u64, count: u32) anyerror!Features = null,
+        features_host: ?*const fn (ptr: *anyopaque, s: *Stream, taps: []const u32, start: u64, count: u32) anyerror!Features = null,
+        record_each_step: bool = false,
         /// The prompt pass handing `sink` each chunk's tapped rows as it makes them (null: features() after the pass).
         prefill_features: ?*const fn (ptr: *anyopaque, s: *Stream, taps: []const u32, sink: FeatureSink) anyerror!void = null,
         /// The first token's logprob row (the prompt's last row) for a stream with `logprobs`; null: not given.

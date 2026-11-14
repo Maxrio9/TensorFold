@@ -334,13 +334,13 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
         problem.* = "--learn-conversations writes the host prompt cache's states, and TF_KV_SHARE keeps prompts as pool pages instead: serve with one of the two";
         return null;
     }
-    const taps = record.taps(loaded); // --record is refused before the host is made, so a refusal holds nothing
+    var served = try drafted.wrap(F, a, gpa, io, loaded, o, problem) orelse return null;
+    defer if (!opened) served.close(gpa);
+    const taps = try @import("record_taps.zig").configure(a, loaded, o, &served, record.taps(loaded), problem) orelse return null;
     if (o.record) |dir| if (try record.refusal(a, io, o.model_type, dir, taps)) |why| {
         problem.* = why;
         return null;
     };
-    var served = try drafted.wrap(F, a, gpa, io, loaded, o, problem) orelse return null;
-    defer if (!opened) served.close(gpa);
     const model = cuda.usage(false).device - held0;
     const after = try pool(a, io, &g.ctx, problem) orelse return null;
     family_memory.noteParked(after, "the CUDA memory budget");
@@ -514,6 +514,7 @@ test "the Info openWith serves carries each family's reasoning declaration over 
     inline for (registry) |F| try std.testing.expectEqual(reasoning(F), familyInfo(F, .{ .reasoning = !reasoning(F) }).reasoning);
 }
 test {
+    _ = @import("record_taps.zig");
     _ = @import("draft_sources_cuda_test.zig");
     _ = @import("copy_drafts_nemotron_test.zig");
     _ = windows;

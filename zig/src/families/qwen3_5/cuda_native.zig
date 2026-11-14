@@ -75,6 +75,7 @@ pub fn contextCeiling(a: std.mem.Allocator, io: std.Io, dir: []const u8, flag: ?
 
 /// What the native server drives: the lane backend, the facts its round loop reads, and how to free it.
 pub const Loaded = struct {
+    record_engine: *E.Engine,
     learns: ?*E.Engine = null,
     learn_bytes: usize = 0,
     backend: be.Backend,
@@ -201,6 +202,7 @@ pub fn openLanes(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, d
     l.* = .{ .gpa = gpa, .io = io, .e = e, .capacity = o.context, .page_tokens = page_tokens, .engine_paged = engine_paged, .page_test = page_test, .share_snaps = share_snaps, .cost_context = ctx, .startup = e.startup, .vision = v, .target = undefined, .timing_on = timing_on, .trace = trace };
     l.target = .{ .e = e, .caches = &l.caches, .seen = &l.seen, .device = try ctx.attribute(.integrated) != 0 };
     return .{
+        .record_engine = e,
         .learns = if (o.slide) e else null,
         .learn_bytes = if (o.slide) @import("cuda_train.zig").memory(try @import("cuda_learn_shape.zig").from(e.g)) + e.streamBytes(o.context) else 0,
         .backend = l.backend(),
@@ -366,7 +368,7 @@ pub const Lanes = struct {
     }
 
     /// The text streams' entries, and the same with a readout's completion once one is attached.
-    const text_vtable: be.Backend.VTable = .{ .prefill = prefillFn, .prefill_step = prefillStepFn, .cancel_prefill = cancelPrefillFn, .reports_fill = true, .first = firstFn, .first_masked = firstMaskedFn, .queue = queueFn, .read = readFn, .verify = verifyFn, .keep = keepFn, .draft = draftFn, .prepare_features = prepareFeaturesFn, .features = featuresFn, .release = releaseFn };
+    const text_vtable: be.Backend.VTable = .{ .prefill = prefillFn, .prefill_step = prefillStepFn, .cancel_prefill = cancelPrefillFn, .reports_fill = true, .first = firstFn, .first_masked = firstMaskedFn, .queue = queueFn, .read = readFn, .verify = verifyFn, .keep = keepFn, .draft = draftFn, .prepare_features = prepareFeaturesFn, .features = featuresFn, .features_host = featuresHostFn, .record_each_step = true, .release = releaseFn };
     const read_vtable: be.Backend.VTable = blk: {
         var v = text_vtable;
         v.readout_finish = readoutFinishFn;
@@ -419,7 +421,10 @@ pub const Lanes = struct {
 
     fn prefillStepFn(ptr: *anyopaque, stream: *lanes.Stream, max_rows: u32) !bool {
         if (stream.readout != null) return readout.step(cast(ptr), stream, max_rows);
-        return prefill.step(cast(ptr), stream, max_rows);
+        const before = @max(stream.fill_at.load(.acquire), stream.cached);
+        const done = try prefill.step(cast(ptr), stream, max_rows);
+        if (cast(ptr).e.n_taps > 0 and stream.fill_at.load(.acquire) - before > E.tap_rows) return error.QwenTapChunkTooLong;
+        return done;
     }
 
     pub fn restoreKept(self: *Lanes, cache: *E.Cache, saved: *anyopaque, seen: []const reuse.Seen) !void {
@@ -547,21 +552,13 @@ pub const Lanes = struct {
     /// A drafter's tapped layers, before any stream's caches exist: each forward fills their rings after.
     fn prepareFeaturesFn(ptr: *anyopaque, taps: []const u32) !void {
         const self = cast(ptr);
+        if (std.mem.eql(u32, self.e.taps[0..self.e.n_taps], taps)) return;
         if (self.caches.count() != 0 or self.pool.items.len != 0) return error.TapsAfterStreams;
         try self.e.setTaps(taps);
     }
 
-    /// Rows [start, start + count) of a stream's tap ring (slot position % tap_rows), the newest tap_rows rows kept.
-    fn featuresFn(ptr: *anyopaque, stream: *lanes.Stream, taps: []const u32, start: u64, count: u32) !be.Features {
-        const self = cast(ptr);
-        if (taps.len != self.e.n_taps) return error.TapsMismatch;
-        const cache = try self.cacheOf(stream);
-        const ring = cache.tap orelse return error.NoTaps;
-        // a long prompt asks for more rows than the ring keeps; the drafter reads only its window of the newest
-        const held_from = cache.written -| E.tap_rows;
-        if (start + count > cache.written or start + count <= held_from) return error.RowsNotHeld;
-        return .{ .buffer = ring.ptr, .offset = start, .rows = count, .row_bytes = @intCast(self.e.n_taps * self.e.g.hidden * 2), .space = .device, .dtype = .bf16 };
-    }
+    const featuresFn = @import("cuda_record.zig").featuresFn;
+    const featuresHostFn = @import("cuda_record.zig").featuresHostFn;
 
     fn releaseFn(ptr: *anyopaque, stream: *lanes.Stream) void {
         const self = cast(ptr);

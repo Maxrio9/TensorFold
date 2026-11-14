@@ -19,6 +19,7 @@ const Lane = struct {
 pub const Drafted = struct {
     gpa: Allocator,
     target: be.Backend,
+    table: be.Backend.VTable = undefined,
     drafter: dr.Drafter,
     lanes: std.AutoHashMapUnmanaged(*Stream, Lane) = .empty, // streams the drafter has opened
     // scratch kept between rounds, so a steady round allocates nothing
@@ -71,7 +72,11 @@ pub const Drafted = struct {
     };
     pub fn backend(x: *Drafted) be.Backend {
         const planned = if (x.drafter.proposal_head) |service| service.mode != .legacy and x.drafter.vtable.hold_planned != null and x.drafter.vtable.clear_proposals != null else false;
-        return .{ .proposal_head = x.drafter.proposal_head, .ptr = x, .round_observer = x.target.round_observer, .first_before_draft = x.target.first_before_draft, .penalties = x.target.penalties, .chunk_invariant = x.target.chunk_invariant, .vtable = vtableFor(planned, x.target.vtable.prefill_step != null and x.target.vtable.reports_fill and x.target.vtable.features != null, x.target.vtable.cancel_prefill != null) };
+        x.table = vtableFor(planned, x.target.vtable.prefill_step != null and x.target.vtable.reports_fill and x.target.vtable.features != null, x.target.vtable.cancel_prefill != null).*;
+        x.table.features = if (x.target.vtable.features != null) features else null;
+        x.table.features_host = if (x.target.vtable.features_host != null) featuresHost else null;
+        x.table.record_each_step = x.target.vtable.record_each_step;
+        return .{ .proposal_head = x.drafter.proposal_head, .ptr = x, .round_observer = x.target.round_observer, .first_before_draft = x.target.first_before_draft, .penalties = x.target.penalties, .chunk_invariant = x.target.chunk_invariant, .vtable = &x.table };
     }
 
     const cancellable: [4]be.Backend.VTable = blk: {
@@ -84,6 +89,15 @@ pub const Drafted = struct {
         if (cancels) return &cancellable[@as(usize, @intFromBool(steps)) * 2 + @intFromBool(planned)];
         if (steps) return if (planned) &stepped_planned else &stepped_legacy;
         return if (planned) &planned_vtable else &legacy_vtable;
+    }
+
+    fn features(ptr: *anyopaque, s: *Stream, taps: []const u32, start: u64, count: u32) anyerror!be.Features {
+        return self(ptr).target.features(s, taps, start, count);
+    }
+
+    fn featuresHost(ptr: *anyopaque, s: *Stream, taps: []const u32, start: u64, count: u32) anyerror!be.Features {
+        const target = self(ptr).target;
+        return target.vtable.features_host.?(target.ptr, s, taps, start, count);
     }
 
     fn cancelPrefill(ptr: *anyopaque, s: *Stream) anyerror!void {

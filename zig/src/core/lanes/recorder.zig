@@ -17,6 +17,7 @@ const Open = struct {
     base: []u8, // the files' path without the extension
     files: [exts.len]Io.File,
     rows: u64 = 0,
+    prompt_at: ?u64 = null,
     from: ?u64 = null, // the cache length the last verify started from: its kept rows are written before the next
     layout: ?be.Features = null, // the first rows' row_bytes and dtype; later rows must match
     gap: ?[]const u8 = null, // why the stream's rows stopped there (static text)
@@ -78,15 +79,22 @@ pub const Recorder = struct {
 
     /// After the prompt pass: the stream's files, and the rows it computed (from `cached` on).
     pub fn prompt(r: *Recorder, target: be.Backend, s: *Stream) void {
-        if (s.yield_check != null) return; // a background pass: the request that reads it computes the rows it needs
-        if (r.streams.contains(s)) return;
-        if (disk.available(r.dir)) |free| if (free < r.floor) return;
-        r.open(s) catch |e| {
-            std.log.warn("recorder: no files for a stream under {s} ({s})", .{ r.dir, @errorName(e) });
-            return;
-        };
+        r.promptUpTo(target, s, s.prompt_len);
+    }
+
+    pub fn promptUpTo(r: *Recorder, target: be.Backend, s: *Stream, upto: u64) void {
+        if (s.yield_check != null) return;
+        if (!r.streams.contains(s)) {
+            if (disk.available(r.dir)) |free| if (free < r.floor) return;
+            r.open(s) catch |e| {
+                std.log.warn("recorder: no files for a stream under {s} ({s})", .{ r.dir, @errorName(e) });
+                return;
+            };
+        }
         const o = r.streams.getPtr(s).?;
-        if (s.prompt_len > s.cached) r.write(target, s, o, s.cached, @intCast(s.prompt_len - s.cached));
+        const from = o.prompt_at orelse s.cached;
+        if (upto > from) r.write(target, s, o, from, @intCast(upto - from));
+        o.prompt_at = @max(from, upto);
     }
 
     /// Before a verify: each window's stream writes the rows its last verify kept, then counts from its cache length.
@@ -147,7 +155,7 @@ pub const Recorder = struct {
 
     fn append(r: *Recorder, target: be.Backend, s: *Stream, o: *Open, start: u64, count: u32) !?[]const u8 {
         if (start + count > s.context.items.len) return "rows past the stream's tokens";
-        const f = target.features(s, r.taps, start, count) catch return "the target gave no rows";
+        const f = (if (target.vtable.features_host) |host| host(target.ptr, s, r.taps, start, count) else target.features(s, r.taps, start, count)) catch return "the target gave no rows";
         if (f.space != .host or f.ready != .none) return "rows not ready on the host";
         if (f.rows != count) return "the target gave other rows";
         if (o.layout) |l| if (l.row_bytes != f.row_bytes or l.dtype != f.dtype) return "the rows changed shape";
@@ -238,7 +246,7 @@ pub const Recorded = struct {
 
     pub fn backend(x: *Recorded) be.Backend {
         const v = x.inner.vtable;
-        x.table = .{ .prefill = prefill, .prefill_step = if (v.prefill_step != null) prefillStep else null, .cancel_prefill = if (v.cancel_prefill != null) cancelPrefill else null, .prefill_many = if (v.prefill_many != null) prefillMany else null, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .draft_capacity = if (v.draft_capacity != null) draftCapacity else null, .proposal_draft = if (v.proposal_draft != null) plannedDraft else null, .clear_proposals = if (v.clear_proposals != null) clearProposals else null, .unspeculate = if (v.unspeculate != null) unspeculate else null, .probabilities = if (v.probabilities != null) probabilities else null, .tree = if (v.tree != null) tree else null, .alternatives = if (v.alternatives != null) alternatives else null, .prepare_features = if (v.prepare_features != null) prepareFeatures else null, .features = features, .first_row = if (v.first_row != null) firstRow else null, .first_masked = if (v.first_masked != null) firstMasked else null, .score = if (v.score != null) score else null, .held = if (v.held != null) held else null, .prompt_rows = v.prompt_rows, .release = release };
+        x.table = .{ .prefill = prefill, .reports_fill = v.reports_fill, .prefill_step = if (v.prefill_step != null) prefillStep else null, .cancel_prefill = if (v.cancel_prefill != null) cancelPrefill else null, .prefill_many = if (v.prefill_many != null) prefillMany else null, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .draft_capacity = if (v.draft_capacity != null) draftCapacity else null, .proposal_draft = if (v.proposal_draft != null) plannedDraft else null, .clear_proposals = if (v.clear_proposals != null) clearProposals else null, .unspeculate = if (v.unspeculate != null) unspeculate else null, .probabilities = if (v.probabilities != null) probabilities else null, .tree = if (v.tree != null) tree else null, .alternatives = if (v.alternatives != null) alternatives else null, .prepare_features = if (v.prepare_features != null) prepareFeatures else null, .features = features, .first_row = if (v.first_row != null) firstRow else null, .first_masked = if (v.first_masked != null) firstMasked else null, .score = if (v.score != null) score else null, .held = if (v.held != null) held else null, .prompt_rows = v.prompt_rows, .release = release };
         return .{ .proposal_head = x.inner.proposal_head, .ptr = x, .round_observer = x.inner.round_observer, .vtable = &x.table, .first_before_draft = x.inner.first_before_draft, .penalties = x.inner.penalties, .chunk_invariant = x.inner.chunk_invariant };
     }
 
@@ -253,6 +261,7 @@ pub const Recorded = struct {
     fn prefillStep(p: *anyopaque, s: *Stream, max_rows: u32) anyerror!bool {
         const x = of(p);
         const done = try x.inner.vtable.prefill_step.?(x.inner.ptr, s, max_rows);
+        if (x.inner.vtable.record_each_step) x.recorder.promptUpTo(x.inner, s, s.fill_at.load(.acquire));
         if (done) x.recorder.prompt(x.inner, s);
         return done;
     }

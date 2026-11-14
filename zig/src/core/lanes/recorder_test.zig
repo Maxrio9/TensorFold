@@ -23,7 +23,7 @@ const Case = struct {
     restored: u32 = 0,
 };
 
-const Mode = struct { mtp: bool = true, pipelined: bool = false, shared: bool = true, chunks: usize = 0, planted: ?[2][]const u8 = null, batched: bool = false, memory_lanes: ?usize = null }; // chunks: prefill_step; planted: a link's target and name
+const Mode = struct { each_step: bool = false, mtp: bool = true, pipelined: bool = false, shared: bool = true, chunks: usize = 0, planted: ?[2][]const u8 = null, batched: bool = false, memory_lanes: ?usize = null }; // chunks: prefill_step; planted: a link's target and name
 
 var costs: [16]Cost = undefined;
 
@@ -71,7 +71,10 @@ fn run(cases: []const Case, mode: Mode, record: bool) ![][]u32 {
     recorder.floor = 0;
     defer recorder.deinit();
     if (mode.planted) |p| recorder.space.symLink(io, p[0], p[1], .{}) catch |e| return if (e == error.PermissionDenied and @import("builtin").os.tag == .windows) error.SkipZigTest else e; // symlinks need privilege on Windows
-    const inner = if (mode.batched) target.batched() else if (mode.chunks > 0) target.stepped() else target.backend();
+    var inner = if (mode.batched) target.batched() else if (mode.chunks > 0) target.stepped() else target.backend();
+    var table = inner.vtable.*;
+    table.record_each_step = mode.each_step;
+    inner.vtable = &table;
     var recorded = try rec.Recorded.init(inner, &recorder);
     var clock: fake.FixedClock = .{};
     var engine = Engine.init(gpa, &cfg, if (record) recorded.backend() else inner, clock.clock());
@@ -334,5 +337,11 @@ test "recorder: draft capacity keeps the inner context and optional capability" 
         const backend = recorded.backend();
         try std.testing.expectEqual(enabled, backend.vtable.draft_capacity != null);
         if (enabled) try std.testing.expectEqual(@as(u32, 15), backend.vtable.draft_capacity.?(backend.ptr, &stream));
+    }
+}
+
+test "per-step prompt recording and the default control preserve ordered rows" {
+    for ([_]bool{ false, true }) |each_step| {
+        try expectSame(&.{.{ .prompt = &long, .max_new = 1 }}, .{ .chunks = 2, .each_step = each_step });
     }
 }

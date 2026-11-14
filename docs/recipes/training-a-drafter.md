@@ -30,6 +30,13 @@ prefills text through the target with that fork's Kolibri forward. TensorFold sh
 
 ## Record
 
+Experimental Qwen3.8-27B CUDA recording accepts `--record-taps 1,16,31,46,61,64` with `--record DIR`.
+Tap IDs retain the target's raw zero-based layer-output indices; `64` additionally selects the last output before final norm.
+Without a loaded drafter, omitted `--record-taps` selects only `64`. With a drafter, omitted taps preserve its exact
+loaded tap list; an explicit different list is refused. Recording does not disable drafting.
+Rows describe computed, committed cache states. A final emitted token can lack its own computed input-state row;
+cross-mode terminal coverage and device qualification of this port remain pending.
+
 `tensorfold serve MODEL --record DIR` writes what serving computes. Each server makes its own new folder
 `DIR/<pid>-<k>`, and each stream writes `<n>.*` in it:
 

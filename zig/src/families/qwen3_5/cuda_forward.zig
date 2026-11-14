@@ -1,4 +1,5 @@
 //! The landed CUDA forward with optional learner taps and pocket contributions.
+const std = @import("std");
 const E = @import("cuda_engine.zig");
 const cuda = @import("cuda");
 const sig = @import("cuda_signatures.zig");
@@ -51,7 +52,8 @@ pub fn body(e: *E.Engine, shape: anytype) !void {
     var ai: c_int = 0;
     // a prompt chunk keeps its last row: past the last layer's keys and values, the kept row's tile runs alone
     const ends = g.whole == 0 or g.first + g.layers == g.whole; // an earlier stage sends every row on: no tail
-    const tail_at: ?usize = if (prompt and ends) @import("cuda_prompt_tail.zig").first(e, total, nseg, shape.hidden or shape.rows) else null;
+    const final_tap = shape.taps and std.mem.indexOfScalar(u32, e.taps[0..e.n_taps], @intCast(g.layers)) != null;
+    const tail_at: ?usize = if (prompt and ends and !final_tap) @import("cuda_prompt_tail.zig").first(e, total, nseg, shape.hidden or shape.rows) else null;
     for (e.layers, 0..) |l, i| {
         const tail = tail_at != null and i + 1 == e.layers.len;
         const t0: usize = if (tail) tail_at.? else 0;
@@ -137,7 +139,7 @@ pub fn body(e: *E.Engine, shape: anytype) !void {
             },
             .moe => |m| try e.routedRows(m.router, m.experts, x0, r0, rows, promptMoe(prompt, rows), rp),
         }
-        if (shape.taps) for (e.taps[0..e.n_taps], 0..) |t, ti| if (t == i) {
+        if (shape.taps) for (e.taps[0..e.n_taps], 0..) |t, ti| if (t == i or (t == e.layers.len and i + 1 == e.layers.len)) {
             try e.run(e.fns.tap, .{ total, (g.hidden + 2047) / 2048, 1 }, .{ 256, 1, 1 }, .{ e.h, e.r, t_segs, t_rows, @as(c_int, @intCast(ti)), @as(c_int, @intCast(g.hidden)), t_params });
         };
     }
@@ -173,7 +175,6 @@ pub fn finish(e: anytype, total: usize, heads: usize, hidden: bool, rows: bool) 
 }
 
 test "prompt MoE precision: target piece arithmetic keeps the shipped 16-row boundary" {
-    const std = @import("std");
     try std.testing.expectEqual(@as(usize, 64), E.most_window);
     var mismatches: usize = 0;
     for ([_]usize{ 16, 17, 32, 64, 65 }) |rows| {
@@ -191,7 +192,6 @@ test "prompt MoE precision: target piece arithmetic keeps the shipped 16-row bou
 }
 
 test "prompt MoE precision: every prompt piece through 128 and admitted verify width keeps its recipe" {
-    const std = @import("std");
     for (1..129) |rows| try std.testing.expectEqual(rows > 16, promptMoe(true, rows));
     for (1..E.most_window + 1) |rows| try std.testing.expect(!promptMoe(false, rows));
 }
