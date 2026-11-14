@@ -420,10 +420,6 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
     if (try @import("cli_recall.zig").flag(a, out, name, v, u)) return;
     if (out.cfg.set(name, v) catch return fail(u, a, "--cfg-gamma must be 0 (off) or 1 (unguided) through 5", .{})) return;
     if (@import("cli_fsr.zig").apply(out, name, v) catch |err| return fail(u, a, "argument {s}: {s}", .{ name, @errorName(err) })) return;
-    if (is(name, "--record-taps")) {
-        out.record_taps = v;
-        return;
-    }
     if (is(name, "--voices")) {
         out.voices = v;
         return;

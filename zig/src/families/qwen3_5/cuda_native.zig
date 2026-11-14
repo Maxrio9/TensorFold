@@ -419,13 +419,7 @@ pub const Lanes = struct {
         return prefill.whole(cast(ptr), stream);
     }
 
-    fn prefillStepFn(ptr: *anyopaque, stream: *lanes.Stream, max_rows: u32) !bool {
-        if (stream.readout != null) return readout.step(cast(ptr), stream, max_rows);
-        const before = @max(stream.fill_at.load(.acquire), stream.cached);
-        const done = try prefill.step(cast(ptr), stream, max_rows);
-        if (cast(ptr).e.n_taps > 0 and stream.fill_at.load(.acquire) - before > E.tap_rows) return error.QwenTapChunkTooLong;
-        return done;
-    }
+    const prefillStepFn = @import("cuda_record.zig").prefillStepFn;
 
     pub fn restoreKept(self: *Lanes, cache: *E.Cache, saved: *anyopaque, seen: []const reuse.Seen) !void {
         return reuse.restoreCache(self.e, cache, saved, seen);
@@ -549,13 +543,7 @@ pub const Lanes = struct {
         for (requests) |r| if (r.depth != 0) return error.QwenCheckpointHasNoDraftHead;
     }
 
-    /// A drafter's tapped layers, before any stream's caches exist: each forward fills their rings after.
-    fn prepareFeaturesFn(ptr: *anyopaque, taps: []const u32) !void {
-        const self = cast(ptr);
-        if (std.mem.eql(u32, self.e.taps[0..self.e.n_taps], taps)) return;
-        if (self.caches.count() != 0 or self.pool.items.len != 0) return error.TapsAfterStreams;
-        try self.e.setTaps(taps);
-    }
+    const prepareFeaturesFn = @import("cuda_record.zig").prepareFeaturesFn;
 
     /// Rows [start, start + count) of a stream's tap ring (slot position % tap_rows), the newest tap_rows rows kept.
     fn featuresFn(ptr: *anyopaque, stream: *lanes.Stream, taps: []const u32, start: u64, count: u32) !be.Features {
@@ -569,10 +557,8 @@ pub const Lanes = struct {
         return .{ .buffer = ring.ptr, .offset = start, .rows = count, .row_bytes = @intCast(self.e.n_taps * self.e.g.hidden * 2), .space = .device, .dtype = .bf16 };
     }
 
-    fn featuresHostFn(ptr: *anyopaque, stream: *lanes.Stream, taps: []const u32, start: u64, count: u32) !be.Features {
-        const f = try featuresFn(ptr, stream, taps, start, count);
-        return @import("cuda_record.zig").featuresHost(cast(ptr), stream, f, start, count);
-    }
+    pub const recordFeatures = featuresFn;
+    const featuresHostFn = @import("cuda_record.zig").featuresHostFn;
 
     fn releaseFn(ptr: *anyopaque, stream: *lanes.Stream) void {
         const self = cast(ptr);

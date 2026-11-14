@@ -12,6 +12,10 @@ const gib = cli.gib;
 
 /// The CUDA build's --device, --segments and --precision; false for any other flag.
 pub fn cudaFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage) error{ Usage, OutOfMemory }!bool {
+    if (std.mem.eql(u8, name, "--record-taps")) {
+        out.record_taps = v;
+        return true;
+    }
     if (std.mem.eql(u8, name, "--precision")) {
         out.precision = std.meta.stringToEnum(api.Precision, v) orelse return fail(u, a, "argument --precision: checkpoint or full: '{s}'", .{v});
     } else if (std.mem.eql(u8, name, "--device")) {

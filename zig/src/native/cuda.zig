@@ -1,6 +1,7 @@
 //! CUDA family registration, device setup, memory admission and the native lane host.
 const openDrama = @import("drama_open.zig").open;
 const std = @import("std");
+
 const platform = @import("sys");
 const cuda = @import("cuda");
 const api = @import("engine_api");
@@ -514,7 +515,6 @@ test "the Info openWith serves carries each family's reasoning declaration over 
     inline for (registry) |F| try std.testing.expectEqual(reasoning(F), familyInfo(F, .{ .reasoning = !reasoning(F) }).reasoning);
 }
 test {
-    _ = @import("record_taps.zig");
     _ = @import("draft_sources_cuda_test.zig");
     _ = @import("copy_drafts_nemotron_test.zig");
     _ = windows;

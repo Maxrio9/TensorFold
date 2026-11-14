@@ -43,3 +43,7 @@ pub fn open(gpa: Allocator, io: std.Io, dir: []const u8, rows: []const u32, inne
     r.recorded = try .init(inner, &r.recorder);
     return r;
 }
+
+test {
+    _ = @import("record_taps.zig");
+}
