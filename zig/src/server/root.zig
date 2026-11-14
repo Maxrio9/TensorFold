@@ -3,6 +3,11 @@ pub const json = @import("json");
 pub const errors = @import("errors.zig");
 pub const auth = @import("auth.zig");
 pub const cli = @import("cli.zig");
+
+test {
+    _ = @import("record_taps_cli_test.zig");
+}
+
 pub const log = @import("log.zig");
 pub const live = @import("live.zig");
 pub const model_text = @import("model_text.zig");
@@ -76,7 +81,6 @@ test {
     _ = @import("auth.zig");
     _ = @import("cli.zig");
     _ = @import("cli_test.zig");
-    _ = @import("record_taps_cli_test.zig");
     _ = @import("cli_profile_test.zig");
     _ = @import("compact_at_cli_test.zig");
     _ = @import("toml_flat_test.zig");

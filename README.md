@@ -326,7 +326,7 @@ The binary's `capabilities --json` response lists its supported flags and platfo
 | `--no-drafts` | Produce the plain reference through the same engine. |
 | `--drafter DRAFTER` | An external drafter, as a directory or a repo id in the Hugging Face cache, for models that take one: Qwen3.8-27B uses DFlash2 and Gemma 4 31B the drafter named in its recipe. Without one they decode plain. |
 | `--drafter-bits 0\|4` | Drafter weight precision where the model offers a choice: 4 bits (the default), or 0 to keep bf16. Qwen3.8-27B on CUDA takes 4 only. |
-| `--record DIR` | Write each stream's committed tokens, positions and tapped rows under DIR, for drafter training. CUDA Nemotron and experimental Qwen3.8-27B; Qwen accepts `--record-taps LIST` to select layers. A single stream runs through the lane rounds, and recording stops below 25 GiB free disk. |
+| `--record DIR` | Write each stream's committed tokens, positions and tapped rows under DIR, for drafter training. CUDA Nemotron only; a single stream runs through the lane rounds, and recording stops below 25 GiB free disk. |
 | `--keep-warm SECONDS` | Keep the Metal GPU active while idle for this long after a request, default 900; zero disables it. |
 | `--cfg-gamma GAMMA` | Metal Drama speech: semantic guidance strength, finite 1–5; 0/default disables it. Only reference-conditioned requests are guided. Enabled replies report `X-Cfg-Gamma`; codec heads stay conditional. |
 | `--cfg-allow-request-gamma` | Metal Drama speech: allow a finite 1–5 `X-Cfg-Gamma` request header; invalid values return 400 before engine submission. Without this opt-in, the server's gamma is fixed. |
