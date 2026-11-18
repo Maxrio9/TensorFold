@@ -23,3 +23,11 @@ sha256sum "$QMMF_FATBIN"
 The measured comparison used a zero-GiB reserve on a headless RTX PRO 4500 Blackwell. Each trial rotates through full packed weights. Both tile implementations process identical inputs, output dtype, leading dimensions and K slices. The program compares complete output bytes, pre-fills the two output regions with different patterns, and checks both outer guards. The deterministic seed is 193. See [the original device output](raw.txt) and [standalone benchmark](prompt_tiles.cpp).
 
 There is no model, KV cache, sampling, draft model or server in this test. No interleaved clock telemetry was recorded for these isolated CUDA-event timings. A cold served comparison is needed to measure time to first token and verify generated tokens.
+
+## Baseline served trace
+
+In the baseline SM120 trace, these four projections took 34.024 ms of a 46.583 ms first-token GPU pass. Substituting the measured kernel time ratios while keeping all other traced work fixed gives an estimated +25.64% change in pass speed (+9.506 ms saved). The single-row output head stays on its current tile.
+
+This is an estimate. Only a separate cold served A-B-B-A test can establish a time-to-first-token improvement.
+
+The [Nsight kernel intervals](first-token-trace.json) cover first embedding through first argmax for one 1,024-token text request on dots.mocr. The test used no drafting and a 4,096-token context. Durations are relative to the first embedding.
