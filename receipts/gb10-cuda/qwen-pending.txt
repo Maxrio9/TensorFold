@@ -1,0 +1,49 @@
+PASS qwen35 pending tf_q35k_apply_pend: 1 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 1 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 1 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 1 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 1 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 1 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 7 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 7 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 7 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 7 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 7 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 7 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 8 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 8 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 8 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 8 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 8 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 8 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 9 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 9 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 9 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 9 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 9 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 9 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 24 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 24 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 24 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 24 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 24 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 24 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 48 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 48 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 48 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 48 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 48 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 48 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 49 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 49 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 49 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 49 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 49 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 49 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending tf_q35k_apply_pend: 64 rows equal tf_q35k_apply's path, 5 repeats, guards
+PASS qwen35 pending: a decode row, 64 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back, 5 repeats, guards
+PASS qwen35 pending: a 4-row chain, 64 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row drafted tree, 64 rows pending, 4 scans (slot peak 2): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 16-row binary tree, 64 rows pending, 3 scans (slot peak 4): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: a 64-row chain, 64 rows pending, 5 scans (slot peak 1): rows out, logs and states equal tf_q35k_apply then the scan, written back and not, 5 repeats, guards
+PASS qwen35 pending: controls RED as planted (a dropped pending row, two swapped) on every scan and tf_q35k_apply_pend

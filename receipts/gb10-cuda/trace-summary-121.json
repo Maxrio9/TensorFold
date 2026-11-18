@@ -1,0 +1,7260 @@
+{
+  "fp8-trace-baseline": {
+    "kernel_busy_ns": 4551461587,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 13152
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 12416
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 14880
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 10176
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 119456
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 97472
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 244480
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 551968
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 441696
+      },
+      {
+        "kind": 1,
+        "bytes": 183328,
+        "count": 54,
+        "total_ns": 317472
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 5003616
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3282976
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1290496
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1664128
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21362048
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 32979328
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23653632
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9335616
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1177376
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2950272
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 159310912
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22360704
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 48128
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1856
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 43840
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 30219008
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 1009018016
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 31798976
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 161606304
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 450944
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 126304
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 5395776
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11536192
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 35044640
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7777280
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 242944
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 45829024
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 237254176
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46208896
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 79312640
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 28512800
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 339593696
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19296
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24480
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 160677280
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1439366432
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 511280320
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 234304
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 516928
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14404192
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10629344
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4239200
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74491168
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5405984
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 91264
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1952
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 225056
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7872
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1519008
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29536
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 84448
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 16064
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2197376
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3583008
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 43136
+      },
+      {
+        "name": "tf_q35_attn_partial8_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 11242368
+      },
+      {
+        "name": "tf_q35_attn_partial8_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 148608
+      },
+      {
+        "name": "tf_q35_attn_rows8_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4212544
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4100448
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 194080
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3168
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 9312
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 69120
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5095488
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 98624
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 218944
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 7148864
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 11240000
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 199968
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 404160
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 10452032
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 42417311
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 896480
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1222784
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22752
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1683904
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32256
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 35552
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 49312
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 280864
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1576224
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8167678
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 166592
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 416288
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 22848
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27529664
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6579,
+        "total_ns": 27963291
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 521568
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 846176
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 19610720
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 2316288
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 46080
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 136480
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2436864
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 53,
+        "total_ns": 78779
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          4,
+          2,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1344
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1237600
+      },
+      {
+        "name": "tf_q35k_compact8",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3616
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 31776
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5774528
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 17118912
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 275712
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 246944
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4265088
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3286720
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1275200
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22707456
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9166688
+      }
+    ]
+  },
+  "fp8-trace-fp8": {
+    "kernel_busy_ns": 4565950135,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 12032
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 11776
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 13344
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 9408
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 125856
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 96416
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 253920
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 599104
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 453728
+      },
+      {
+        "kind": 1,
+        "bytes": 183328,
+        "count": 54,
+        "total_ns": 329920
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 5071808
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3508640
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1307456
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1681696
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21459968
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 33252544
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23643552
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9350688
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1178400
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2948864
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 158688864
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22395872
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 49536
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1792
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 42944
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 29800448
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 1011738752
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 32382560
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 161087104
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 450304
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 124480
+      },
+      {
+        "name": "hpattn8_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 5504576
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11231872
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 35071616
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7566400
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 241856
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 46112608
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 238965024
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46001056
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 80638240
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 28461568
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 342205312
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19264
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24576
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 159665536
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1444218528
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 514900160
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 258848
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 517152
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14415648
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10694816
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4262336
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74250592
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5455744
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 93696
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 2016
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 247392
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7808
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1538912
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29824
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 69536
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 16192
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2197376
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3447904
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 42848
+      },
+      {
+        "name": "tf_q35_attn_partial8_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 11325280
+      },
+      {
+        "name": "tf_q35_attn_partial8_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 148800
+      },
+      {
+        "name": "tf_q35_attn_rows8_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4217216
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4078720
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 194400
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3136
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7712
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 68384
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5060352
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 97792
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 227616
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 6872448
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 11064384
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 199008
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 397856
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 10489504
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 42193120
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 904608
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1248352
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22688
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1743360
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32672
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 39776
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 50272
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 321056
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1566144
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8225214
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 165728
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 417088
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 23360
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27174176
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6579,
+        "total_ns": 28061245
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 521792
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 868224
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 20085472
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 2334879
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 46304
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 125312
+      },
+      {
+        "name": "tf_q35_rope8",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2460896
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 53,
+        "total_ns": 73149
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          4,
+          2,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1376
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1228544
+      },
+      {
+        "name": "tf_q35k_compact8",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3712
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 31648
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5772192
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 17088448
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 268608
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 249216
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4408064
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3291264
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1268544
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22426368
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9183808
+      }
+    ]
+  },
+  "greedy-trace-baseline": {
+    "kernel_busy_ns": 833101760,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 4,
+        "count": 143,
+        "total_ns": 91968
+      },
+      {
+        "kind": 1,
+        "bytes": 8,
+        "count": 1,
+        "total_ns": 768
+      },
+      {
+        "kind": 1,
+        "bytes": 36,
+        "count": 1,
+        "total_ns": 3392
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 1,
+        "total_ns": 1632
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 56,
+        "total_ns": 16416
+      },
+      {
+        "kind": 1,
+        "bytes": 3072,
+        "count": 85,
+        "total_ns": 53056
+      },
+      {
+        "kind": 1,
+        "bytes": 4096,
+        "count": 2,
+        "total_ns": 1344
+      },
+      {
+        "kind": 1,
+        "bytes": 786432,
+        "count": 56,
+        "total_ns": 1068672
+      },
+      {
+        "kind": 1,
+        "bytes": 4718592,
+        "count": 56,
+        "total_ns": 5197536
+      },
+      {
+        "kind": 1,
+        "bytes": 27525120,
+        "count": 84,
+        "total_ns": 43588928
+      },
+      {
+        "kind": 1,
+        "bytes": 64094208,
+        "count": 2,
+        "total_ns": 2374528
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 12,
+        "total_ns": 14910816
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 48,
+        "total_ns": 49216
+      },
+      {
+        "kind": 2,
+        "bytes": 8,
+        "count": 48,
+        "total_ns": 39520
+      },
+      {
+        "kind": 8,
+        "bytes": 303872,
+        "count": 1,
+        "total_ns": 2528
+      }
+    ],
+    "kernels": [
+      {
+        "name": "pattn_kernel",
+        "grid": [
+          16,
+          6,
+          1
+        ],
+        "count": 28,
+        "total_ns": 3376768
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          24,
+          1,
+          4
+        ],
+        "count": 1316,
+        "total_ns": 157356384
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          48,
+          1,
+          2
+        ],
+        "count": 1316,
+        "total_ns": 28155392
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          64,
+          1,
+          2
+        ],
+        "count": 1316,
+        "total_ns": 37245792
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          280,
+          1,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 298736320
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 56,
+        "total_ns": 27714272
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          512,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 6437440
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          2374,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 92176576
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          4480,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 40415584
+      },
+      {
+        "name": "tf_add_rms_rows_bf16h_tail_round",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 2679,
+        "total_ns": 7198560
+      },
+      {
+        "name": "tf_add_rms_rows_bf16h_tail_round",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 57,
+        "total_ns": 2738880
+      },
+      {
+        "name": "tf_dots_qkv_rope",
+        "grid": [
+          1,
+          16,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 2980640
+      },
+      {
+        "name": "tf_dots_qkv_rope",
+        "grid": [
+          1024,
+          16,
+          1
+        ],
+        "count": 28,
+        "total_ns": 705696
+      },
+      {
+        "name": "tf_embed_rows_bf16",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 47,
+        "total_ns": 89408
+      },
+      {
+        "name": "tf_embed_rows_bf16",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 48640
+      },
+      {
+        "name": "tf_lfm2_silu_mul",
+        "grid": [
+          1,
+          35,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 2628416
+      },
+      {
+        "name": "tf_lfm2_silu_mul",
+        "grid": [
+          1024,
+          35,
+          1
+        ],
+        "count": 28,
+        "total_ns": 7503200
+      },
+      {
+        "name": "tf_nemo_attn_chunk_segs",
+        "grid": [
+          1,
+          2,
+          9
+        ],
+        "count": 1316,
+        "total_ns": 70966368
+      },
+      {
+        "name": "tf_nemo_attn_merge_segs",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 5355264
+      },
+      {
+        "name": "tf_nemo_kv_write_segs",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 3006112
+      },
+      {
+        "name": "tf_nemo_kv_write_segs",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 237024
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          9216,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 1168512
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          12288,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 1551040
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          53760,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 7501984
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          107520,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 13866400
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          911616,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 4159904
+      },
+      {
+        "name": "tf_round_bf16_argmax",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 9781184
+      }
+    ]
+  },
+  "greedy-trace-greedy": {
+    "kernel_busy_ns": 834460192,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 4,
+        "count": 143,
+        "total_ns": 95616
+      },
+      {
+        "kind": 1,
+        "bytes": 8,
+        "count": 1,
+        "total_ns": 512
+      },
+      {
+        "kind": 1,
+        "bytes": 36,
+        "count": 1,
+        "total_ns": 3520
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 1,
+        "total_ns": 1024
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 56,
+        "total_ns": 14944
+      },
+      {
+        "kind": 1,
+        "bytes": 3072,
+        "count": 85,
+        "total_ns": 36384
+      },
+      {
+        "kind": 1,
+        "bytes": 4096,
+        "count": 2,
+        "total_ns": 1216
+      },
+      {
+        "kind": 1,
+        "bytes": 786432,
+        "count": 56,
+        "total_ns": 1020896
+      },
+      {
+        "kind": 1,
+        "bytes": 4718592,
+        "count": 56,
+        "total_ns": 5077088
+      },
+      {
+        "kind": 1,
+        "bytes": 27525120,
+        "count": 84,
+        "total_ns": 43019168
+      },
+      {
+        "kind": 1,
+        "bytes": 64094208,
+        "count": 2,
+        "total_ns": 2373408
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 12,
+        "total_ns": 14915392
+      },
+      {
+        "kind": 2,
+        "bytes": 8,
+        "count": 48,
+        "total_ns": 50560
+      },
+      {
+        "kind": 8,
+        "bytes": 303872,
+        "count": 1,
+        "total_ns": 2528
+      }
+    ],
+    "kernels": [
+      {
+        "name": "pattn_kernel",
+        "grid": [
+          16,
+          6,
+          1
+        ],
+        "count": 28,
+        "total_ns": 3382304
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          24,
+          1,
+          4
+        ],
+        "count": 1316,
+        "total_ns": 157319936
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          48,
+          1,
+          2
+        ],
+        "count": 1316,
+        "total_ns": 28137120
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          64,
+          1,
+          2
+        ],
+        "count": 1316,
+        "total_ns": 37327040
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          280,
+          1,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 299843232
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 56,
+        "total_ns": 27180032
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          512,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 6208256
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          2374,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 91925056
+      },
+      {
+        "name": "qmmf_kernel",
+        "grid": [
+          4480,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 41609056
+      },
+      {
+        "name": "tf_add_rms_rows_bf16h_tail_round",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 2679,
+        "total_ns": 7252896
+      },
+      {
+        "name": "tf_add_rms_rows_bf16h_tail_round",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 57,
+        "total_ns": 2668928
+      },
+      {
+        "name": "tf_dots_qkv_rope",
+        "grid": [
+          1,
+          16,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 3002784
+      },
+      {
+        "name": "tf_dots_qkv_rope",
+        "grid": [
+          1024,
+          16,
+          1
+        ],
+        "count": 28,
+        "total_ns": 703968
+      },
+      {
+        "name": "tf_embed_rows_bf16",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 47,
+        "total_ns": 97152
+      },
+      {
+        "name": "tf_embed_rows_bf16",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 20768
+      },
+      {
+        "name": "tf_lfm2_silu_mul",
+        "grid": [
+          1,
+          35,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 2665344
+      },
+      {
+        "name": "tf_lfm2_silu_mul",
+        "grid": [
+          1024,
+          35,
+          1
+        ],
+        "count": 28,
+        "total_ns": 7738528
+      },
+      {
+        "name": "tf_nemo_attn_chunk_segs",
+        "grid": [
+          1,
+          2,
+          9
+        ],
+        "count": 1316,
+        "total_ns": 70453344
+      },
+      {
+        "name": "tf_nemo_attn_merge_segs",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 5507456
+      },
+      {
+        "name": "tf_nemo_kv_write_segs",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1316,
+        "total_ns": 3084896
+      },
+      {
+        "name": "tf_nemo_kv_write_segs",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 232800
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          9216,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 1116608
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          12288,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 1578944
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          53760,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 7534624
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          107520,
+          1,
+          1
+        ],
+        "count": 28,
+        "total_ns": 13822400
+      },
+      {
+        "name": "tf_pack_bf16_lane",
+        "grid": [
+          911616,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 4225088
+      },
+      {
+        "name": "tf_round_bf16_argmax",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 9821632
+      }
+    ]
+  },
+  "metadata-trace-baseline": {
+    "kernel_busy_ns": 4527354200,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 14144
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 12224
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 15136
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 11104
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 114048
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 100448
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 258272
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 567808
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 450112
+      },
+      {
+        "kind": 1,
+        "bytes": 183328,
+        "count": 54,
+        "total_ns": 354112
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 4965536
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3289600
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1400512
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1668160
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21517152
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 33034688
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23407808
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9600768
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1175744
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2954304
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 159238624
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22336512
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 48576
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1792
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 43392
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 29990912
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 997224608
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 32179488
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 163022240
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 400448
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 97632
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 4192000
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11448416
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 35191552
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7839488
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 242624
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 46373120
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 238734432
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46320512
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 80293312
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 28666848
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 340435488
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19296
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24416
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 157664544
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1426627040
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 506923488
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 224224
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 499712
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14163296
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10579008
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4151072
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74153152
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5431872
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 90944
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1888
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 213728
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7904
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1579200
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29216
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 67008
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 15424
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2179648
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3600000
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 42912
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 15824928
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 207840
+      },
+      {
+        "name": "tf_q35_attn_rows_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4198528
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4239520
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 213856
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3264
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 8896
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 69376
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5106272
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 98048
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 247456
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 7373376
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 11321920
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 199488
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 403520
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 10257152
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 42048032
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 888320
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1197663
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22528
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1625312
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32448
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 34112
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 48672
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 301920
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1614272
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8165533
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 165376
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 439648
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 23616
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27886816
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6579,
+        "total_ns": 27997244
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 521536
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 759040
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 19758752
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1977376
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 38976
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 115008
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2363328
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 53,
+        "total_ns": 82560
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          4,
+          2,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1344
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1259104
+      },
+      {
+        "name": "tf_q35k_compact",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3104
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 31904
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5796096
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 16881216
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 274944
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 243488
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4267968
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3277664
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1287200
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22392416
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9288736
+      }
+    ]
+  },
+  "metadata-trace-metadata": {
+    "kernel_busy_ns": 4541764218,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 12416
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 12544
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 12640
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 9888
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 96192
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 97280
+      },
+      {
+        "kind": 1,
+        "bytes": 70192,
+        "count": 51,
+        "total_ns": 149280
+      },
+      {
+        "kind": 1,
+        "bytes": 70240,
+        "count": 1,
+        "total_ns": 2592
+      },
+      {
+        "kind": 1,
+        "bytes": 70688,
+        "count": 1,
+        "total_ns": 6304
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 241184
+      },
+      {
+        "kind": 1,
+        "bytes": 86560,
+        "count": 1,
+        "total_ns": 5792
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 538016
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 437888
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 4897184
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3257312
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1286048
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1657856
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21314816
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 32944288
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23638112
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9344064
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1176832
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2949664
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 158995616
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22694912
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 53472
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1792
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 43552
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 30140672
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 1003087519
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 32248544
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 161292448
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 344928
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 97600
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 4212192
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11440864
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 34881632
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7618336
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 242880
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 46880544
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 237275584
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46052832
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 80026368
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 28641216
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 340614560
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19424
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24352
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 159283776
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1437140000
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 507091488
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 222656
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 530304
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14209056
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10493184
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4166560
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74388544
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5372032
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 106208
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1952
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 227232
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 8064
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1561216
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29728
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 66400
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 15648
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2216480
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3469376
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 42688
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 15773440
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 209344
+      },
+      {
+        "name": "tf_q35_attn_rows_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4196224
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4323616
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 203936
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3232
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7264
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 69504
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5128384
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 98912
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 274976
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 7355136
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 11113759
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 214144
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 418368
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 10513696
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 42060192
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 943904
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1217440
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22848
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1725152
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32416
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 34208
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 55616
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 304480
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1503488
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8489342
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 191520
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 407616
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 23040
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27469056
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6579,
+        "total_ns": 27721759
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 563776
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 815968
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 19449888
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 2024864
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 39264
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 111008
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2390752
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 53,
+        "total_ns": 73663
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          4,
+          2,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1376
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1230912
+      },
+      {
+        "name": "tf_q35k_compact",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3008
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 30720
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5599584
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 17128704
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 270080
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 241728
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4239456
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3258016
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1278848
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22304832
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9260064
+      }
+    ]
+  },
+  "normalization-trace-baseline": {
+    "kernel_busy_ns": 4542896927,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 13760
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 12608
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 16160
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 10016
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 97856
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 98560
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 248864
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 541376
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 429824
+      },
+      {
+        "kind": 1,
+        "bytes": 183328,
+        "count": 54,
+        "total_ns": 319168
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 4915424
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3263200
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1287872
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1658816
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21314880
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 32963264
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23550016
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9336928
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1177440
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2949664
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 160063360
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22389856
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 48256
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1792
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 43232
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 29816192
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 1002854464
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 31815776
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 162516960
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 349376
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 97760
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 4178080
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11239008
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 34969504
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7598720
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 243136
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 46296736
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 241356320
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46922880
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 80856832
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 29382464
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 346860928
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19200
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24672
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 158271424
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1431529024
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 503468960
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 230080
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 525184
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14205952
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10414592
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4204576
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74271936
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5411776
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 92256
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1952
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 222240
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7904
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1539392
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29824
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 67424
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 16128
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2166560
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3404384
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 42720
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 15833312
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 208960
+      },
+      {
+        "name": "tf_q35_attn_rows_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4190816
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4073760
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 196512
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3584
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 7680
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 66720
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5060224
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 98784
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 220192
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 7040256
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 11006016
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 199968
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 397920
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 10209568
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 41870144
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 895712
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1188416
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22816
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1654144
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32448
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 31232
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 54624
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 306944
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1551808
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8277888
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 167104
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 422176
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24384
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27843232
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6579,
+        "total_ns": 27558015
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 523264
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 849984
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 19765056
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1973632
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 38848
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 114368
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2370400
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          1,
+          2,
+          1
+        ],
+        "count": 53,
+        "total_ns": 73664
+      },
+      {
+        "name": "tf_q35_sums",
+        "grid": [
+          4,
+          2,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1344
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1220288
+      },
+      {
+        "name": "tf_q35k_compact",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 2976
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 35072
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5590912
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 16804672
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 266080
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 244992
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4368480
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3305472
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1277792
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22786720
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9267712
+      }
+    ]
+  },
+  "normalization-trace-normalization": {
+    "kernel_busy_ns": 4546950387,
+    "transfers": [
+      {
+        "kind": 1,
+        "bytes": 96,
+        "count": 48,
+        "total_ns": 13856
+      },
+      {
+        "kind": 1,
+        "bytes": 192,
+        "count": 48,
+        "total_ns": 12576
+      },
+      {
+        "kind": 1,
+        "bytes": 256,
+        "count": 48,
+        "total_ns": 13280
+      },
+      {
+        "kind": 1,
+        "bytes": 512,
+        "count": 32,
+        "total_ns": 10912
+      },
+      {
+        "kind": 1,
+        "bytes": 7680,
+        "count": 192,
+        "total_ns": 106272
+      },
+      {
+        "kind": 1,
+        "bytes": 10240,
+        "count": 129,
+        "total_ns": 101344
+      },
+      {
+        "kind": 1,
+        "bytes": 81920,
+        "count": 48,
+        "total_ns": 246240
+      },
+      {
+        "kind": 1,
+        "bytes": 122880,
+        "count": 96,
+        "total_ns": 569504
+      },
+      {
+        "kind": 1,
+        "bytes": 163840,
+        "count": 64,
+        "total_ns": 447488
+      },
+      {
+        "kind": 1,
+        "bytes": 183328,
+        "count": 54,
+        "total_ns": 300480
+      },
+      {
+        "kind": 1,
+        "bytes": 983040,
+        "count": 224,
+        "total_ns": 4948672
+      },
+      {
+        "kind": 1,
+        "bytes": 1638400,
+        "count": 96,
+        "total_ns": 3302752
+      },
+      {
+        "kind": 1,
+        "bytes": 1966080,
+        "count": 32,
+        "total_ns": 1309664
+      },
+      {
+        "kind": 1,
+        "bytes": 2621440,
+        "count": 32,
+        "total_ns": 1670944
+      },
+      {
+        "kind": 1,
+        "bytes": 2785280,
+        "count": 384,
+        "total_ns": 21404832
+      },
+      {
+        "kind": 1,
+        "bytes": 15728640,
+        "count": 112,
+        "total_ns": 32873152
+      },
+      {
+        "kind": 1,
+        "bytes": 26214400,
+        "count": 48,
+        "total_ns": 23572576
+      },
+      {
+        "kind": 1,
+        "bytes": 31457280,
+        "count": 16,
+        "total_ns": 9330528
+      },
+      {
+        "kind": 1,
+        "bytes": 31719424,
+        "count": 2,
+        "total_ns": 1177216
+      },
+      {
+        "kind": 1,
+        "bytes": 39731200,
+        "count": 4,
+        "total_ns": 2947392
+      },
+      {
+        "kind": 1,
+        "bytes": 44564480,
+        "count": 192,
+        "total_ns": 160043808
+      },
+      {
+        "kind": 1,
+        "bytes": 67108864,
+        "count": 18,
+        "total_ns": 22473248
+      },
+      {
+        "kind": 2,
+        "bytes": 4,
+        "count": 50,
+        "total_ns": 48832
+      },
+      {
+        "kind": 2,
+        "bytes": 12,
+        "count": 1,
+        "total_ns": 1824
+      },
+      {
+        "kind": 2,
+        "bytes": 496640,
+        "count": 3,
+        "total_ns": 44480
+      }
+    ],
+    "kernels": [
+      {
+        "name": "chain_kernel",
+        "grid": [
+          48,
+          2,
+          1
+        ],
+        "count": 144,
+        "total_ns": 29947872
+      },
+      {
+        "name": "gemv_kernel",
+        "grid": [
+          80,
+          1,
+          1
+        ],
+        "count": 6656,
+        "total_ns": 1012512576
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          272,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 32247104
+      },
+      {
+        "name": "group_kernel",
+        "grid": [
+          3880,
+          1,
+          1
+        ],
+        "count": 54,
+        "total_ns": 162194784
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          1,
+          12,
+          1
+        ],
+        "count": 32,
+        "total_ns": 387232
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          2,
+          12,
+          1
+        ],
+        "count": 1,
+        "total_ns": 97632
+      },
+      {
+        "name": "hpattn_whole_kernel",
+        "grid": [
+          16,
+          12,
+          1
+        ],
+        "count": 15,
+        "total_ns": 4176096
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 11499904
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 35152992
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 7561120
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 242208
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          136,
+          1,
+          1
+        ],
+        "count": 130,
+        "total_ns": 46672896
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 236672224
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          384,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 46137408
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          640,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 80035232
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 28361664
+      },
+      {
+        "name": "prefill_kernel",
+        "grid": [
+          1088,
+          1,
+          1
+        ],
+        "count": 126,
+        "total_ns": 340273024
+      },
+      {
+        "name": "tf_draw_rows_finish",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 19456
+      },
+      {
+        "name": "tf_draw_slice_top",
+        "grid": [
+          31,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 24448
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 832,
+        "total_ns": 158530272
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          192,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 1431058624
+      },
+      {
+        "name": "tf_lane_gemv_many",
+        "grid": [
+          194,
+          1,
+          1
+        ],
+        "count": 2496,
+        "total_ns": 510659520
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 218656
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          2560,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 500384
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          15360,
+          1,
+          1
+        ],
+        "count": 112,
+        "total_ns": 14541568
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          25600,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 10539936
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          30720,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 4206752
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          43520,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 74051264
+      },
+      {
+        "name": "tf_pack_dense",
+        "grid": [
+          620800,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 5466368
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 90464
+      },
+      {
+        "name": "tf_q35_argmax_merge",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 1952
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          1,
+          1
+        ],
+        "count": 49,
+        "total_ns": 213408
+      },
+      {
+        "name": "tf_q35_argmax_slices",
+        "grid": [
+          61,
+          3,
+          1
+        ],
+        "count": 1,
+        "total_ns": 8192
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1525312
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 29440
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 69152
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          3072,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 15648
+      },
+      {
+        "name": "tf_q35_attn_gate",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 15,
+        "total_ns": 2094720
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 800,
+        "total_ns": 3418880
+      },
+      {
+        "name": "tf_q35_attn_merge",
+        "grid": [
+          24,
+          4,
+          1
+        ],
+        "count": 16,
+        "total_ns": 42304
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 800,
+        "total_ns": 15974496
+      },
+      {
+        "name": "tf_q35_attn_partial_whole",
+        "grid": [
+          4,
+          64,
+          4
+        ],
+        "count": 16,
+        "total_ns": 208960
+      },
+      {
+        "name": "tf_q35_attn_rows_whole",
+        "grid": [
+          1,
+          64,
+          4
+        ],
+        "count": 816,
+        "total_ns": 4177408
+      },
+      {
+        "name": "tf_q35_conv_commit",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 2544,
+        "total_ns": 4104160
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 51,
+        "total_ns": 192864
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3232
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 8000
+      },
+      {
+        "name": "tf_q35_embed",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 68576
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 5043200
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          4
+        ],
+        "count": 48,
+        "total_ns": 97536
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          32
+        ],
+        "count": 48,
+        "total_ns": 232832
+      },
+      {
+        "name": "tf_q35_gdn_post",
+        "grid": [
+          1,
+          48,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 7039936
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1
+        ],
+        "count": 2448,
+        "total_ns": 10903040
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          4
+        ],
+        "count": 48,
+        "total_ns": 206240
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          32
+        ],
+        "count": 48,
+        "total_ns": 399840
+      },
+      {
+        "name": "tf_q35_gdn_pre",
+        "grid": [
+          1,
+          80,
+          1024
+        ],
+        "count": 48,
+        "total_ns": 11125536
+      },
+      {
+        "name": "tf_q35_gdn_slots_1",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 2400,
+        "total_ns": 42140416
+      },
+      {
+        "name": "tf_q35_gdn_slots_2",
+        "grid": [
+          1,
+          16,
+          48
+        ],
+        "count": 48,
+        "total_ns": 906720
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1212448
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 22368
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24,
+          1,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1689600
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 32128
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 48736
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          768,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 51264
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 301280
+      },
+      {
+        "name": "tf_q35_head_norm",
+        "grid": [
+          24576,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 1564640
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17,
+          1,
+          1
+        ],
+        "count": 3264,
+        "total_ns": 8219930
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          68,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 174655
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          544,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 417728
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          2176,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 23360
+      },
+      {
+        "name": "tf_q35_mlp_act",
+        "grid": [
+          17408,
+          1,
+          1
+        ],
+        "count": 63,
+        "total_ns": 27414752
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "count": 6581,
+        "total_ns": 27977339
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "count": 129,
+        "total_ns": 537919
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "count": 128,
+        "total_ns": 816544
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "count": 1,
+        "total_ns": 10688
+      },
+      {
+        "name": "tf_q35_norm",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "count": 127,
+        "total_ns": 18914368
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1,
+          28,
+          1
+        ],
+        "count": 816,
+        "total_ns": 1986784
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          4,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 38848
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          32,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 124000
+      },
+      {
+        "name": "tf_q35_rope",
+        "grid": [
+          1024,
+          28,
+          1
+        ],
+        "count": 16,
+        "total_ns": 2358560
+      },
+      {
+        "name": "tf_q35k_apply",
+        "grid": [
+          1,
+          32,
+          2304
+        ],
+        "count": 1,
+        "total_ns": 1243776
+      },
+      {
+        "name": "tf_q35k_compact",
+        "grid": [
+          16,
+          4,
+          1
+        ],
+        "count": 1,
+        "total_ns": 3072
+      },
+      {
+        "name": "tf_q35k_conv",
+        "grid": [
+          48,
+          120,
+          1
+        ],
+        "count": 1,
+        "total_ns": 32288
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          112,
+          1,
+          1
+        ],
+        "count": 16,
+        "total_ns": 5730656
+      },
+      {
+        "name": "tf_qmm_prefill_many",
+        "grid": [
+          130,
+          1,
+          1
+        ],
+        "count": 48,
+        "total_ns": 17000448
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          40,
+          1,
+          1
+        ],
+        "count": 192,
+        "total_ns": 269920
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          320,
+          1,
+          1
+        ],
+        "count": 64,
+        "total_ns": 248032
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          1920,
+          1,
+          1
+        ],
+        "count": 224,
+        "total_ns": 4263488
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3200,
+          1,
+          1
+        ],
+        "count": 96,
+        "total_ns": 3306176
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          3840,
+          1,
+          1
+        ],
+        "count": 32,
+        "total_ns": 1266656
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          5440,
+          1,
+          1
+        ],
+        "count": 384,
+        "total_ns": 22550176
+      },
+      {
+        "name": "tf_transpose_pad16",
+        "grid": [
+          77600,
+          1,
+          1
+        ],
+        "count": 2,
+        "total_ns": 9023520
+      }
+    ]
+  }
+}

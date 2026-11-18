@@ -1,0 +1,4 @@
+PASS tf_q35_norm_shift: 5 rows of 4096 within one BF16 ulp of FP64
+PASS control: tf_q35_norm on raw w fails the gate (20447 values)
+PASS tf_q35_head_norm_shift: 30 heads within one BF16 ulp of FP64
+PASS control: tf_q35_head_norm on raw w fails the gate (7680 values)

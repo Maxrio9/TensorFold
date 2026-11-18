@@ -1,0 +1,10 @@
+fp8 paged=0 prefix=0 rows=1 page=48 parity=pass base_ms=0.01213 patch_ms=0.01213
+fp8 paged=0 prefix=31 rows=33 page=48 parity=pass base_ms=0.01460 patch_ms=0.01505
+fp8 paged=0 prefix=255 rows=65 page=256 parity=pass base_ms=0.04452 patch_ms=0.04451
+fp8 paged=0 prefix=1000 rows=193 page=48 parity=pass base_ms=0.15057 patch_ms=0.14721
+fp8 paged=0 prefix=3073 rows=128 page=256 parity=pass base_ms=0.38410 patch_ms=0.37384
+fp8 paged=1 prefix=0 rows=1 page=48 parity=pass base_ms=0.01213 patch_ms=0.01210
+fp8 paged=1 prefix=31 rows=33 page=48 parity=pass base_ms=0.01545 patch_ms=0.01510
+fp8 paged=1 prefix=255 rows=65 page=256 parity=pass base_ms=0.04658 patch_ms=0.04574
+fp8 paged=1 prefix=1000 rows=193 page=48 parity=pass base_ms=0.16004 patch_ms=0.15938
+fp8 paged=1 prefix=3073 rows=128 page=256 parity=pass base_ms=0.40029 patch_ms=0.39883

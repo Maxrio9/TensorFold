@@ -1,0 +1,26 @@
+PASS qwen35 pages bf16: lens { 0, 3 }, 1 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 127, 128 }, 4 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 129, 1000 }, 8 rows a stream, 128-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 700, 33 }, 2 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 4095, 5000 }, 16 rows a stream, 256-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 9000, 300 }, 3 rows a stream, 512-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 31, 128 }, 128 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 4096, 4097 }, 64 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 4096, 4097 }, 65 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 32767, 32768 }, 1 rows a stream, 256-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 4096, 8192 }, 1 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: lens { 8, 16 }, 5 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages bf16: controls RED as planted (swapped table, planted row, uncounted tail keys, swapped table on 256-position pages, swapped table with page ids in shared memory)
+PASS qwen35 pages fp8: lens { 0, 3 }, 1 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 127, 128 }, 4 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 129, 1000 }, 8 rows a stream, 128-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 700, 33 }, 2 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 4095, 5000 }, 16 rows a stream, 256-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 9000, 300 }, 3 rows a stream, 512-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 31, 128 }, 128 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 4096, 4097 }, 64 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 4096, 4097 }, 65 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 32767, 32768 }, 1 rows a stream, 256-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 4096, 8192 }, 1 rows a stream, 48-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: lens { 8, 16 }, 5 rows a stream, 16-position pages: paged == contiguous (queries, rows, stores, keep; tensor-core and prompt rows), repeats, float64 bound, guards
+PASS qwen35 pages fp8: controls RED as planted (swapped table, planted row, uncounted tail keys, swapped table on 256-position pages, swapped table with page ids in shared memory)

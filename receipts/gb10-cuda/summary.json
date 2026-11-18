@@ -1,0 +1,2393 @@
+{
+  "metadata": {
+    "1": {
+      "requests": 28,
+      "tokens": 448,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.6609438732261497,
+              "verdict": "consistent smaller win",
+              "base": 0.8659314794999999,
+              "candidate": 0.8605304615,
+              "all_valid_median_gain_percent": 0.6609438732261497
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.037248524628830104,
+              "verdict": "inconclusive",
+              "base": 15.247499743494497,
+              "candidate": 15.241820274797261,
+              "all_valid_median_gain_percent": -0.037248524628830104
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.14308982400956793,
+              "verdict": "consistent smaller win",
+              "base": 12.151001681586571,
+              "candidate": 12.164658517560227,
+              "all_valid_median_gain_percent": 0.14308982400956793
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.5882526784259157,
+              "verdict": "inconclusive",
+              "base": 0.861152009,
+              "candidate": 0.8662477345,
+              "all_valid_median_gain_percent": -0.5882526784259157
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.15501901736110213,
+              "verdict": "consistent smaller win",
+              "base": 15.24070781025535,
+              "candidate": 15.267256232178465,
+              "all_valid_median_gain_percent": 0.15501901736110213
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.18001556820987918,
+              "verdict": "inconclusive",
+              "base": 12.157366143593121,
+              "candidate": 12.179251295335867,
+              "all_valid_median_gain_percent": 0.18001556820987918
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8659314794999999,
+                "candidate": 0.8602457379999999,
+                "gain_percent": 0.6609438732261497
+              },
+              "tokens_per_second": {
+                "base": 15.247499743494497,
+                "candidate": 15.241820274797261,
+                "gain_percent": -0.037248524628830104
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.151976085030944,
+                "candidate": 12.164658517560227,
+                "gain_percent": 0.10436518670331463
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8598599315,
+                "candidate": 0.8666495654999999,
+                "gain_percent": -0.7834347665175212
+              },
+              "tokens_per_second": {
+                "base": 15.223750594914208,
+                "candidate": 15.293478211373603,
+                "gain_percent": 0.45801864674983594
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.157366143593121,
+                "candidate": 12.179251295335867,
+                "gain_percent": 0.18001556820987918
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8641010545000001,
+                "candidate": 0.8605304615,
+                "gain_percent": 0.41492929765392095
+              },
+              "tokens_per_second": {
+                "base": 15.215451289893029,
+                "candidate": 15.227041313693336,
+                "gain_percent": 0.07617272455142654
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.137247411878285,
+                "candidate": 12.156218938860668,
+                "gain_percent": 0.15630831553963276
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.861152009,
+                "candidate": 0.8662477345,
+                "gain_percent": -0.5882526784259157
+              },
+              "tokens_per_second": {
+                "base": 15.24070781025535,
+                "candidate": 15.26019125005231,
+                "gain_percent": 0.127838155809612
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.164438309273606,
+                "candidate": 12.160446894610525,
+                "gain_percent": -0.032812157549755305
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8702417785000001,
+                "candidate": 0.8622569095,
+                "gain_percent": 0.9260429127358583
+              },
+              "tokens_per_second": {
+                "base": 15.26600668695114,
+                "candidate": 15.256945057492228,
+                "gain_percent": -0.059358217540006475
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.151001681586571,
+                "candidate": 12.168388528508153,
+                "gain_percent": 0.14308982400956793
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8639440525,
+                "candidate": 0.861235949,
+                "gain_percent": 0.31444385283085907
+              },
+              "tokens_per_second": {
+                "base": 15.243625713387367,
+                "candidate": 15.267256232178465,
+                "gain_percent": 0.15501901736110213
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.15625584131133,
+                "candidate": 12.181132487596638,
+                "gain_percent": 0.20464069373045124
+              }
+            }
+          }
+        }
+      ]
+    },
+    "4": {
+      "requests": 168,
+      "tokens": 2688,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.07594192488261653,
+              "verdict": "inconclusive",
+              "base": 2.255671526,
+              "candidate": 2.2578898339999998,
+              "all_valid_median_gain_percent": -0.05269080426273387
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.3328528348727766,
+              "verdict": "inconclusive",
+              "base": 10.232994668845432,
+              "candidate": 10.221406677717555,
+              "all_valid_median_gain_percent": -0.1093743432014016
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.1785750634622829,
+              "verdict": "consistent smaller regression",
+              "base": 27.47900210034517,
+              "candidate": 27.442097382758625,
+              "all_valid_median_gain_percent": -0.09211001864525836
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-2",
+            "extra-0"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.18125157472004272,
+              "verdict": "consistent smaller win",
+              "base": 2.2576005842499995,
+              "candidate": 2.25264939425,
+              "all_valid_median_gain_percent": 0.18125157472004272
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.04490257718364754,
+              "verdict": "inconclusive",
+              "base": 10.235775413401512,
+              "candidate": 10.238615629373982,
+              "all_valid_median_gain_percent": -0.04490257718364754
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.11727220952766348,
+              "verdict": "consistent smaller win",
+              "base": 27.445626946350327,
+              "candidate": 27.477757180495885,
+              "all_valid_median_gain_percent": 0.11727220952766348
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.255671526,
+                "candidate": 2.2573858282500003,
+                "gain_percent": -0.07594192488261653
+              },
+              "tokens_per_second": {
+                "base": 10.260112851392897,
+                "candidate": 10.221406677717555,
+                "gain_percent": -0.3772490053078448
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.4911897923769,
+                "candidate": 27.442097382758625,
+                "gain_percent": -0.1785750634622829
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2582136947500002,
+                "candidate": 2.256422315,
+                "gain_percent": 0.07939026919259184
+              },
+              "tokens_per_second": {
+                "base": 10.224665389858469,
+                "candidate": 10.238615629373982,
+                "gain_percent": 0.13643712516351325
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.445626946350327,
+                "candidate": 27.472444948784897,
+                "gain_percent": 0.09771320759768276
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.26966458225,
+                "candidate": 2.26353725125,
+                "gain_percent": 0.2706971575844985
+              },
+              "tokens_per_second": {
+                "base": 10.198874792021972,
+                "candidate": 10.164927548151601,
+                "gain_percent": -0.3328528348727766
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.350864222184335,
+                "candidate": 27.292422648641477,
+                "gain_percent": -0.2136735902314002
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 2.2617495852499996,
+                "candidate": 2.281447005,
+                "gain_percent": -0.8633739774288718
+              },
+              "tokens_per_second": {
+                "base": 10.209863389685287,
+                "candidate": 10.08873850761753,
+                "gain_percent": -1.186351642962491
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.378712913879852,
+                "candidate": 27.09485627595337,
+                "gain_percent": -1.0367786054054418
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.252693767,
+                "candidate": 2.2578898339999998,
+                "gain_percent": -0.23012934119973627
+              },
+              "tokens_per_second": {
+                "base": 10.232994668845432,
+                "candidate": 10.244670940275297,
+                "gain_percent": 0.11410414846997341
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.47900210034517,
+                "candidate": 27.477450917868346,
+                "gain_percent": -0.0056449738282338124
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2567323567499997,
+                "candidate": 2.25264939425,
+                "gain_percent": 0.18125157472004272
+              },
+              "tokens_per_second": {
+                "base": 10.235775413401512,
+                "candidate": 10.231179286446165,
+                "gain_percent": -0.04490257718364754
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.445571152787522,
+                "candidate": 27.477757180495885,
+                "gain_percent": 0.11727220952766348
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2517057125,
+                "candidate": 2.25236880275,
+                "gain_percent": -0.02943968364285121
+              },
+              "tokens_per_second": {
+                "base": 10.258663148286342,
+                "candidate": 10.270534561107743,
+                "gain_percent": 0.11572085611744054
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.528723503821087,
+                "candidate": 27.54905708739554,
+                "gain_percent": 0.07386315450343961
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2576005842499995,
+                "candidate": 2.25246105075,
+                "gain_percent": 0.22817413416706955
+              },
+              "tokens_per_second": {
+                "base": 10.25537404510245,
+                "candidate": 10.249788669389023,
+                "gain_percent": -0.05446291562708483
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.46764192062891,
+                "candidate": 27.511350877437295,
+                "gain_percent": 0.15912890132574464
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "normalization": {
+    "1": {
+      "requests": 28,
+      "tokens": 448,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.5185363405830423,
+              "verdict": "consistent smaller regression",
+              "base": 0.8618516005,
+              "candidate": 0.8658638544999999,
+              "all_valid_median_gain_percent": -0.5185363405830423
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.005065608319754222,
+              "verdict": "inconclusive",
+              "base": 15.166090559552636,
+              "candidate": 15.16708658102915,
+              "all_valid_median_gain_percent": -0.005065608319754222
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.0330840440553537,
+              "verdict": "inconclusive",
+              "base": 12.104437478028174,
+              "candidate": 12.10278735975119,
+              "all_valid_median_gain_percent": -0.0330840440553537
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.5584670116587365,
+              "verdict": "consistent smaller win",
+              "base": 0.863968114,
+              "candidate": 0.8609399855,
+              "all_valid_median_gain_percent": 0.5584670116587365
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.162320715178077,
+              "verdict": "inconclusive",
+              "base": 15.180744885849634,
+              "candidate": 15.205386379517705,
+              "all_valid_median_gain_percent": 0.162320715178077
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.24937899070183178,
+              "verdict": "inconclusive",
+              "base": 12.11714191510521,
+              "candidate": 12.140419583770608,
+              "all_valid_median_gain_percent": 0.24937899070183178
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8618516005,
+                "candidate": 0.8663439085,
+                "gain_percent": -0.5185363405830423
+              },
+              "tokens_per_second": {
+                "base": 15.09206111942957,
+                "candidate": 15.180926403303811,
+                "gain_percent": 0.5888213887487836
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.066345075746447,
+                "candidate": 12.109995115886473,
+                "gain_percent": 0.3617503052168125
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8639120874999999,
+                "candidate": 0.859114218,
+                "gain_percent": 0.5584670116587365
+              },
+              "tokens_per_second": {
+                "base": 15.180744885849634,
+                "candidate": 15.205386379517705,
+                "gain_percent": 0.162320715178077
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.11714191510521,
+                "candidate": 12.147359521315009,
+                "gain_percent": 0.24937899070183178
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.859802885,
+                "candidate": 0.8651327725,
+                "gain_percent": -0.6160774009980052
+              },
+              "tokens_per_second": {
+                "base": 15.167854925150166,
+                "candidate": 15.16708658102915,
+                "gain_percent": -0.005065608319754222
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.121959400081753,
+                "candidate": 12.10278735975119,
+                "gain_percent": -0.15815958210876335
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.866954162,
+                "candidate": 0.8609399855,
+                "gain_percent": 0.6985593190339756
+              },
+              "tokens_per_second": {
+                "base": 15.253457909928027,
+                "candidate": 15.17825726207181,
+                "gain_percent": -0.4930072138414676
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.154690559821095,
+                "candidate": 12.12671360315521,
+                "gain_percent": -0.23017415810129283
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.864510363,
+                "candidate": 0.8658638544999999,
+                "gain_percent": -0.1563168958913952
+              },
+              "tokens_per_second": {
+                "base": 15.166090559552636,
+                "candidate": 15.16487356010241,
+                "gain_percent": -0.008024477009727082
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.104437478028174,
+                "candidate": 12.100432840600291,
+                "gain_percent": -0.0330840440553537
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.863968114,
+                "candidate": 0.862076013,
+                "gain_percent": 0.21948192171772352
+              },
+              "tokens_per_second": {
+                "base": 15.163627301845231,
+                "candidate": 15.208785566732354,
+                "gain_percent": 0.29780648118162834
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.107039158990842,
+                "candidate": 12.140419583770608,
+                "gain_percent": 0.2757108847292189
+              }
+            }
+          }
+        }
+      ]
+    },
+    "4": {
+      "requests": 168,
+      "tokens": 2688,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.06213113920616742,
+              "verdict": "inconclusive",
+              "base": 2.254787838,
+              "candidate": 2.2546689564999998,
+              "all_valid_median_gain_percent": 0.24000020212762152
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.19588223526085802,
+              "verdict": "inconclusive",
+              "base": 10.209660571602365,
+              "candidate": 10.228894225102124,
+              "all_valid_median_gain_percent": 0.20826202207919753
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.09143339941581896,
+              "verdict": "inconclusive",
+              "base": 27.44162425749277,
+              "candidate": 27.45444459565006,
+              "all_valid_median_gain_percent": 0.1737449344740405
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-1",
+            "abba-2",
+            "extra-1"
+          ],
+          "selected": [
+            "abba-1",
+            "abba-2",
+            "extra-1"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.14489407931128628,
+              "verdict": "inconclusive",
+              "base": 2.2570669985,
+              "candidate": 2.25380137375,
+              "all_valid_median_gain_percent": 0.14489407931128628
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.1588427171817397,
+              "verdict": "inconclusive",
+              "base": 10.210295084970333,
+              "candidate": 10.225512643086251,
+              "all_valid_median_gain_percent": 0.1588427171817397
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.054504253194198604,
+              "verdict": "inconclusive",
+              "base": 27.428461293705084,
+              "candidate": 27.443410971695876,
+              "all_valid_median_gain_percent": 0.054504253194198604
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.254787838,
+                "candidate": 2.2533877825,
+                "gain_percent": 0.06213113920616742
+              },
+              "tokens_per_second": {
+                "base": 10.250252191530627,
+                "candidate": 10.217418014879197,
+                "gain_percent": -0.32032554943925984
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.49918359408203,
+                "candidate": 27.44875954940818,
+                "gain_percent": -0.18336560611458275
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 2.2647014299999997,
+                "candidate": 2.2521683665000003,
+                "gain_percent": 0.5564887459758028
+              },
+              "tokens_per_second": {
+                "base": 10.213023310391534,
+                "candidate": 10.224435596764835,
+                "gain_percent": 0.11174248825700506
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.396292764563555,
+                "candidate": 27.46119204015943,
+                "gain_percent": 0.2368907215060112
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2505516322499997,
+                "candidate": 2.2546689564999998,
+                "gain_percent": -0.1826132496360655
+              },
+              "tokens_per_second": {
+                "base": 10.209660571602365,
+                "candidate": 10.232187351369847,
+                "gain_percent": 0.22064180889753704
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.44162425749277,
+                "candidate": 27.46671506740631,
+                "gain_percent": 0.09143339941581896
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2570669985,
+                "candidate": 2.25380137375,
+                "gain_percent": 0.14489407931128628
+              },
+              "tokens_per_second": {
+                "base": 10.248838166094105,
+                "candidate": 10.213691577945788,
+                "gain_percent": -0.34293241417930886
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.488167891384805,
+                "candidate": 27.442804036647132,
+                "gain_percent": -0.16503047753826383
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2656435605,
+                "candidate": 2.25621552925,
+                "gain_percent": 0.4178692650490756
+              },
+              "tokens_per_second": {
+                "base": 10.208896809835544,
+                "candidate": 10.228894225102124,
+                "gain_percent": 0.19588223526085802
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.384325259186156,
+                "candidate": 27.45444459565006,
+                "gain_percent": 0.256056469532262
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2534054115,
+                "candidate": 2.2576314675,
+                "gain_percent": -0.18718980758536397
+              },
+              "tokens_per_second": {
+                "base": 10.205628445734705,
+                "candidate": 10.225512643086251,
+                "gain_percent": 0.19483559936828154
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.428461293705084,
+                "candidate": 27.443410971695876,
+                "gain_percent": 0.054504253194198604
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.26304276725,
+                "candidate": 2.25093014675,
+                "gain_percent": 0.5381162324156863
+              },
+              "tokens_per_second": {
+                "base": 10.214017645018297,
+                "candidate": 10.237027500927736,
+                "gain_percent": 0.22527722889398305
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.404143197461984,
+                "candidate": 27.491973605850205,
+                "gain_percent": 0.3205004723386251
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                null,
+                2190.0
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 2.2562006754999997,
+                "candidate": 2.2556626475,
+                "gain_percent": 0.02385232563903994
+              },
+              "tokens_per_second": {
+                "base": 10.211209213485482,
+                "candidate": 10.22856917875465,
+                "gain_percent": 0.1700089079189837
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.426974769554107,
+                "candidate": 27.459906511093426,
+                "gain_percent": 0.12007063052348332
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                null,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 2.25113246575,
+                "candidate": 2.25468829075,
+                "gain_percent": -0.1577080527977115
+              },
+              "tokens_per_second": {
+                "base": 10.225869679065964,
+                "candidate": 10.233707096927883,
+                "gain_percent": 0.07664304462988714
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.472566316867365,
+                "candidate": 27.467355402736004,
+                "gain_percent": -0.018967700619076933
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.262636428,
+                "candidate": 2.2481247252500003,
+                "gain_percent": 0.6455025642932766
+              },
+              "tokens_per_second": {
+                "base": 10.210295084970333,
+                "candidate": 10.226513395115573,
+                "gain_percent": 0.1588427171817397
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.39813575779132,
+                "candidate": 27.487229052656524,
+                "gain_percent": 0.3251801350749428
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "fp8": {
+    "1": {
+      "requests": 28,
+      "tokens": 448,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.23968666935381133,
+              "verdict": "consistent smaller win",
+              "base": 0.8675495529999999,
+              "candidate": 0.8641762905,
+              "all_valid_median_gain_percent": 0.23968666935381133
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.02109164987704748,
+              "verdict": "inconclusive",
+              "base": 15.187177664405878,
+              "candidate": 15.104213349320103,
+              "all_valid_median_gain_percent": 0.02109164987704748
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.07884637641653036,
+              "verdict": "inconclusive",
+              "base": 12.108285977226295,
+              "candidate": 12.070653972491428,
+              "all_valid_median_gain_percent": 0.07884637641653036
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.07967017251691022,
+              "verdict": "inconclusive",
+              "base": 0.863656105,
+              "candidate": 0.864155277,
+              "all_valid_median_gain_percent": 0.12362734887843008
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.041860259564519,
+              "verdict": "inconclusive",
+              "base": 15.158625552549708,
+              "candidate": 15.152280112546997,
+              "all_valid_median_gain_percent": -0.002096885276059446
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.012444459369664873,
+              "verdict": "consistent smaller regression",
+              "base": 12.101229344376906,
+              "candidate": 12.099723411807915,
+              "all_valid_median_gain_percent": -0.011305109192444318
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 0.86355726,
+                "candidate": 0.8639612525,
+                "gain_percent": -0.04676048825464907
+              },
+              "tokens_per_second": {
+                "base": 15.133677110869167,
+                "candidate": 15.122042162328547,
+                "gain_percent": -0.07688117339481604
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.08829382909687,
+                "candidate": 12.079661772393667,
+                "gain_percent": -0.07140839580209724
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8622857445000001,
+                "candidate": 0.8668172940000001,
+                "gain_percent": -0.5227802365465939
+              },
+              "tokens_per_second": {
+                "base": 15.174037690284802,
+                "candidate": 15.179753217524151,
+                "gain_percent": 0.037666489012400106
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.119305390940283,
+                "candidate": 12.108297391976478,
+                "gain_percent": -0.09083027953098455
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8691448835,
+                "candidate": 0.8631383215,
+                "gain_percent": 0.6958979633254536
+              },
+              "tokens_per_second": {
+                "base": 15.19635267357869,
+                "candidate": 15.104213349320103,
+                "gain_percent": -0.606325256051643
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.110994701279417,
+                "candidate": 12.070653972491428,
+                "gain_percent": -0.3330917879414752
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.864843751,
+                "candidate": 0.864155277,
+                "gain_percent": 0.07967017251691022
+              },
+              "tokens_per_second": {
+                "base": 15.158625552549708,
+                "candidate": 15.152280112546997,
+                "gain_percent": -0.041860259564519
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.101229344376906,
+                "candidate": 12.099723411807915,
+                "gain_percent": -0.012444459369664873
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8657708630000001,
+                "candidate": 0.8641762905,
+                "gain_percent": 0.18451935299885758
+              },
+              "tokens_per_second": {
+                "base": 15.061146438257595,
+                "candidate": 15.084239889577924,
+                "gain_percent": 0.15333129795265243
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.035825922181889,
+                "candidate": 12.054577433846463,
+                "gain_percent": 0.15579746488370017
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.863656105,
+                "candidate": 0.8622111725,
+                "gain_percent": 0.16758452523994993
+              },
+              "tokens_per_second": {
+                "base": 15.13121371997131,
+                "candidate": 15.121920023033624,
+                "gain_percent": -0.06142069704176967
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.087856550730578,
+                "candidate": 12.086627728363524,
+                "gain_percent": -0.010165759015223763
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.8675495529999999,
+                "candidate": 0.8654751245000001,
+                "gain_percent": 0.23968666935381133
+              },
+              "tokens_per_second": {
+                "base": 15.187177664405878,
+                "candidate": 15.19038089074506,
+                "gain_percent": 0.02109164987704748
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.108285977226295,
+                "candidate": 12.117832921965489,
+                "gain_percent": 0.07884637641653036
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.864927196,
+                "candidate": 0.8612509085,
+                "gain_percent": 0.4268544118464668
+              },
+              "tokens_per_second": {
+                "base": 15.195893006117869,
+                "candidate": 15.209466599471474,
+                "gain_percent": 0.08932409137218933
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 12.124308527431669,
+                "candidate": 12.144308843897353,
+                "gain_percent": 0.16496047111000944
+              }
+            }
+          }
+        }
+      ]
+    },
+    "4": {
+      "requests": 168,
+      "tokens": 2688,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.19416963448738445,
+              "verdict": "inconclusive",
+              "base": 2.256984959,
+              "candidate": 2.26041307625,
+              "all_valid_median_gain_percent": -0.282341960425575
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.008183936813399573,
+              "verdict": "inconclusive",
+              "base": 10.231407148666856,
+              "candidate": 10.233739026911273,
+              "all_valid_median_gain_percent": -0.01778696628157439
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.08274140661199691,
+              "verdict": "inconclusive",
+              "base": 27.446880099007544,
+              "candidate": 27.46959003367257,
+              "all_valid_median_gain_percent": -0.02878295872286718
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "selected": [
+            "abba-1",
+            "abba-2",
+            "extra-0"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.18234132900856181,
+              "verdict": "inconclusive",
+              "base": 2.26421146225,
+              "candidate": 2.2613466307500003,
+              "all_valid_median_gain_percent": 0.18234132900856181
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.18573469910170282,
+              "verdict": "consistent smaller win",
+              "base": 10.224470971667614,
+              "candidate": 10.243461362061582,
+              "all_valid_median_gain_percent": 0.18573469910170282
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.15458387921758465,
+              "verdict": "inconclusive",
+              "base": 27.448845032172528,
+              "candidate": 27.44953404298948,
+              "all_valid_median_gain_percent": 0.15458387921758465
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.256984959,
+                "candidate": 2.26137586425,
+                "gain_percent": -0.19416963448738445
+              },
+              "tokens_per_second": {
+                "base": 10.225518073216488,
+                "candidate": 10.247219615040304,
+                "gain_percent": 0.2122292647514623
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.446880099007544,
+                "candidate": 27.46959003367257,
+                "gain_percent": 0.08274140661199691
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                null,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 2.2632846835000002,
+                "candidate": 2.2615725065,
+                "gain_percent": 0.0757073671120212
+              },
+              "tokens_per_second": {
+                "base": 10.255485225854606,
+                "candidate": 10.22734079765721,
+                "gain_percent": -0.2744329261617273
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.470369930767866,
+                "candidate": 27.432837813117587,
+                "gain_percent": -0.13662763823301116
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2685667704999997,
+                "candidate": 2.2545296009999998,
+                "gain_percent": 0.6226207672666462
+              },
+              "tokens_per_second": {
+                "base": 10.234576618194826,
+                "candidate": 10.233739026911273,
+                "gain_percent": -0.008183936813399573
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.41312011631487,
+                "candidate": 27.47192060593932,
+                "gain_percent": 0.21449761783758348
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2530989515,
+                "candidate": 2.26378283725,
+                "gain_percent": -0.47194835008902425
+              },
+              "tokens_per_second": {
+                "base": 10.224470971667614,
+                "candidate": 10.243461362061582,
+                "gain_percent": 0.18573469910170282
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.46038156302563,
+                "candidate": 27.44953404298948,
+                "gain_percent": -0.039502437397875845
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2511299659999997,
+                "candidate": 2.26041307625,
+                "gain_percent": -0.410682027437248
+              },
+              "tokens_per_second": {
+                "base": 10.231407148666856,
+                "candidate": 10.228604766683697,
+                "gain_percent": -0.027389995749749207
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.48376615575379,
+                "candidate": 27.43824948807592,
+                "gain_percent": -0.16561292007770678
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.26547000025,
+                "candidate": 2.2613466307500003,
+                "gain_percent": 0.18234132900856181
+              },
+              "tokens_per_second": {
+                "base": 10.218554733378635,
+                "candidate": 10.233213834332737,
+                "gain_percent": 0.14345571694418524
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.399327197487494,
+                "candidate": 27.44168214034889,
+                "gain_percent": 0.15458387921758465
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.2509971970000002,
+                "candidate": 2.25936848,
+                "gain_percent": -0.3705142863637656
+              },
+              "tokens_per_second": {
+                "base": 10.271948940054166,
+                "candidate": 10.26907540849841,
+                "gain_percent": -0.027974550618647953
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.553365704284793,
+                "candidate": 27.51470631417727,
+                "gain_percent": -0.14030732405773128
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 2.26421146225,
+                "candidate": 2.25949808825,
+                "gain_percent": 0.20860269917954977
+              },
+              "tokens_per_second": {
+                "base": 10.241287265080391,
+                "candidate": 10.265139758195735,
+                "gain_percent": 0.23290522468473185
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 27.448845032172528,
+                "candidate": 27.503847160365908,
+                "gain_percent": 0.20038048278137044
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "greedy": {
+    "1": {
+      "requests": 28,
+      "tokens": 448,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "extra-0",
+            "extra-1",
+            "extra-2"
+          ],
+          "selected": [
+            "extra-0",
+            "extra-1",
+            "extra-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.5234992193492105,
+              "verdict": "inconclusive",
+              "base": 0.093615353,
+              "candidate": 0.093599471,
+              "all_valid_median_gain_percent": -0.5234992193492105
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 1.1999314745323675,
+              "verdict": "consistent smaller win",
+              "base": 64.63190388955216,
+              "candidate": 65.41913245075347,
+              "all_valid_median_gain_percent": 1.1999314745323675
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 1.0536595659954573,
+              "verdict": "consistent smaller win",
+              "base": 58.34063040897807,
+              "candidate": 58.99699957015807,
+              "all_valid_median_gain_percent": 1.0536595659954573
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2",
+            "extra-0",
+            "extra-1",
+            "extra-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.22222652654175779,
+              "verdict": "inconclusive",
+              "base": 0.0918687285,
+              "candidate": 0.0916650245,
+              "all_valid_median_gain_percent": 0.2509614563851126
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.27681037813032106,
+              "verdict": "consistent smaller regression",
+              "base": 64.39612828920372,
+              "candidate": 64.21787312298508,
+              "all_valid_median_gain_percent": -0.2590421021703537
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.22771333464142174,
+              "verdict": "consistent smaller regression",
+              "base": 58.34446172684001,
+              "candidate": 58.22677673742264,
+              "all_valid_median_gain_percent": -0.19057183790971988
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                null,
+                null,
+                null,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 0.098231998,
+                "candidate": 0.095427175,
+                "gain_percent": 2.9392287888643898
+              },
+              "tokens_per_second": {
+                "base": 64.53938915649115,
+                "candidate": 64.15457410731949,
+                "gain_percent": -0.5962483596468338
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 57.91010787862251,
+                "candidate": 57.756241773960255,
+                "gain_percent": -0.26569818344105434
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.0918687285,
+                "candidate": 0.0916650245,
+                "gain_percent": 0.22222652654175779
+              },
+              "tokens_per_second": {
+                "base": 64.92457970141561,
+                "candidate": 64.767933683819,
+                "gain_percent": -0.2412738262103864
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.77544275790797,
+                "candidate": 58.641603237253676,
+                "gain_percent": -0.22771333464142174
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                null,
+                null,
+                null,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 0.09393148600000001,
+                "candidate": 0.093827366,
+                "gain_percent": 0.11096975694704359
+              },
+              "tokens_per_second": {
+                "base": 64.11351551301178,
+                "candidate": 64.34167021767769,
+                "gain_percent": 0.3558605433508166
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 57.89486989394117,
+                "candidate": 58.04150002449438,
+                "gain_percent": 0.25326964344478675
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.09175202199999999,
+                "candidate": 0.091780454,
+                "gain_percent": -0.03097827343500059
+              },
+              "tokens_per_second": {
+                "base": 63.85147341172799,
+                "candidate": 63.65467269966784,
+                "gain_percent": -0.30821639900324715
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 57.91091510016473,
+                "candidate": 57.74672630266619,
+                "gain_percent": -0.2835196045763655
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                null,
+                null,
+                null,
+                null
+              ],
+              "clock_qualified": false,
+              "time_to_first_token": {
+                "base": 0.094033379,
+                "candidate": 0.094715939,
+                "gain_percent": -0.7206390045924604
+              },
+              "tokens_per_second": {
+                "base": 63.982052635900416,
+                "candidate": 64.7885031607036,
+                "gain_percent": 1.2604324049939608
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 57.80942796096478,
+                "candidate": 58.39207980709933,
+                "gain_percent": 1.0078837772412808
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.0919655955,
+                "candidate": 0.09123611549999999,
+                "gain_percent": 0.7995517959113574
+              },
+              "tokens_per_second": {
+                "base": 64.39612828920372,
+                "candidate": 64.21787312298508,
+                "gain_percent": -0.27681037813032106
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.34446172684001,
+                "candidate": 58.22677673742264,
+                "gain_percent": -0.2017072159622546
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.09310947850000001,
+                "candidate": 0.093599471,
+                "gain_percent": -0.5234992193492105
+              },
+              "tokens_per_second": {
+                "base": 65.13498187846466,
+                "candidate": 65.9165570269553,
+                "gain_percent": 1.1999314745323675
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.74955823424025,
+                "candidate": 59.368578574555386,
+                "gain_percent": 1.0536595659954573
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.0921273485,
+                "candidate": 0.09414173649999999,
+                "gain_percent": -2.1397395829850563
+              },
+              "tokens_per_second": {
+                "base": 64.75955344645992,
+                "candidate": 65.10280198718283,
+                "gain_percent": 0.5300353730923968
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.62288410809854,
+                "candidate": 58.74116561054564,
+                "gain_percent": 0.2017667746080143
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.0938325925,
+                "candidate": 0.09323795900000001,
+                "gain_percent": 0.6377590268787481
+              },
+              "tokens_per_second": {
+                "base": 64.63190388955216,
+                "candidate": 65.41913245075347,
+                "gain_percent": 1.218018523091291
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.34063040897807,
+                "candidate": 58.99699957015807,
+                "gain_percent": 1.125063539044291
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.092549998,
+                "candidate": 0.092291861,
+                "gain_percent": 0.2796963862284674
+              },
+              "tokens_per_second": {
+                "base": 64.0307529841319,
+                "candidate": 64.34988482413476,
+                "gain_percent": 0.4984040092140596
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.023018251465075,
+                "candidate": 58.28128991605581,
+                "gain_percent": 0.44511932052795355
+              }
+            }
+          }
+        },
+        {
+          "round": "extra-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.093615353,
+                "candidate": 0.0946529555,
+                "gain_percent": -1.0962177509607707
+              },
+              "tokens_per_second": {
+                "base": 63.700380743391044,
+                "candidate": 64.14180258111307,
+                "gain_percent": 0.6929657759821461
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 57.611288748712255,
+                "candidate": 57.87068813548092,
+                "gain_percent": 0.45025791368789037
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.09319236750000001,
+                "candidate": 0.091973589,
+                "gain_percent": 1.3251396550372885
+              },
+              "tokens_per_second": {
+                "base": 64.45409889186448,
+                "candidate": 64.23510289330393,
+                "gain_percent": -0.3397704759288578
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 58.293036077461906,
+                "candidate": 58.18843711718124,
+                "gain_percent": -0.17943645985718515
+              }
+            }
+          }
+        }
+      ]
+    },
+    "4": {
+      "requests": 168,
+      "tokens": 2688,
+      "bit_exact": true,
+      "timing": {
+        "1024-0": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": 0.13342340352267001,
+              "verdict": "inconclusive",
+              "base": 0.2512146315,
+              "candidate": 0.251040018,
+              "all_valid_median_gain_percent": 0.13342340352267001
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.6817003495198537,
+              "verdict": "inconclusive",
+              "base": 52.61084939917114,
+              "candidate": 52.25839720072946,
+              "all_valid_median_gain_percent": -0.6817003495198537
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.5646120131883037,
+              "verdict": "inconclusive",
+              "base": 163.87707971566854,
+              "candidate": 163.10546545127724,
+              "all_valid_median_gain_percent": -0.5646120131883037
+            }
+          }
+        },
+        "1024-1": {
+          "valid_rounds": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "selected": [
+            "abba-0",
+            "abba-1",
+            "abba-2"
+          ],
+          "metrics": {
+            "time_to_first_token": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.04571760312749307,
+              "verdict": "inconclusive",
+              "base": 0.24853616975,
+              "candidate": 0.24848115575000002,
+              "all_valid_median_gain_percent": -0.04571760312749307
+            },
+            "tokens_per_second": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.44445809210567067,
+              "verdict": "consistent smaller regression",
+              "base": 51.68698474282034,
+              "candidate": 51.457257756565454,
+              "all_valid_median_gain_percent": -0.44445809210567067
+            },
+            "aggregate_output_tps_including_prefill": {
+              "qualified_rounds": 3,
+              "median_gain_percent": -0.27420629311862843,
+              "verdict": "consistent smaller regression",
+              "base": 162.0346282173822,
+              "candidate": 161.59031906977876,
+              "all_valid_median_gain_percent": -0.27420629311862843
+            }
+          }
+        }
+      },
+      "attempts": [
+        {
+          "round": "abba-0",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.2512146315,
+                "candidate": 0.25087989899999996,
+                "gain_percent": 0.13342340352267001
+              },
+              "tokens_per_second": {
+                "base": 52.61084939917114,
+                "candidate": 52.252201054931625,
+                "gain_percent": -0.6817003495198537
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 163.87707971566854,
+                "candidate": 162.9518100367317,
+                "gain_percent": -0.5646120131883037
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.24834361975000002,
+                "candidate": 0.24848115575000002,
+                "gain_percent": -0.05535067622527423
+              },
+              "tokens_per_second": {
+                "base": 51.75583562253665,
+                "candidate": 51.7294983013979,
+                "gain_percent": -0.050887635803675835
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 162.22947633990694,
+                "candidate": 162.10327024640392,
+                "gain_percent": -0.0777947980541982
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-1",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.2496015175,
+                "candidate": 0.251040018,
+                "gain_percent": -0.5730164104752244
+              },
+              "tokens_per_second": {
+                "base": 52.70693272331066,
+                "candidate": 52.25839720072946,
+                "gain_percent": -0.8509990989910565
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 164.26285455490114,
+                "candidate": 163.10546545127724,
+                "gain_percent": -0.7045957570626982
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.248687742,
+                "candidate": 0.24705857325,
+                "gain_percent": 0.6594261144507785
+              },
+              "tokens_per_second": {
+                "base": 51.68698474282034,
+                "candidate": 51.457257756565454,
+                "gain_percent": -0.44445809210567067
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 162.0346282173822,
+                "candidate": 161.59031906977876,
+                "gain_percent": -0.27420629311862843
+              }
+            }
+          }
+        },
+        {
+          "round": "abba-2",
+          "results": {
+            "1024-0": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.25667814850000004,
+                "candidate": 0.25166378224999997,
+                "gain_percent": 1.9924862469955507
+              },
+              "tokens_per_second": {
+                "base": 52.26713061514508,
+                "candidate": 52.56908700751286,
+                "gain_percent": 0.5777175613315366
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 162.29157307910623,
+                "candidate": 163.65241230384743,
+                "gain_percent": 0.8385150251010831
+              }
+            },
+            "1024-1": {
+              "sm_clock_mhz": [
+                2190.0,
+                2190.0,
+                2190.0,
+                2190.0
+              ],
+              "clock_qualified": true,
+              "time_to_first_token": {
+                "base": 0.24853616975,
+                "candidate": 0.2486498465,
+                "gain_percent": -0.04571760312749307
+              },
+              "tokens_per_second": {
+                "base": 51.63364885371611,
+                "candidate": 51.08580164159317,
+                "gain_percent": -1.0610274971560751
+              },
+              "aggregate_output_tps_including_prefill": {
+                "base": 161.88537183688766,
+                "candidate": 160.51039391352634,
+                "gain_percent": -0.8493527906565324
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
