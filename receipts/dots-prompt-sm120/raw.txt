@@ -1,0 +1,4 @@
+qkv M=1024 N=2048 K=1536 SK=2 rotations=32 byte_checks=5/5 base_ms=0.096904 tile_ms=0.064603
+o M=1024 N=1536 K=1536 SK=2 rotations=43 byte_checks=5/5 base_ms=0.069956 tile_ms=0.057894
+gate_up M=1024 N=17920 K=1536 SK=1 rotations=4 byte_checks=5/5 base_ms=0.661656 tile_ms=0.426872
+down M=1024 N=1536 K=8960 SK=4 rotations=8 byte_checks=5/5 base_ms=0.387218 tile_ms=0.324426
