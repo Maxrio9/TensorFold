@@ -1,0 +1,9 @@
+# Eager CUDA module loading, parallel binary loading and readback on SM120
+
+The exploratory A-B-B-A cold time to first token was 58.461 ms at baseline and 59.144 ms with all three changes (-1.16% paired speed). Process launch to ready averaged 35.44 s at baseline and 35.64 s with the candidate. One-stream greedy decode changed +2.64%. The exploratory round failed clock qualification. The server returned the same greedy and sampled tokens on every arm.
+
+The combined configuration missed the 3% screen and did not advance to confirmation. This exploratory comparison does not establish a reportable speed change.
+
+The unmodified server trace placed 4.552 ms and 2.062 ms gaps between its first three kernels. This motivated a test of eager module loading, four host loader threads, and reduced greedy readback. All CUDA settings were process-local. The raw trace came from a profiled baseline; the timings here used the real, unprofiled server. The primary was first-request time to first token after readiness. Startup on this machine includes a cold model read from a mounted filesystem.
+
+The target was the original dots.mocr BF16 text model at e539fbb52280393adc081b289ec597430a0f9031 on TensorFold 1.2.9 e7ff97e132f2268c7c52bf55d1b8bdbb033462f3, native SM120, driver 615.78.08. Context 4,096 with drafting off, 1,024 pinned public prompt IDs and 48 outputs, no prompt-cache reuse. The baseline and candidate used the [common headless reserve overlay and previous readback patch](../rtx-sm120/README.md). [CUDA environment variables](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html), [pinned trace](../dots-prompt-sm120/first-token-trace.json), [plan](plan.txt), [per-request records and clock flags](arms.jsonl.gz), [A-B-B-A results](review.json).

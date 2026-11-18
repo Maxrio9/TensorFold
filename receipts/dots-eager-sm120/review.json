@@ -1,0 +1,61 @@
+{
+  "screen": {
+    "exact": true,
+    "start_to_ready_s": [
+      35.64284334999684,
+      36.04799464700045,
+      35.23870652800542,
+      35.24258396300138
+    ],
+    "timings": {
+      "1024-0": {
+        "sm_clock_mhz": [
+          2437.0,
+          2407.0,
+          2422.0,
+          2415.0
+        ],
+        "clock_qualified": false,
+        "time_to_first_token": {
+          "base": 0.058460546,
+          "candidate": 0.059144493500000006,
+          "gain_percent": -1.1564009758575522
+        },
+        "tokens_per_second": {
+          "base": 168.63553161939103,
+          "candidate": 173.0824840637261,
+          "gain_percent": 2.637019850817568
+        },
+        "aggregate_output_tps_including_prefill": {
+          "base": 138.4508945238137,
+          "candidate": 140.940218705319,
+          "gain_percent": 1.7979834583713217
+        }
+      },
+      "1024-1": {
+        "sm_clock_mhz": [
+          2437.0,
+          2407.0,
+          2422.0,
+          2415.0
+        ],
+        "clock_qualified": false,
+        "time_to_first_token": {
+          "base": 0.0405580465,
+          "candidate": 0.040041716,
+          "gain_percent": 1.289481449796015
+        },
+        "tokens_per_second": {
+          "base": 170.2711423154726,
+          "candidate": 173.51711261104612,
+          "gain_percent": 1.9063537434661049
+        },
+        "aggregate_output_tps_including_prefill": {
+          "base": 151.24135923672506,
+          "candidate": 153.99335817344146,
+          "gain_percent": 1.8196073816084457
+        }
+      }
+    }
+  }
+}
