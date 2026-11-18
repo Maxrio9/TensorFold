@@ -1,0 +1,60 @@
+diff --git a/zig/src/cuda_dense/device_fail_test.zig b/zig/src/cuda_dense/device_fail_test.zig
+index 6bfba6aa0..83a9a9494 100644
+--- a/zig/src/cuda_dense/device_fail_test.zig
++++ b/zig/src/cuda_dense/device_fail_test.zig
+@@ -19,6 +19,7 @@ pub const Fake = struct {
+     var fail_wait = false;
+     var argmax: usize = 0;
+     var drawn: usize = 0;
++    var downloads: usize = 0;
+     pub const Copy = struct { dst: u64, src: u64, len: usize };
+     pub var copies: [8]Copy = undefined; // the device-to-device copies, in order
+     pub var copied: usize = 0;
+@@ -30,6 +31,7 @@ pub const Fake = struct {
+         fail_wait = false;
+         argmax = 0;
+         drawn = 0;
++        downloads = 0;
+         copied = 0;
+     }
+     fn alloc(out: *u64, len: usize) callconv(.c) c_int {
+@@ -94,6 +96,7 @@ pub const Fake = struct {
+         return 0;
+     }
+     fn down(dst: ?*anyopaque, src: u64, len: usize) callconv(.c) c_int {
++        downloads += 1;
+         @memcpy(@as([*]u8, @ptrCast(dst.?))[0..len], mem[src - base ..][0..len]);
+         return 0;
+     }
+@@ -207,7 +210,13 @@ test "a sampled row over NaN or an infinity is refused before any draw reads it,
+     try t.expectEqual(@as(usize, 1), Fake.drawn);
+     picks[1] = .{ .token = 4, .nonfinite = 0 };
+     @memcpy(Fake.mem[64..][0..16], std.mem.sliceAsBytes(&picks));
++    const before = Fake.downloads;
+     try x.tokens(0, &out);
+     try t.expectEqualSlices(u32, &.{ 3, 4 }, &out);
++    try t.expectEqual(before + 1, Fake.downloads);
++    greedy[0] = false;
++    try x.tokens(0, &out);
++    try t.expectEqualSlices(u32, &.{ 7, 4 }, &out);
++    try t.expectEqual(before + 3, Fake.downloads);
+     cuda.copy_source.dropSpares(&d, cuda.copy_source.current());
+ }
+diff --git a/zig/src/cuda_dense/draws.zig b/zig/src/cuda_dense/draws.zig
+index 770d2cdd5..62394b625 100644
+--- a/zig/src/cuda_dense/draws.zig
++++ b/zig/src/cuda_dense/draws.zig
+@@ -88,9 +88,11 @@ pub const Draws = struct {
+     pub fn tokens(x: *Draws, at: usize, out: []u32) !void {
+         try x.s.synchronize();
+         var picks: [round_rows]Pick = undefined;
+-        try x.tok.download(at * 4, std.mem.sliceAsBytes(out));
++        const greedy = x.greedy[at..][0..out.len];
++        if (std.mem.indexOfScalar(bool, greedy, false) != null)
++            try x.tok.download(at * 4, std.mem.sliceAsBytes(out));
+         try x.picks.download(at * @sizeOf(Pick), std.mem.sliceAsBytes(picks[0..out.len]));
+-        for (out, picks[0..out.len], x.greedy[at..][0..out.len]) |*t, p, g| {
++        for (out, picks[0..out.len], greedy) |*t, p, g| {
+             if (p.nonfinite != 0) return error.NonFiniteLogits;
+             if (g) t.* = p.token;
+         }

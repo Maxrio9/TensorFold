@@ -1,0 +1,11 @@
+desktop GPU reserve GiB 0
+fp8 paged=0 prefix=0 rows=1 page=48 parity=pass base_ms=0.00928 patch_ms=0.00919
+fp8 paged=0 prefix=31 rows=33 page=48 parity=pass base_ms=0.01002 patch_ms=0.01081
+fp8 paged=0 prefix=255 rows=65 page=256 parity=pass base_ms=0.03351 patch_ms=0.03350
+fp8 paged=0 prefix=1000 rows=193 page=48 parity=pass base_ms=0.11349 patch_ms=0.11046
+fp8 paged=0 prefix=3073 rows=128 page=256 parity=pass base_ms=0.29677 patch_ms=0.28771
+fp8 paged=1 prefix=0 rows=1 page=48 parity=pass base_ms=0.00925 patch_ms=0.00930
+fp8 paged=1 prefix=31 rows=33 page=48 parity=pass base_ms=0.01079 patch_ms=0.01062
+fp8 paged=1 prefix=255 rows=65 page=256 parity=pass base_ms=0.03497 patch_ms=0.03458
+fp8 paged=1 prefix=1000 rows=193 page=48 parity=pass base_ms=0.12140 patch_ms=0.12111
+fp8 paged=1 prefix=3073 rows=128 page=256 parity=pass base_ms=0.30715 patch_ms=0.30644

@@ -1,0 +1,125 @@
+diff --git a/zig/qwen35_rounds_host.zig b/zig/qwen35_rounds_host.zig
+index 48b56f08d..6388648fd 100644
+--- a/zig/qwen35_rounds_host.zig
++++ b/zig/qwen35_rounds_host.zig
+@@ -266,3 +266,19 @@ test "Verify width calibration: straight metadata needs no branch scratch and ma
+     try std.testing.expect((try R.build(&storage, &fork, true)) > 1);
+     try core.tree_slots.validate(&branch, R.steps(&storage)[0..branch.len], 0, 16);
+ }
++
++test "Verify width calibration: round uploads end at the last bucket ancestor and reject an oversized verify schedule" {
++    const R = q.round;
++    var storage: [R.bytes]u8 align(16) = @splat(0xa5);
++    try std.testing.expectEqual(R.most_verify, R.steps(&storage).len);
++    try std.testing.expectEqual(R.src_at, R.textBytes(R.max_rows));
++    for ([_]usize{ 1, 4, 16, 128, 129, 4096 }) |rows| {
++        const end = R.textBytes(rows);
++        const ancestors = R.ancestors(&storage)[0..rows];
++        try std.testing.expectEqual(@intFromPtr(storage[end..].ptr), @intFromPtr(ancestors.ptr) + std.mem.sliceAsBytes(ancestors).len);
++    }
++    const parts = [_]q.engine.Part{ .{ .cache = undefined, .rows = 64 }, .{ .cache = undefined, .rows = 64 }, .{ .cache = undefined, .rows = 1 } };
++    try std.testing.expectError(error.InvalidQwenSegments, R.build(&storage, &parts, true));
++    try std.testing.expectEqual(@as(u8, 0xa5), storage[R.rules_at]);
++    try std.testing.expectEqual(@as(usize, 1), try R.build(&storage, &.{.{ .cache = undefined, .rows = R.max_rows }}, false));
++}
+diff --git a/zig/src/families/qwen3_5/cuda_engine.zig b/zig/src/families/qwen3_5/cuda_engine.zig
+--- a/zig/src/families/qwen3_5/cuda_engine.zig
++++ b/zig/src/families/qwen3_5/cuda_engine.zig
+@@ -502,8 +504,8 @@ pub const Engine = struct {
+             @memcpy(std.mem.bytesAsSlice(i32, st[src_at..][0 .. total * 4]), im.src[p0..][0..total]);
+             Round.stageImageTables(st, im, p0, total);
+         }
+-        try e.tables.uploadAsync(0, st[0..if (images != null) tables_len else src_at], e.stream.handle); // text: as before
+         var shape = Shape.init(total, parts.len, record, e.n_taps > 0, @intCast(Round.variant(slot_peak)));
++        try e.tables.uploadAsync(0, st[0..if (images != null) tables_len else Round.textBytes(shape.total)], e.stream.handle);
+         if (record) for (parts) |p| {
+             try recurrent.mark(p.cache, false);
+             if (p.rows == 1 and p.undo) try recurrent.mark(p.cache, true);
+diff --git a/zig/src/families/qwen3_5/cuda_round.zig b/zig/src/families/qwen3_5/cuda_round.zig
+index cc57633ab..01e6af5d6 100644
+--- a/zig/src/families/qwen3_5/cuda_round.zig
++++ b/zig/src/families/qwen3_5/cuda_round.zig
+@@ -13,15 +13,21 @@ pub const ids_at = 0;
+ pub const segs_at = max_rows * 4;
+ pub const rowseg_at = segs_at + max_segs * @sizeOf(Seg);
+ pub const rowpar_at = rowseg_at + max_rows * 4;
+-pub const rowanc_at = rowpar_at + max_rows * 4;
+-pub const steps_at = rowanc_at + max_rows * @sizeOf(Ancestor);
+-pub const rules_at = steps_at + max_rows * @sizeOf(slots.Step);
++pub const steps_at = rowpar_at + max_rows * 4;
++pub const rules_at = steps_at + most_verify * @sizeOf(slots.Step);
+ pub const meta_at = rules_at + most_verify * @sizeOf(Rule);
+ pub const tokens_at = meta_at + most_verify * 4;
+ pub const params_at = tokens_at + most_verify * 4;
+-pub const src_at = params_at + 8 * 4;
++pub const rowanc_at = params_at + 8 * 4;
++pub const src_at = rowanc_at + max_rows * @sizeOf(Ancestor);
+ pub const mpos_at = src_at + max_rows * 4;
+ pub const bytes = mpos_at + 3 * max_rows * 4;
++/// Ancestors end a text transfer. Include every row the captured bucket can launch.
++pub fn textBytes(launch_rows: usize) usize {
++    std.debug.assert(launch_rows > 0 and launch_rows <= max_rows);
++    return rowanc_at + launch_rows * @sizeOf(Ancestor);
++}
++
+ /// An image prompt's rows for its prompt chunks: device feature rows, each prompt row's feature row, its positions.
+ pub const Images = struct {
+     features: u64, // bf16 [image rows, hidden]
+@@ -51,7 +57,7 @@ pub fn ancestors(st: []u8) []Ancestor {
+     return @alignCast(std.mem.bytesAsSlice(Ancestor, st[rowanc_at..][0 .. max_rows * @sizeOf(Ancestor)]));
+ }
+ pub fn steps(st: []u8) []slots.Step {
+-    return @alignCast(std.mem.bytesAsSlice(slots.Step, st[steps_at..][0 .. max_rows * @sizeOf(slots.Step)]));
++    return @alignCast(std.mem.bytesAsSlice(slots.Step, st[steps_at..][0 .. most_verify * @sizeOf(slots.Step)]));
+ }
+ pub fn variant(peak: usize) usize {
+     return if (peak <= 1) 1 else if (peak <= 2) 2 else if (peak <= 4) 4 else if (peak <= 8) 8 else 16;
+@@ -71,8 +77,9 @@ pub fn buildWithScratch(st: []u8, parts: []const @import("cuda_engine.zig").Part
+     var sizes = std.heap.FixedBufferAllocator.init(scratch);
+     var first: usize = 0;
+     var peak: usize = 1;
++    const capacity: usize = if (record) most_verify else max_rows;
+     for (parts, 0..) |p, segment| {
+-        if (p.rows == 0 or p.rows > max_rows - first or (record and p.rows > most_window)) return error.InvalidQwenSegments;
++        if (p.rows == 0 or p.rows > capacity - first or (record and p.rows > most_window)) return error.InvalidQwenSegments;
+         if (p.parents) |ps| if (!record or ps.len != p.rows or ps[0] != -1) return error.InvalidQwenParents;
+         var local: [max_rows]i32 = undefined;
+         var chain = true;
+@@ -96,6 +103,5 @@ pub fn buildWithScratch(st: []u8, parts: []const @import("cuda_engine.zig").Part
+         }
+         first += p.rows;
+     }
+-    if (record and first > most_verify) return error.InvalidQwenSegments;
+     return peak;
+ }
+diff --git a/zig/src/families/qwen3_5/cuda_stage_forward.zig b/zig/src/families/qwen3_5/cuda_stage_forward.zig
+index 62f7f2c21..c218818f0 100644
+--- a/zig/src/families/qwen3_5/cuda_stage_forward.zig
++++ b/zig/src/families/qwen3_5/cuda_stage_forward.zig
+@@ -2,6 +2,7 @@
+ const std = @import("std");
+ const cuda = @import("cuda");
+ const E = @import("cuda_engine.zig");
++const Round = @import("cuda_round.zig");
+ 
+ /// A stage's layers [first, end) of the model; `heads`: it also runs the final norm and the head (rank 0 of a ring).
+ pub const Span = struct { first: usize, end: usize, heads: bool };
+@@ -65,7 +66,8 @@ pub const Held = struct {
+ 
+     /// The forward's staged tables and shape, as its layers' launches read them.
+     pub fn hold(h: *Held, staged: []const u8, shape: E.Engine.Shape, rows: usize) void {
+-        @memcpy(h.tables, staged[0..h.tables.len]);
++        const n = Round.textBytes(shape.total);
++        @memcpy(h.tables[0..n], staged[0..n]);
+         h.shape = shape;
+         h.rows = rows;
+     }
+@@ -73,7 +75,7 @@ pub const Held = struct {
+ 
+ /// A held round's head: its tables staged again (later rounds replaced them), its rows taken back, `keep` read.
+ pub fn land(e: *E.Engine, parts: []const E.Part, keep: E.Keep, h: *const Held) !void {
+-    try e.tables.uploadAsync(0, h.tables, e.stream.handle);
++    try e.tables.uploadAsync(0, h.tables[0..Round.textBytes(h.shape.total)], e.stream.handle);
+     try head(e, h.shape, h.rows);
+     try e.land(parts, keep, h.rows);
+ }

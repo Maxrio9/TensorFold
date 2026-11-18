@@ -1,0 +1,49 @@
+diff --git a/zig/kernels/cuda/prefill_attention_rows.cuh b/zig/kernels/cuda/prefill_attention_rows.cuh
+index 41b185ef0..0401ff818 100644
+--- a/zig/kernels/cuda/prefill_attention_rows.cuh
++++ b/zig/kernels/cuda/prefill_attention_rows.cuh
+@@ -136,10 +136,12 @@
+ #pragma unroll
+     for (int i = 0; i < NS; ++i) {
+         if (i < items) stage(i);
+-        commit();
++        if constexpr (!F8) commit();
+     }
+     if constexpr (F8) {
+         if (NS < items) fetch(NS);
++        // FP8 stages K/V through registers. Only the initial shared query tile used cp.async.
++        if constexpr (!QREG) cp_wait<0>();
+     }
+     float o[NB][4];
+ #pragma unroll
+@@ -149,7 +151,7 @@
+     float m0 = -INFINITY, m1 = -INFINITY, l0 = 0.0f, l1 = 0.0f;
+     const int pos0 = causal ? p0 + wrow + g : limit - 1, pos1 = causal ? pos0 + 8 : pos0;
+     auto take = [&](int it) -> const uint4* {           // item it's slot, once every thread's copy has landed
+-        cp_wait<NS - 1>();
++        if constexpr (!F8) cp_wait<NS - 1>();
+         __syncthreads();
+         return slots + (it % NS) * HALF * CS;
+     };
+@@ -160,8 +162,10 @@
+                 put(it + NS);
+                 if (it + NS + 1 < items) fetch(it + NS + 1);
+             }
+-        } else if (it + NS < items) stage(it + NS);
+-        commit();
++        } else {
++            if (it + NS < items) stage(it + NS);
++            commit();
++        }
+     };
+     auto scores = [&](float (&s)[4][4], const uint4* sl) {
+ #pragma unroll
+@@ -264,7 +268,7 @@
+         values(pa[2], pa[3], take(it + 3));
+         done(it + 3);
+     }
+-    cp_wait<0>();
++    if constexpr (!F8) cp_wait<0>();
+     const int r0 = wrow + g, r1 = r0 + 8;
+ #pragma unroll
+     for (int i = 0; i < C; ++i) {

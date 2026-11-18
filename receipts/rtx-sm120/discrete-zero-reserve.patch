@@ -1,0 +1,11 @@
+--- a/zig/src/native/cuda_memory.zig
++++ b/zig/src/native/cuda_memory.zig
+@@ -134,6 +134,8 @@
+     const t = std.mem.trim(u8, text orelse "", " ");
+     if (t.len == 0) return @max(f.at_least, total / f.share);
+     const g = std.fmt.parseFloat(f64, t) catch return error.Invalid;
++    // An explicit zero permits using a discrete card fully in a headless compute profile.
++    if (!unified and g == 0) return 0;
+     if (!(g >= f.least)) return error.Invalid;
+     const bytes = try scaledBytes(g);
+     return if (bytes <= total) bytes else error.Invalid;

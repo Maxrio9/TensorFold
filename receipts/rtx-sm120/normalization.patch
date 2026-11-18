@@ -1,0 +1,111 @@
+diff --git a/zig/src/families/qwen3_5/cuda_engine.zig b/zig/src/families/qwen3_5/cuda_engine.zig
+--- a/zig/src/families/qwen3_5/cuda_engine.zig
++++ b/zig/src/families/qwen3_5/cuda_engine.zig
+@@ -418,8 +418,10 @@ pub const Engine = struct {
+         try e.run(e.fns.argmax_merge, .{ n, 1, 1 }, .{ 32, 1, 1 }, .{ pv, pi, @as(c_int, @intCast(slices)), toks + first * 4 });
+     }
+ 
+-    pub fn norm(e: *Engine, residual: bool, w: u64, rows: usize) !void {
+-        try e.run(if (e.g.bf16) e.fns.norm_shift else e.fns.norm, .{ rows, 1, 1 }, .{ 256, 1, 1 }, .{ e.h, if (residual) e.r else @as(u64, 0), w, e.x, e.g.eps, @as(c_int, @intCast(e.g.hidden)), e.tables.ptr + params_at, e.xs });
++    /// Normalize a range in place in h and at the matching offset in x. Optional group sums start at sums.
++    pub fn normRows(e: *Engine, residual: bool, w: u64, first: usize, rows: usize, sums: u64) !void {
++        const offset = first * e.g.hidden * 2;
++        try e.run(if (e.g.bf16) e.fns.norm_shift else e.fns.norm, .{ rows, 1, 1 }, .{ 256, 1, 1 }, .{ e.h + offset, if (residual) e.r + offset else @as(u64, 0), w, e.x + offset, e.g.eps, @as(c_int, @intCast(e.g.hidden)), e.tables.ptr + params_at, sums });
+     }
+ 
+     /// Refuse the whole frame before settling any prior window or launching work.
+diff --git a/zig/src/families/qwen3_5/cuda_forward.zig b/zig/src/families/qwen3_5/cuda_forward.zig
+index 21742b846..7285f8998 100644
+--- a/zig/src/families/qwen3_5/cuda_forward.zig
++++ b/zig/src/families/qwen3_5/cuda_forward.zig
+@@ -56,7 +56,7 @@ pub fn body(e: *E.Engine, shape: anytype) !void {
+         const tail = tail_at != null and i + 1 == e.layers.len;
+         const t0: usize = if (tail) tail_at.? else 0;
+         const rows: usize = total - t0;
+-        try e.norm(g.first + i != 0, l.input_norm, total);
++        try e.normRows(g.first + i != 0, l.input_norm, 0, total, sums);
+         if (e.learning) |k| try k.input(i, e.h, total);
+         switch (l.mixer) {
+             .delta => |m| {
+@@ -112,7 +112,7 @@ pub fn body(e: *E.Engine, shape: anytype) !void {
+                 ai += 1;
+             },
+         }
+-        try e.norm(true, l.post_norm, total);
++        try e.normRows(true, l.post_norm, t0, rows, sums);
+         if (e.learning) |k| try k.post(i, e.h, e.x, total);
+         // the tail: its rows' MLP at buffer row 0, their outputs into r at their own rows
+         const x0 = e.x + t0 * g.hidden * 2;
+@@ -164,11 +164,13 @@ fn shared(e: *E.Engine, f: cuda.Function, comptime s: sig.Sig, grid: [3]usize, t
+ pub fn finish(e: anytype, total: usize, heads: usize, hidden: bool, rows: bool) !void {
+     if (hidden) return;
+     const g = e.g;
+-    try e.norm(true, e.final_norm, total);
+-    if (rows) return;
++    if (rows) return e.normRows(true, e.final_norm, 0, total, 0);
++    const first = total - heads;
++    const sums = if (e.head == .a4 or e.head == .an) e.xs else 0;
++    try e.normRows(true, e.final_norm, first, heads, sums);
+     if (e.learning) |k| try k.final(e.h, total);
+     // the head over the kept rows
+-    try e.proj(e.head, e.x + (total - heads) * g.hidden * 2, e.logits, heads, false);
++    try e.projAgain(e.head, e.x + first * g.hidden * 2, e.logits, heads, false);
+     if (e.learning) |k| try hooks.logits(k, e.logits, e.stream);
+ }
+ 
+diff --git a/zig/src/families/qwen3_5/cuda_read_cost_test.zig b/zig/src/families/qwen3_5/cuda_read_cost_test.zig
+index 451719de9..1c7793249 100644
+--- a/zig/src/families/qwen3_5/cuda_read_cost_test.zig
++++ b/zig/src/families/qwen3_5/cuda_read_cost_test.zig
+@@ -19,17 +19,24 @@ const Recorder = struct {
+     x: u64 = 200,
+     logits: u64 = 300,
+     final_norm: u64 = 400,
+-    head: u64 = 500,
++    head: engine.Proj = .{ .a4 = undefined },
++    xs: u64 = 600,
+     stream: @import("cuda").Stream = undefined,
+     norms: usize = 0,
+     heads: usize = 0,
+     src: u64 = 0,
+-    pub fn norm(r: *@This(), residual: bool, weight: u64, rows: usize) !void {
+-        try t.expect(residual and weight == r.final_norm and rows == 3);
++    first: usize = 0,
++    rows: usize = 0,
++    sums: u64 = 0,
++    pub fn normRows(r: *@This(), residual: bool, weight: u64, first: usize, rows: usize, sums: u64) !void {
++        try t.expect(residual and weight == r.final_norm);
++        r.first = first;
++        r.rows = rows;
++        r.sums = sums;
+         r.norms += 1;
+     }
+-    pub fn proj(r: *@This(), weight: u64, src: u64, dst: u64, rows: usize, prompt: bool) !void {
+-        try t.expect(weight == r.head and dst == r.logits and rows == 1 and !prompt);
++    pub fn projAgain(r: *@This(), weight: engine.Proj, src: u64, dst: u64, rows: usize, prompt: bool) !void {
++        try t.expect(std.meta.activeTag(weight) == std.meta.activeTag(r.head) and dst == r.logits and rows == r.rows and !prompt);
+         r.heads += 1;
+         r.src = src;
+     }
+@@ -42,9 +49,21 @@ test "dense read cost: hidden taps skip only the output tail and a scoring pass
+     try @import("cuda_forward.zig").finish(&r, 3, 1, false, false);
+     try t.expectEqual(@as(usize, 1), r.norms);
+     try t.expectEqual(@as(usize, 1), r.heads);
++    try t.expect(r.first == 2 and r.rows == 1 and r.sums == r.xs);
+     // a readout piece's rows: the final norm, and no head
+     try @import("cuda_forward.zig").finish(&r, 3, 1, false, true);
+     try t.expectEqual(@as(usize, 2), r.norms);
+     try t.expectEqual(@as(usize, 1), r.heads);
+     try t.expectEqual(@as(u64, 456), r.src);
++    try t.expect(r.first == 0 and r.rows == 3 and r.sums == 0);
++}
++
++test "dense read cost: verification normalizes every head row and emits sums only for affine projections" {
++    var r: Recorder = .{};
++    for ([_]engine.Proj{ .{ .a4 = undefined }, .{ .an = undefined }, .{ .ql = undefined }, .{ .x3 = undefined }, .{ .bf = undefined } }) |head| {
++        r.head = head;
++        try @import("cuda_forward.zig").finish(&r, 32, 32, false, false);
++        try t.expect(r.first == 0 and r.rows == 32 and r.src == r.x);
++        try t.expectEqual(if (head == .a4 or head == .an) r.xs else 0, r.sums);
++    }
+ }
