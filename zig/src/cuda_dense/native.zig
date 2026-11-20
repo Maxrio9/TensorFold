@@ -162,6 +162,8 @@ pub fn Core(comptime R: type) type {
             errdefer closeTower(own.v);
             own.k = try kern.Kernels.load(ctx, g);
             errdefer own.k.deinit();
+            // TF_DOTS_PROMPT_BF16=1: the text decoder's BF16 projections take qmmf's 128-row prompt tile on sm_12x
+            if (try @import("sys").environment.read(bool, "TF_DOTS_PROMPT_BF16", false)) try own.k.lane.loadPrompt(ctx.d);
             own.own = try R.Kernels.load(ctx);
             errdefer own.own.deinit();
             const room: u64 = if (o.room) |r| r.read(r.ctx) orelse 0 else std.math.maxInt(u64);

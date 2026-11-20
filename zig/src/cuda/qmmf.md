@@ -21,8 +21,9 @@ qualification.
 # BF16 prompt tiles
 
 A family opts in with `Lane.loadPrompt`, which loads the tile only on
-sm_12x and reads the device's multiprocessor count. Only Flash Next
-calls it today, so other families keep the existing tiles. On sm_12x,
+sm_12x and reads the device's multiprocessor count. Flash Next calls
+it by default; the dense text decoder (dots.mocr) calls it only with
+`TF_DOTS_PROMPT_BF16=1`, so other families keep the existing tiles. On sm_12x,
 BF16 calls with at least 512 rows, N >= 128, K >= 512 and 128-column
 padded weights use a 128x128 CTA: WM=2, WN=4, 256 threads, three K64
 stages. Dynamic shared memory is 98,432 bytes, including the stage
