@@ -4,6 +4,7 @@ const cuda = @import("cuda");
 const lanes = @import("lanes");
 const engine = @import("loop_engine.zig");
 const ops = @import("ops.zig");
+const dspark = @import("dspark_cuda.zig");
 
 const Model = engine.Model;
 const Kernels = engine.Kernels;
@@ -48,7 +49,63 @@ pub const Backend = struct {
     next: u64 = 0,
     held: usize = 0, // slots with buffers
 
+    graphs: ?@import("loop_graphs.zig").Graphs = null,
+    drafter: ?dspark.Drafter = null,
+    costs: [dspark.depth + 1]lanes.config.Cost = undefined,
+    priced_width: usize = 0,
+
     const be = lanes.backend;
+
+    pub fn warm(b: *Backend, io: std.Io) !void {
+        if (!b.m.w.c.exl3) return;
+        b.graphs = @as(@TypeOf(b.graphs.?), undefined);
+        const g = &b.graphs.?;
+        g.init(b.gpa, b.d);
+        errdefer {
+            b.s.synchronize() catch {};
+            g.deinit();
+            b.graphs = null;
+        }
+        try g.warm(b.m, b.k, b.s, 1, false);
+        const d = if (b.drafter) |*d| d else return;
+        b.m.taps = .{ .function = d.k.tap, .buffer = d.scratch.taps };
+        b.m.capture_taps = true;
+        defer b.m.capture_taps = false;
+        const max = @min(b.costs.len, b.m.context);
+        const zeros: [window_rows]u32 = @splat(0);
+        for (1..max + 1) |width| {
+            try g.warm(b.m, b.k, b.s, width, width > 1);
+            try b.m.reset(b.s);
+            try b.s.synchronize();
+            const t0 = std.Io.Clock.awake.now(io);
+            try b.decode(zeros[0..width], 0, width > 1);
+            try b.s.synchronize();
+            const verify_ms = elapsed(io, t0);
+            var propose_ms: f64 = 0;
+            if (width > 1) {
+                d.reset();
+                try d.absorb(&b.k.glue, b.s, 0, width, b.m.w.c.text.eps);
+                try b.s.synchronize();
+                const t1 = std.Io.Clock.awake.now(io);
+                try d.propose(b.m, b.k, b.s, 0, width - 1, null);
+                propose_ms = elapsed(io, t1);
+            }
+            b.costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms + propose_ms };
+        }
+        b.priced_width = max;
+        d.reset();
+        try b.m.reset(b.s);
+        try b.s.synchronize();
+    }
+
+    fn elapsed(io: std.Io, t: std.Io.Timestamp) f64 {
+        return @as(f64, @floatFromInt(t.durationTo(std.Io.Clock.awake.now(io)).toNanoseconds())) / 1e6;
+    }
+
+    pub fn decode(b: *Backend, tokens: []const u32, position: usize, record: bool) !void {
+        if (b.graphs) |*g| return g.forward(b.m, b.k, b.s, tokens, position, record);
+        return b.m.forward(b.k, b.s, tokens, position, 0, tokens.len, record);
+    }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, m: *Model, k: *Kernels, s: cuda.Stream) !Backend {
         const v = m.w.c.text.unpadded_vocab;
@@ -77,6 +134,7 @@ pub const Backend = struct {
 
     /// The server's stream count: one model slot and its buffers per stream.
     pub fn reserve(b: *Backend, streams: u32) !void {
+        if (b.drafter != null and streams > 1) return error.Inkling2DraftOneStream;
         if (streams > engine.max_slots) return error.Inkling2TooManyStreams;
         try b.m.addSlots(b.s, streams);
         try b.slotBuffers(streams);
@@ -85,6 +143,8 @@ pub const Backend = struct {
     pub fn deinit(b: *Backend) void {
         for (&b.lanes_) |*x| if (x.*) |*l| l.rows.deinit(b.gpa);
         for (b.slot[0..b.held]) |*pair| for (pair) |*x| x.free();
+        if (b.graphs) |*g| g.deinit();
+        if (b.drafter) |*d| d.deinit();
         b.meta.free();
         b.logits16.free();
         b.tokens.free();
@@ -95,8 +155,23 @@ pub const Backend = struct {
         return .{ .ptr = b, .vtable = &vtable };
     }
 
-    pub fn facts(_: *const Backend) lanes.Model {
-        return .{ .exact_width = window_rows, .gpu_tokens = false, .mtp = false, .speculate = false, .hidden_rows = true, .batch_rows = prompt_rows, .max_streams = 1, .streams_exact = true };
+    pub fn facts(b: *const Backend) lanes.Model {
+        const drafting = b.drafter != null;
+        return .{
+            .exact_width = window_rows,
+            .gpu_tokens = false,
+            .mtp = drafting,
+            .speculate = drafting,
+            .speculate_early = false,
+            .drafts = if (drafting) @intCast(b.priced_width -| 1) else 0,
+            .plain_guard = drafting,
+            .window_costs = b.costs[0..b.priced_width],
+            .copy_drafts = !drafting,
+            .hidden_rows = true,
+            .batch_rows = prompt_rows,
+            .max_streams = 1,
+            .streams_exact = true,
+        };
     }
 
     pub fn admits(b: *const Backend, prompt: usize, max_new: usize) bool {
@@ -132,6 +207,7 @@ pub const Backend = struct {
         const i = b.slotOf(s) orelse return error.UnknownStream;
         if (i >= b.m.n_slots) return error.UnknownStream;
         b.m.slot = i;
+        b.m.capture_taps = s.drafts and b.drafter != null;
         return if (b.lanes_[i]) |*l| l else error.UnknownStream;
     }
 
@@ -167,7 +243,11 @@ pub const Backend = struct {
         }
         l.len = 0;
         try b.m.reset(b.s);
-        const at = b.resumeSaved(s);
+        const at = if (b.m.capture_taps) blk: {
+            b.drafter.?.reset();
+            if (s.reuse.saved != null) s.reuse_failed = true; // rebuild the drafter's context along with the target
+            break :blk 0;
+        } else b.resumeSaved(s);
         l.len = at;
         l.fill = at;
         s.fill_at.store(@intCast(at), .monotonic);
@@ -184,6 +264,7 @@ pub const Backend = struct {
         }
         const done = end == prompt.len;
         try b.m.forward(b.k, b.s, prompt[at..end], at, end - at - 1, @intFromBool(done), false);
+        if (b.m.capture_taps) try b.drafter.?.absorb(&b.k.glue, b.s, at, end - at, b.m.w.c.text.eps);
         if (done) try b.d.check(b.d.api.cuMemcpyDtoDAsync_v2(l.last, b.m.s.logits, b.m.w.c.text.unpadded_vocab * 4, b.s.handle), "cuMemcpyDtoDAsync");
         l.len = end;
         l.fill = if (done) null else end;
@@ -271,7 +352,7 @@ pub const Backend = struct {
         const l = try b.laneOf(s);
         const token = try b.feed(value);
         if (position != l.len + 1) return error.PositionMismatch;
-        try b.m.forward(b.k, b.s, &.{token}, l.len, 0, 1, false);
+        try b.decode(&.{token}, l.len, false);
         l.len += 1;
         const h = b.next;
         try b.drawRows(l, b.m.s.logits, 1, position, b.handle());
@@ -282,7 +363,6 @@ pub const Backend = struct {
         const b = self(ptr);
         if (windows.len != 1 or out.len != 1) return error.OneStreamOnly;
         const w = windows[0];
-        if (w.held != 0) return error.NoHeldDrafts;
         if (w.parents != null) return error.ChainsOnly;
         if (w.masks.len != 0) return error.StructuresUnsupported;
         const l = try b.laneOf(w.stream);
@@ -291,9 +371,14 @@ pub const Backend = struct {
         l.base = l.len;
         l.rows.clearRetainingCapacity();
         try l.rows.append(b.gpa, w.pending);
+        if (w.held > 0) {
+            const d = if (b.drafter) |*d| d else return error.NoDraftHead;
+            if (w.held > d.held_len or !b.m.capture_taps) return error.NoHeldDrafts;
+            try l.rows.appendSlice(b.gpa, d.held[0..w.held]);
+        }
         try l.rows.appendSlice(b.gpa, w.tokens);
         for (w.positions, 0..) |position, i| if (position != l.base + i + 1) return error.PositionMismatch;
-        try b.m.forward(b.k, b.s, l.rows.items, l.base, 0, n, true);
+        try b.decode(l.rows.items, l.base, n > 1);
         try b.drawRows(l, b.m.s.logits, n, w.positions[0], token_ring);
         var got: [window_rows]u32 = undefined;
         try b.s.synchronize();
@@ -310,12 +395,30 @@ pub const Backend = struct {
         const path = paths[0];
         if (path.len == 0 or path.len > l.rows.items.len) return error.EmptyPath;
         for (path, 0..) |row, i| if (row != i) return error.ChainsOnly;
-        try b.m.rewind(b.k, b.s, path.len);
+        if (path.len < l.rows.items.len) try b.m.rewind(b.k, b.s, path.len);
         l.len = l.base + path.len;
     }
 
-    fn draft(_: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
-        for (requests) |r| if (r.depth != 0 or r.lanes != null) return error.NoDraftHead;
+    fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
+        const b = self(ptr);
+        if (requests.len == 0) return;
+        if (requests.len != 1) return error.OneStreamOnly;
+        const r = requests[0];
+        if (r.lanes != null) return error.ChainsOnly;
+        const l = try b.laneOf(r.stream);
+        const d = if (b.m.capture_taps) &b.drafter.? else {
+            if (r.depth != 0) return error.NoDraftHead;
+            return;
+        };
+        if (r.position != l.len + 1) return error.PositionMismatch;
+        const pending = if (r.rows) |rows| blk: {
+            if (r.start != l.base or rows.len == 0 or rows.len != l.len - l.base or rows.len > r.follow.len)
+                return error.PositionMismatch;
+            for (rows, 0..) |row, i| if (row != i) return error.ChainsOnly;
+            try d.absorb(&b.k.glue, b.s, l.base, rows.len, b.m.w.c.text.eps);
+            break :blk r.follow[rows.len - 1];
+        } else if (r.depth != 0) try b.feed(r.first orelse return error.NoFirstToken) else return;
+        if (r.depth != 0) try d.propose(b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
     }
 
     pub fn saveState(b: *Backend, owner: ?*anyopaque, at: u32) !*Model.Saved {

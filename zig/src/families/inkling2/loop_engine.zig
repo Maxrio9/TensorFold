@@ -12,54 +12,12 @@ const loop_math = @import("loop_math_cuda.zig");
 
 pub const prompt_rows: usize = 2048;
 pub const window_rows: usize = 16;
+const max_tiles = 128;
+const tile_bytes = max_tiles * @sizeOf(attention.Tile);
 
 pub const Kernels = @import("loop_kernels.zig").Kernels;
 
-const Scratch = struct {
-    ids: u64,
-    pos: u64,
-    seg_of: u64,
-    segs: u64,
-    tiles: u64,
-    blocks: [ops.max_blocks]u64 = @splat(0),
-    partial_a: u64,
-    partial_b: u64,
-    prelude: u64,
-    bank0: u64,
-    bank1: u64,
-    raw: u64, // three FP32 AR/gate rows per token
-    zeta: u64, // a gate's 64 BF16 bottleneck values per token, between its down and up halves
-    messages: u64, // four FP32 message rows per token
-    normalized: u64, // three BF16 rows per token
-    t: u64,
-    q_raw: u64,
-    rel_raw: u64,
-    sink: u64,
-    gate: u64,
-    k_raw: u64,
-    v_raw: u64,
-    k_conv: u64,
-    v_conv: u64,
-    k_dynamic: u64,
-    v_dynamic: u64,
-    q_prepared: u64,
-    rel_prepared: u64,
-    rel_table: u64,
-    part_o: u64,
-    part_ml: u64,
-    attn_heads: u64,
-    attn_out: u64,
-    route_scores: u64,
-    route_pick: u64,
-    route_weights: u64,
-    moe_out: u64,
-    moe_scratch: u64,
-    exl3_scratch: ?cuda.exl3_experts.Scratch,
-    hidden: u64,
-    logits: u64,
-    backup: u64,
-    hist: u64,
-};
+const Scratch = @import("loop_scratch.zig").Scratch;
 
 /// A stream's state (every visit's K/V rows and conv states, its rewind sites); at most `max_slots`, one in use.
 const Slot = struct { cache: cuda.DeviceBuffer, sites: cuda.DeviceBuffer };
@@ -79,6 +37,8 @@ pub const Model = struct {
     slots: [max_slots]Slot = undefined,
     n_slots: usize = 0,
     slot: usize = 0, // the slot forwards, snapshots and rewinds use; forwards share the scratch
+    taps: ?struct { function: cuda.Function, buffer: u64 } = null,
+    capture_taps: bool = false,
     recorded: ?usize = null, // the slot whose window `backup` and `hist` hold
     s: Scratch = undefined,
     buffers: std.ArrayList(cuda.DeviceBuffer) = .empty,
@@ -206,7 +166,8 @@ pub const Model = struct {
             .pos = try m.alloc(rows * 4),
             .seg_of = try m.alloc(rows * 4),
             .segs = try m.alloc(@sizeOf(attention.Seg)),
-            .tiles = try m.alloc(128 * @sizeOf(attention.Tile)),
+            .tiles = try m.alloc(tile_bytes),
+            .global_tiles = try m.alloc(tile_bytes),
             .partial_a = try m.alloc(rows * h * 2),
             .partial_b = try m.alloc(rows * h * 2),
             .prelude = try m.alloc(rows * h * 2),
@@ -307,17 +268,21 @@ pub const Model = struct {
         return a;
     }
 
-    /// One prompt chunk or one decode window. `record` retains every convolution input for exact prefix rollback.
+    pub const Shape = struct { rows: usize, head0: usize, heads: usize, record: bool, tiles: [2]u32, taps: bool };
+
     pub fn forward(m: *Model, k: *Kernels, s: cuda.Stream, tokens: []const u32, p0: usize, head0: usize, heads: usize, record: bool) !void {
-        const c = m.w.c.text;
+        try m.execute(k, s, try m.prepare(s, tokens, p0, head0, heads, record));
+    }
+
+    /// Upload request data before capture or replay. The kernel grid depends on shape and context capacity.
+    pub fn prepare(m: *Model, s: cuda.Stream, tokens: []const u32, p0: usize, head0: usize, heads: usize, record: bool) !Shape {
         const rows = tokens.len;
-        const h: usize = c.hidden;
-        if (rows == 0 or rows > prompt_rows or p0 + rows > m.context or (!record and heads > window_rows) or head0 + heads > rows)
+        if (rows == 0 or rows > prompt_rows or p0 + rows > m.context or heads > window_rows or head0 + heads > rows)
             return error.BadLoopRows;
         if (record and rows > window_rows) return error.WindowTooWide;
         var ids: [prompt_rows]i32 = undefined;
         var pos: [prompt_rows]i32 = undefined;
-        var seg_of: [prompt_rows]i32 = @splat(0);
+        const seg_of: [prompt_rows]i32 = @splat(0);
         for (tokens, 0..) |token, i| {
             ids[i] = @intCast(token);
             pos[i] = @intCast(p0 + i);
@@ -327,7 +292,24 @@ pub const Model = struct {
         try m.upload(s, m.s.seg_of, std.mem.sliceAsBytes(seg_of[0..rows]));
         const seg: attention.Seg = .{ .row0 = 0, .n = @intCast(rows), .p0 = @intCast(p0), .off = 0 };
         try m.upload(s, m.s.segs, std.mem.asBytes(&seg));
+        const c = m.w.c.text;
+        var shape: Shape = .{ .rows = rows, .head0 = head0, .heads = heads, .record = record, .tiles = undefined, .taps = m.capture_taps };
+        for ([_]config.Heads{ c.local, c.global }, [_]u64{ m.s.tiles, m.s.global_tiles }, &shape.tiles) |head, dst, *n| {
+            var tiles: [max_tiles]attention.Tile = undefined;
+            const count = try attention.tiles(&.{seg}, head.q / head.kv, &tiles);
+            n.* = @intCast(count);
+            try m.upload(s, dst, std.mem.sliceAsBytes(tiles[0..count]));
+        }
         m.recorded = if (record) m.slot else null;
+        return shape;
+    }
+
+    /// Capturable device work. All backing buffers are allocated before the first launch.
+    pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
+        const c = m.w.c.text;
+        const h: usize = c.hidden;
+        const rows = shape.rows;
+        const record = shape.record;
         if (record) try m.copy(s, m.s.backup, m.slotBase() + m.layout.at(0).conv_offset, m.layout.bytes - m.layout.at(0).conv_offset);
 
         try ops.embed(&k.glue, s, m.s.ids, rows, m.w.embed, m.w.embed_norm, m.s.partial_a, h, c.eps);
@@ -335,8 +317,18 @@ pub const Model = struct {
         var next = m.s.partial_b;
         var n_blocks: usize = 0;
         const lp = c.loop.?;
+        const taps = if (shape.taps) m.taps else null;
 
         for (m.w.p.visits[0..m.w.p.n_visits]) |visit| {
+            if (taps) |t| {
+                const channel: ?usize = switch (visit.cache_slot) {
+                    5 => 0,
+                    23 => 1,
+                    41 => 2,
+                    else => null,
+                };
+                if (channel) |ch| try @import("dspark_ops.zig").tap(t.function, s, partial, t.buffer, rows, h, ch);
+            }
             const layer = m.w.p.at(visit.layer);
             const lw = &m.w.layers[visit.layer];
             if (visit.pass >= 2 and visit.layer == lp.core_start) {
@@ -415,9 +407,6 @@ pub const Model = struct {
                     .mode = 0,
                 }, 1);
             }
-            var tiles: [128]attention.Tile = undefined;
-            const n_tiles = try attention.tiles(&.{seg}, layer.heads.q / layer.heads.kv, &tiles);
-            try m.upload(s, m.s.tiles, std.mem.sliceAsBytes(tiles[0..n_tiles]));
             const stride = attention.slotsFor(geometry, m.context);
             const part_capacity = prompt_rows * layer.heads.q * stride;
             const r: attention.Rows = .{
@@ -427,9 +416,9 @@ pub const Model = struct {
                 .pos = m.s.pos,
                 .seg_of = m.s.seg_of,
                 .segs = m.s.segs,
-                .tiles = m.s.tiles,
-                .n_tiles = @intCast(n_tiles),
-                .last_pos = @intCast(p0 + rows - 1),
+                .tiles = if (dynamic) m.s.global_tiles else m.s.tiles,
+                .n_tiles = shape.tiles[@intFromBool(dynamic)],
+                .last_pos = @intCast(m.context - 1),
             };
             const prep: attention.Prep = .{ .qk_clip = c.qk_clip, .rel_clip = c.rel_clip, .floor = @floatFromInt(c.log_floor), .alpha = c.log_alpha, .eps = c.eps };
             try attention.prep(&k.attn, s, r, geometry, prep, .{ m.s.q_raw, m.s.k_conv, m.s.v_conv, m.s.rel_raw }, .{ lw.attn.q_scale, lw.attn.rel_scale }, m.s.q_prepared, m.s.rel_prepared, cache);
@@ -495,9 +484,12 @@ pub const Model = struct {
             }
         }
 
-        if (heads == 0) return;
+        const heads = shape.heads;
+        if (heads == 0 and taps == null) return;
         try ops.mix(&k.glue, s, m.mixArgs(m.s.blocks[0..n_blocks], partial, m.w.output_query, .{ m.w.norm, m.w.norm, m.w.norm }, m.s.hidden, 1, true, rows));
-        try ops.rowdot(&k.glue, s, m.s.hidden + head0 * h * 2, m.w.unembed, m.s.logits, heads, c.unpadded_vocab, h, false, false);
+        if (taps) |t| try @import("dspark_ops.zig").tap(t.function, s, m.s.hidden, t.buffer, rows, h, 3);
+        if (heads == 0) return;
+        try ops.rowdot(&k.glue, s, m.s.hidden + shape.head0 * h * 2, m.w.unembed, m.s.logits, heads, c.unpadded_vocab, h, false, false);
         try loop_math.roundBf16(&k.loop, s, m.s.logits, m.s.logits, heads * c.unpadded_vocab);
         try ops.softcap(&k.glue, s, m.s.logits, heads * c.unpadded_vocab, c.logit_cap);
     }

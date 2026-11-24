@@ -1,6 +1,6 @@
 //! One-time binary64 folding of DSpark's rank-256 hidden head into the target unembedding.
 const std = @import("std");
-const bf = @import("bf16_round");
+const bf = @import("core").bf16_round;
 
 pub const hidden = 2304;
 pub const rank = 256;

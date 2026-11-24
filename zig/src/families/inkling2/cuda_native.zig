@@ -10,6 +10,8 @@ const engine = @import("loop_engine.zig");
 const backend = @import("loop_backend.zig");
 const pack = @import("pack_weights.zig");
 const weights = @import("loop_weights.zig");
+const draft_weights = @import("dspark_weights.zig");
+const dspark = @import("dspark_cuda.zig");
 
 pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
@@ -18,6 +20,7 @@ pub const max_segments: u32 = 1;
 pub const prompt_rows: u32 = engine.prompt_rows;
 pub const window_rows: u32 = engine.window_rows;
 pub const explains_open = true;
+pub const takes_drafter = true;
 
 pub const VisionOptions = struct { image_tokens: u32, max_images: u32 };
 pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
@@ -56,6 +59,7 @@ pub const Loaded = struct {
     deinit: *const fn (*anyopaque) void,
     reserve: *const fn (*anyopaque, u32) anyerror!void = reserve,
     target: *Owned,
+    draft_kind: ?[]const u8 = null,
 };
 
 fn own(ptr: *anyopaque) *Owned {
@@ -106,7 +110,6 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     if (kernels != null) return error.Inkling2CapturedKernels;
     if (o.segments != 1 or o.tp != 1 or o.rank != 0) return error.Inkling2LoopOneRankOnly;
     if (o.vision != null) return error.Inkling2LoopTextOnly;
-    if (o.drafter != null) return error.Inkling2DSparkPending;
     var why: config.Why = .{};
     const c = readConfig(gpa, io, dir, &why) catch |err| {
         if (why.text().len != 0) std.log.err("Inkling 2 Mini config refused: {s}", .{why.text()});
@@ -115,6 +118,8 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     try loop.validateLoad(&c, 1, false);
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
+    const drafter_dir = if (o.drafts) o.drafter else null;
+    if (drafter_dir != null and !c.exl3) return error.Inkling2DraftNeedsExl3;
     var ck = if (c.exl3)
         try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars)
     else
@@ -137,6 +142,15 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
     errdefer w.deinit();
     if (ck.unused() != 0) return error.UnusedCheckpointTensor;
+    var dw = if (drafter_dir) |path| try draft_weights.load(
+        gpa,
+        io,
+        ctx.d,
+        &c,
+        path,
+        try ck.expect("model.llm.unembed.weight", .bf16, &.{ c.text.vocab, c.text.hidden }),
+    ) else null;
+    errdefer if (dw) |*d| d.deinit();
     ck.release();
     var k = try engine.Kernels.load(ctx, c.exl3);
     errdefer k.deinit();
@@ -147,6 +161,10 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     errdefer m.deinit();
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
     errdefer be.deinit();
+    if (dw) |d| {
+        be.drafter = try dspark.Drafter.init(ctx.d, d, o.context);
+        dw = null;
+    }
     const out = try gpa.create(Owned);
     errdefer gpa.destroy(out);
     out.* = .{ .gpa = gpa, .admission = .{ .context = @intCast(o.context) }, .kernels = k, .stream = stream, .weights = w, .model = m, .backend = be };
@@ -154,7 +172,17 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     out.model.w = &out.weights;
     out.backend.m = &out.model;
     out.backend.k = &out.kernels;
-    return .{ .backend = out.backend.backend(), .facts = out.backend.facts(), .rows = window_rows, .stream_bytes = backend.streamBytes(&out.model), .ctx = out, .deinit = release, .target = out };
+    try out.backend.warm(io);
+    return .{
+        .backend = out.backend.backend(),
+        .facts = out.backend.facts(),
+        .rows = window_rows,
+        .stream_bytes = backend.streamBytes(&out.model),
+        .ctx = out,
+        .deinit = release,
+        .target = out,
+        .draft_kind = if (out.backend.drafter != null) "DSpark" else null,
+    };
 }
 
 pub fn snap_bytes(ptr: *anyopaque, at: u32) u64 {
@@ -177,7 +205,8 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
     return switch (err) {
         error.Inkling2LoopOneRankOnly => "Inkling 2 Mini runs at one CUDA rank with one segment; TP and multi-segment modes are refused",
         error.Inkling2LoopTextOnly => "Inkling 2 Mini is text-only on CUDA: images and --vision are refused",
-        error.Inkling2DSparkPending => "the Mini DSpark drafter has names and taps but no native draft engine in this build",
+        error.Inkling2DraftNeedsExl3 => "Mini DSpark on CUDA requires the EXL3 text checkpoint",
+        error.Inkling2DraftOneStream => "Mini DSpark on CUDA serves one stream: set --parallel 1",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
         error.StructuresUnsupported, error.ChainsOnly => "Inkling 2 Mini serves only unconstrained, non-branching text drafts",
@@ -189,7 +218,7 @@ test "Mini native registration and refusal wording are explicit" {
     try std.testing.expectEqualStrings("inkling2_loop", model_type);
     try std.testing.expect(max_segments == 1 and prompt_rows == 2048 and window_rows == 16);
     try std.testing.expectEqual(16, engine.max_slots); // the stream cap explain() names
-    for ([_]anyerror{ error.Inkling2LoopOneRankOnly, error.Inkling2LoopTextOnly, error.Inkling2DSparkPending, error.Inkling2CapturedKernels, error.Inkling2TooManyStreams }) |err| {
+    for ([_]anyerror{ error.Inkling2LoopOneRankOnly, error.Inkling2LoopTextOnly, error.Inkling2DraftNeedsExl3, error.Inkling2DraftOneStream, error.Inkling2CapturedKernels, error.Inkling2TooManyStreams }) |err| {
         try std.testing.expect(explain(null, err) != null);
     }
 }

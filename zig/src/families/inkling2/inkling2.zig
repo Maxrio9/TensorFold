@@ -6,6 +6,7 @@ pub const kernels = @import("kernels.zig");
 pub const ops = @import("ops.zig");
 pub const experts = @import("experts.zig");
 pub const modelopt = @import("modelopt.zig");
+pub const dspark_ops = @import("dspark_ops.zig");
 pub const loop = @import("loop.zig");
 pub const loop_exl3_experts = @import("loop_exl3_experts.zig");
 pub const loop_model = @import("loop_model.zig");
@@ -23,6 +24,7 @@ test {
     _ = experts;
     _ = modelopt;
     _ = native;
+    _ = dspark_ops;
     _ = loop;
     _ = loop_model;
     _ = loop_exl3_experts;

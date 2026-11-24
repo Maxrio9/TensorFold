@@ -6,7 +6,7 @@ const gates = @import("core").contract.gates;
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 2 and args.len != 4) return error.BadArguments;
+    if (args.len != 2 and args.len != 4 and args.len != 5) return error.BadArguments;
     var driver = try cuda.Driver.open();
     defer driver.close();
     var ctx = try cuda.Context.init(&driver, 0);
@@ -16,8 +16,12 @@ pub fn main(init: std.process.Init) !void {
         return @import("contract_inkling2_mini_exl3.zig").run(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-regressions"))
         return regressions(gpu);
+    if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-dspark-contract"))
+        return dsparkContract(gpu);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-exl3-teacher"))
         return @import("inkling2_mini_exl3_teacher.zig").run(gpu, args[2], args[3]);
+    if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-verify"))
+        return @import("inkling2_mini_verify.zig").run(gpu, args[2], args[3], args[4]);
     return error.BadArguments;
 }
 
@@ -38,4 +42,20 @@ fn regressions(gpu: check.Gpu) !void {
         tally.passed, tally.kernels, tally.caught, tally.controls,
     });
     try check.expect(tally.kernels == 3 and tally.controls == 3 and tally.problems() == 0, "Mini regression contract", .{});
+}
+
+fn dsparkContract(gpu: check.Gpu) !void {
+    var stream = try cuda.Stream.init(gpu.d, false);
+    defer stream.deinit();
+    var kernels: std.ArrayList(gates.Kernel) = .empty;
+    defer kernels.deinit(gpu.gpa);
+    var set: @import("contract_inkling2_dspark.zig").Set = .{};
+    try set.init(gpu, stream, gpu.gpa, &kernels);
+    defer set.deinit();
+    var tally: gates.Tally = .{};
+    try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
+    std.debug.print("MINI DSPARK CONTRACT {d}/{d} kernels, {d}/{d} controls, {d} problems\n", .{
+        tally.passed, tally.kernels, tally.caught, tally.controls, tally.problems(),
+    });
+    try check.expect(tally.kernels != 0 and tally.problems() == 0, "Mini DSpark contract", .{});
 }

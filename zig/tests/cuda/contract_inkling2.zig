@@ -10,6 +10,7 @@ pub const Set = struct {
     attn: @import("contract_inkling2_attn.zig").Set = .{},
     ops: @import("contract_inkling2_ops.zig").Set = .{},
     experts: @import("contract_inkling2_experts.zig").Set = .{},
+    dspark: @import("contract_inkling2_dspark.zig").Set = .{},
     loop_math: @import("contract_inkling2_loop_math_extra.zig").Set = .{},
 
     /// The set, its kernels appended to `list`.
@@ -24,10 +25,13 @@ pub const Set = struct {
         try set.experts.init(gpu, s, a, list);
         errdefer set.experts.deinit();
         try set.loop_math.init(gpu, s, a, list);
+        errdefer set.loop_math.deinit();
+        try set.dspark.init(gpu, s, a, list);
         return set;
     }
 
     pub fn deinit(set: *Set) void {
+        set.dspark.deinit();
         set.loop_math.deinit();
         set.experts.deinit();
         set.ops.deinit();
