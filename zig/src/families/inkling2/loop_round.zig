@@ -103,6 +103,10 @@ pub fn prepare(m: *Model, s: cuda.Stream, chains: []const Chain, head0: usize, h
 
 /// The row-wise kernels share one forward. Each slot runs convolution and attention on its own state.
 pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
+    return executePrompt(m, k, s, shape, null);
+}
+
+pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, images: ?@import("mini_vision.zig").Rows) !void {
     const c = m.w.c.text;
     const h: usize = c.hidden;
     const rows = shape.rows;
@@ -116,6 +120,7 @@ pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
     }
 
     try ops.embed(&k.glue, s, m.s.ids, rows, m.w.embed, m.w.embed_norm, m.s.partial_a, h, c.eps);
+    if (images) |p| try p.splice(m.d, s, rows, h, m.s.partial_a);
     var partial = m.s.partial_a;
     var next = m.s.partial_b;
     var n_blocks: usize = 0;

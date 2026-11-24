@@ -23,6 +23,10 @@ pub fn set(comptime F: type, o: api.Open, opts: *F.Options, problem: *[]const u8
             opts.vision = .{ .image_tokens = if (vo.image_tokens_set) vo.image_tokens else own orelse vo.image_tokens, .max_images = vo.max_images };
             // a family that reads videos takes the counts its tower holds (Nemotron Omni's only a token budget)
             const L = @typeInfo(@FieldType(F.Options, "vision")).optional.child;
+            if (comptime @hasField(L, "image_share")) opts.vision.?.image_share = switch (vo.image_share) {
+                .request => .request,
+                .fixed => .fixed,
+            };
             if (comptime @hasField(L, "video_tokens")) opts.vision.?.video_tokens = vo.video_tokens;
             if (comptime @hasField(L, "max_videos")) opts.vision.?.max_videos = vo.max_videos;
             if (comptime @hasField(L, "max_frames")) opts.vision.?.max_frames = vo.max_frames;

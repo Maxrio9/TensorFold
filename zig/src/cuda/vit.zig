@@ -16,7 +16,7 @@ const Linear = cublaslt.Linear;
 const threads = 256; // vit.cu's NT
 /// The widest LayerNorm row: NT * MAXE.
 pub const norm_most = 8 * threads;
-const workspace_bytes = 32 << 20;
+pub const workspace_bytes = 32 << 20;
 
 /// What tf_vit_pointwise applies to a Linear's output: nothing, torch's tanh GELU, its exact (erf) GELU, or relu^2.
 pub const Act = enum(i32) { none = 0, gelu_tanh = 1, gelu = 2, relu2 = 3 };

@@ -157,9 +157,16 @@ For Qwen, each image request carries its own multimodal rotary positions and con
 4,096; 13,312 for Nemotron 3.5 Super VL) and `--vision-image-share` (`request`, the default, or `fixed`) for engines
 that read images: GLM-5.3-Flash, Qwen3.8-27B, Qwen3.8 Flash Next, Gemma 4
 [31B](recipes/gemma-4-native.md#images) and [12B](recipes/gemma-4-12b-native.md#images) and Step-5-Preview on one
-Mac, GLM-5.3-Flash on [CUDA ranks](recipes/glm-5.3-flash-cuda.md#requests) and Nemotron 3.5 Super VL on CUDA. Other
+Mac, GLM-5.3-Flash on [CUDA ranks](recipes/glm-5.3-flash-cuda.md#requests), Nemotron 3.5 Super VL on CUDA,
+and Inkling 2 Mini on one CUDA GPU. Other
 native engines refuse the flag at startup.
 The CLI accepts explicit image budgets from 16 to 262,144 tokens; each engine still applies its own limits and memory admission.
+
+Inkling 2 Mini's EXL3 packs carry the BF16 tower in `model-vision.safetensors`. The processor applies EXIF
+orientation, composites alpha over a checkerboard, and downsizes only when the image exceeds its token share.
+Each 40 × 40 cell takes one prompt token. `--vision-max-images` accepts up to 100 images, subject to the shared
+token budget and request byte limits. Pass the same vision flags to `tensorfold-native plan MODEL --device-mib N
+--parallel N` to include the tower, its working memory and the projected rows held per stream.
 
 - Images arrive as `image_url` data URLs in user messages and tool results. With `--vision-urls` (it needs
   `--vision`), a part may name a public HTTPS URL instead, fetched as 0.6.6 fetched it: port 443 without credentials

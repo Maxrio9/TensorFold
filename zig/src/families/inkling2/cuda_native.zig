@@ -1,4 +1,4 @@
-//! Inkling 2 Mini's complete one-rank, text-only CUDA engine and checkpoint/snapshot admission.
+//! Inkling 2 Mini's one-rank CUDA engine and checkpoint admission.
 const std = @import("std");
 const cuda = @import("cuda");
 const lanes = @import("lanes");
@@ -12,6 +12,7 @@ const pack = @import("pack_weights.zig");
 const weights = @import("loop_weights.zig");
 const draft_runtime = @import("loop_drafter.zig");
 const dflash_weights = @import("dflash2_weights.zig");
+const vision = @import("mini_vision.zig");
 
 pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
@@ -24,7 +25,7 @@ pub const explains_open = true;
 pub const takes_drafter = true;
 pub const framed_structures = true;
 
-pub const VisionOptions = struct { image_tokens: u32, max_images: u32 };
+pub const VisionOptions = vision.Limits;
 pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
 pub const Options = struct {
     context: usize,
@@ -50,6 +51,7 @@ pub const Owned = struct {
     weights: weights.Weights,
     model: engine.Model,
     backend: backend.Backend,
+    vision: ?vision.Images,
 };
 
 pub const Loaded = struct {
@@ -64,6 +66,7 @@ pub const Loaded = struct {
     reserve: *const fn (*anyopaque, u32) anyerror!void = reserve,
     target: *Owned,
     draft_kind: ?[]const u8 = null,
+    vision: ?*vision.Images,
 };
 
 fn own(ptr: *anyopaque) *Owned {
@@ -74,6 +77,7 @@ fn release(p: *anyopaque) void {
     const o = own(p);
     o.stream.synchronize() catch {};
     o.backend.deinit();
+    if (o.vision) |v| v.tower.deinit();
     o.stream.deinit();
     o.model.deinit();
     o.kernels.deinit();
@@ -108,6 +112,10 @@ pub fn textWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !?u6
     var ck = try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars);
     defer ck.close();
     return try weights.checkpointBytes(&ck, true);
+}
+
+pub fn visionBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, _: u32, _: u32) !u64 {
+    return @import("vision.zig").weightBytes(gpa, io, dir);
 }
 
 pub fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o: Options) !?[]const u8 {
@@ -163,13 +171,13 @@ pub fn checkCacheRoom(state_bytes: u64, room: u64) error{Inkling2CacheRoom}!void
 pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
     if (kernels != null) return error.Inkling2CapturedKernels;
     if (o.segments != 1 or o.tp != 1 or o.rank != 0) return error.Inkling2LoopOneRankOnly;
-    if (o.vision != null) return error.Inkling2LoopTextOnly;
     var why: config.Why = .{};
     const c = readConfig(gpa, io, dir, &why) catch |err| {
         if (why.text().len != 0) std.log.err("Inkling 2 Mini config refused: {s}", .{why.text()});
         return err;
     };
     try loop.validateLoad(&c, 1, false);
+    if (o.vision) |limits| try vision.validate(c.vision, limits);
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
     const drafter = try drafterSource(gpa, io, dir, &c, o);
@@ -178,8 +186,9 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     const p = try checkpointPlan(gpa, &ck, &c);
     var bits = if (c.exl3) try pack.readBits(gpa, io, dir) else null;
     defer if (bits) |*b| b.deinit();
+    var moved = false;
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
-    errdefer w.deinit();
+    errdefer if (!moved) w.deinit();
     if (ck.unused() != 0) return error.UnusedCheckpointTensor;
     var dw = if (drafter) |src| try src.load(gpa, io, ctx.d, &c, &ck) else null;
     errdefer if (dw) |*d| d.deinit();
@@ -189,26 +198,39 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     const before_state = cuda.usage(false).device;
     const state_room = if (o.room) |room| room.read(room.ctx) orelse return error.Inkling2CacheRoom else null;
     var k = try engine.Kernels.load(ctx, c.exl3);
-    errdefer k.deinit();
+    errdefer if (!moved) k.deinit();
     var stream = try cuda.Stream.init(ctx.d, true);
-    errdefer stream.deinit();
+    errdefer if (!moved) stream.deinit();
     try k.reserveDense(stream, w.layers);
     var m = try engine.Model.init(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16);
-    errdefer m.deinit();
+    errdefer if (!moved) m.deinit();
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
-    errdefer be.deinit();
+    errdefer if (!moved) be.deinit();
     if (dw) |d| {
         be.drafter = try draft_runtime.Drafter.init(ctx.d, d, o.context);
         dw = null;
     }
-    if (state_room) |room| try checkCacheRoom(cuda.usage(false).device -| before_state, room);
+    if (state_room) |room| {
+        const image_bytes = if (o.vision) |limits| (try visionBytes(gpa, io, dir, 0, 1)) +
+            @import("vision.zig").scratchBytes(limits.single(o.context)) + limits.rows(o.context, c.text.hidden) else 0;
+        try checkCacheRoom((cuda.usage(false).device -| before_state) + image_bytes, room);
+    }
+    const images = if (o.vision) |limits| try vision.Images.init(gpa, io, ctx.d, dir, c, limits, o.context) else null;
+    errdefer if (!moved) {
+        if (images) |v| v.tower.deinit();
+    };
     const out = try gpa.create(Owned);
-    errdefer gpa.destroy(out);
-    out.* = .{ .gpa = gpa, .admission = .{ .context = @intCast(o.context) }, .kernels = k, .stream = stream, .weights = w, .model = m, .backend = be };
+    out.* = .{ .gpa = gpa, .admission = .{ .context = @intCast(o.context) }, .kernels = k, .stream = stream, .weights = w, .model = m, .backend = be, .vision = images };
+    moved = true;
+    errdefer release(out);
     // The value copies above own pointers to their old stack homes; retarget the live model/backend now.
     out.model.w = &out.weights;
     out.backend.m = &out.model;
     out.backend.k = &out.kernels;
+    if (out.vision) |*v| {
+        out.backend.vision = v;
+        try out.backend.reserve(startup_streams);
+    }
     try out.backend.warm(io);
     const global_kv = loop.CacheLayout.globalBytesPerToken(&w.p, m.layout.format);
     std.log.info("Mini CUDA memory: target weights {d} bytes, drafter weights {d} bytes, {s} target KV {d} bytes per global token, {d} bytes allocated per stream", .{
@@ -224,6 +246,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         .deinit = release,
         .target = out,
         .draft_kind = if (drafter) |src| src.kind.name() else null,
+        .vision = if (out.vision) |*v| v else null,
     };
 }
 
@@ -246,7 +269,12 @@ pub fn snap_drop(ptr: *anyopaque, saved: *anyopaque) void {
 pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
     return switch (err) {
         error.Inkling2LoopOneRankOnly => "Inkling 2 Mini runs at one CUDA rank with one segment; TP and multi-segment modes are refused",
-        error.Inkling2LoopTextOnly => "Inkling 2 Mini is text-only on CUDA: images and --vision are refused",
+        error.Inkling2LoopTextOnly => "start Inkling 2 Mini with --vision to accept images",
+        error.Inkling2VisionLimits => "--vision needs a positive visual-token budget and 1 to 100 images; a fixed share needs at least one token per image",
+        error.UnsupportedInkling2VisionConfig => "--vision needs the Inkling 2 Mini vision tower layout",
+        error.NoVisionWeights, error.UnsupportedVisionDType => "--vision needs BF16 model.visual.* weights",
+        error.TooManyImages, error.TooManyImageTokens => "images exceed the configured image count or token budget",
+        error.ImageGrid, error.ImagePlaceholders => "the image grid or placeholder rows do not match the input",
         error.Inkling2DraftNeedsExl3 => "Mini drafting on CUDA requires the EXL3 text checkpoint",
         error.UnsupportedMiniDFlash2Config => "Mini DFlash2 requires the BF16 Inkling 2 Mini drafter configuration",
         error.MiniDFlash2Tensor => "Mini DFlash2 weights do not match the checkpoint configuration",

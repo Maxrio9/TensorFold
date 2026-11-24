@@ -1,4 +1,4 @@
-//! CUDA allocation sizes for one text-only Mini and its full-window streams.
+//! CUDA allocation sizes for Mini and its full-window streams.
 const std = @import("std");
 const cuda = @import("cuda");
 const native = @import("cuda_native.zig");
@@ -50,10 +50,13 @@ pub const Checkpoint = struct {
     draft_arena: u64,
     draft_kind: draft_runtime.Kind = .dspark,
     dense_scratch: u64,
+    vision_weights: u64 = 0,
+    vision: ?native.VisionOptions = null,
 
-    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, why: *config.Why) !Checkpoint {
+    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, vision: ?native.VisionOptions, why: *config.Why) !Checkpoint {
         const c = try native.readConfig(a, io, dir, why);
         try loop.validateLoad(&c, 1, false);
+        if (vision) |limits| try @import("mini_vision.zig").validate(c.vision, limits);
         if (c.exl3) try pack.validate(c.text);
         var ck = try native.openCheckpoint(a, io, dir, c.exl3);
         defer ck.close();
@@ -82,6 +85,8 @@ pub const Checkpoint = struct {
             .draft_arena = drafter,
             .draft_kind = if (src) |d| d.kind else .dspark,
             .dense_scratch = dense.bytes(),
+            .vision_weights = if (vision != null) try native.visionBytes(a, io, dir, 0, 1) else 0,
+            .vision = vision,
         };
     }
 
@@ -102,6 +107,9 @@ pub const Checkpoint = struct {
         const prepared_head: u64 = if (ds) draft_weights.prepared_head_bytes else 0;
         return .{
             .target_weights = ck.target_arena,
+            .vision_weights = if (ck.vision != null) ck.vision_weights else null,
+            .vision_working = if (ck.vision) |limits| @import("vision.zig").scratchBytes(limits.single(context)) else null,
+            .vision_prompt_rows = if (ck.vision) |limits| limits.rows(context, ck.text.hidden) else null,
             .drafter_weights_and_padding = ck.draft_arena - prepared_head,
             .drafter_prepared_head = prepared_head,
             .dense_scratch = ck.dense_scratch,
@@ -125,6 +133,9 @@ pub const Checkpoint = struct {
 
 pub const Components = struct {
     target_weights: u64,
+    vision_weights: ?u64,
+    vision_working: ?u64,
+    vision_prompt_rows: ?u64,
     drafter_weights_and_padding: u64,
     drafter_prepared_head: u64,
     dense_scratch: u64,
@@ -144,12 +155,12 @@ pub const Components = struct {
     global_kv_per_token: u64,
 
     pub fn weights(self: Components) u64 {
-        return self.target_weights + self.drafter_weights_and_padding + self.drafter_prepared_head;
+        return self.target_weights + (self.vision_weights orelse 0) + self.drafter_weights_and_padding + self.drafter_prepared_head;
     }
 
     pub fn stream(self: Components) u64 {
         return self.target_global_kv + self.target_local_kv + self.target_conv +
-            self.target_rewind + self.backend_lane + self.drafterSession();
+            self.target_rewind + self.backend_lane + self.drafterSession() + (self.vision_prompt_rows orelse 0);
     }
 
     fn drafterSession(self: Components) u64 {
@@ -161,7 +172,7 @@ pub const Components = struct {
     }
 
     pub fn state(self: Components) u64 {
-        return self.dense_scratch + self.model_working + self.backend_shared + self.drafterShared() + self.stream();
+        return self.dense_scratch + self.model_working + self.backend_shared + self.drafterShared() + self.stream() + (self.vision_working orelse 0);
     }
 };
 

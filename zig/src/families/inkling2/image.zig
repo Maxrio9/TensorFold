@@ -23,7 +23,7 @@ pub const image_marker = "<|content_image|>";
 
 /// One picture: its normalized patches ([tokens][40][40][3] fp32, the processor's pixel_values) and its grid.
 pub const Prepared = struct {
-    pixels: []f32,
+    pixels: []const f32,
     rows: u32,
     cols: u32,
 
@@ -113,6 +113,32 @@ pub fn prepare(io: std.Io, a: std.mem.Allocator, bytes: []const u8, max_tokens: 
     defer img.deinit(a);
     if (tokensFor(img.width, img.height) > max_tokens) return error.ImageTooLarge;
     return patches(a, img);
+}
+
+/// MiaAI-Lab 0016 resizes only when the original grid exceeds the request's share.
+pub fn prepareResized(io: std.Io, a: std.mem.Allocator, bytes: []const u8, max_tokens: u32) !Prepared {
+    if (max_tokens == 0) return error.ImageTooLarge;
+    var img = try decode(io, a, bytes, .{});
+    defer img.deinit(a);
+    if (tokensFor(img.width, img.height) <= max_tokens) return patches(a, img);
+    const longer = @max(img.width, img.height);
+    var low: usize = 1;
+    var high = longer;
+    while (low < high) {
+        const mid = low + (high - low + 1) / 2;
+        const w = @max(1, img.width * mid / longer);
+        const h = @max(1, img.height * mid / longer);
+        if (tokensFor(w, h) <= max_tokens) low = mid else high = mid - 1;
+    }
+    const w = @max(1, img.width * low / longer);
+    const h = @max(1, img.height * low / longer);
+    var resized: picture.Rgb = .{
+        .width = w,
+        .height = h,
+        .pixels = try picture.resample.resize(a, .pillow, picture.resample.View.of(img.pixels, img.width, img.height), w, h),
+    };
+    defer resized.deinit(a);
+    return patches(a, resized);
 }
 
 /// The words for a refusal of prepare's own.

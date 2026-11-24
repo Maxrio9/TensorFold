@@ -54,16 +54,23 @@ pub const Kernels = struct {
 /// The tower's tensors: a pack's vision.safetensors sidecar (as the release stores them), else the model's shards.
 fn openTower(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !core.Checkpoint {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = try std.fmt.bufPrint(&buf, "{s}/" ++ sidecar, .{dir});
-    std.Io.Dir.cwd().access(io, path, .{}) catch return core.Checkpoint.openModelPrefixes(gpa, io, dir, &prefixes);
-    var ck: core.Checkpoint = .{ .gpa = gpa, .io = io };
-    errdefer ck.close();
-    try ck.add(dir, sidecar);
-    return ck;
+    for ([_][]const u8{ mini_sidecar, sidecar }) |name| {
+        const path = try std.fmt.bufPrint(&buf, "{s}/{s}", .{ dir, name });
+        std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
+            error.FileNotFound => continue,
+            else => return err,
+        };
+        var ck: core.Checkpoint = .{ .gpa = gpa, .io = io };
+        errdefer ck.close();
+        try ck.add(dir, name);
+        return ck;
+    }
+    return core.Checkpoint.openModelPrefixes(gpa, io, dir, &prefixes);
 }
 
 /// The file a pack carries the tower in, copied unchanged from the release's shards.
 pub const sidecar = "vision.safetensors";
+const mini_sidecar = "model-vision.safetensors";
 
 fn go(f: cuda.Function, s: cuda.Stream, grid: cuda.Dim3, threads: u32, shared: u32, a: *cuda.Args) !void {
     try cuda.launch.launch(f, .{ .grid = grid, .block = .{ .x = threads }, .shared = shared }, s, a);
@@ -77,7 +84,10 @@ const row_bytes: u64 = image.patch_width * 2 + 4 * width * 2 + 3 * width * 2 + m
 /// Scratch for pictures of up to `tokens` decoder tokens, plus cuBLASLt's workspace.
 pub fn scratchBytes(tokens: u32) u64 {
     const rows: u64 = @as(u64, tokens) * image.merge * image.merge + 1;
-    return rows * row_bytes + @as(u64, tokens) * proj_inter * 2 + (32 << 20);
+    const patches = rows - 1;
+    const table_floor = 2 * (256 -| patches * 4 * 4) + 2 * (256 -| rows * image.pairs * 4);
+    return rows * row_bytes - image.patch_width * 2 - 2 * 4 * 4 + table_floor +
+        @as(u64, tokens) * proj_inter * 2 + cuda.vit.workspace_bytes;
 }
 
 /// The tower's weights and scratch on one GPU.
@@ -89,6 +99,7 @@ pub const Tower = struct {
     g: vit.Gemms,
     bufs: std.ArrayList(cuda.DeviceBuffer) = .empty,
     max_tokens: u32,
+    output_width: usize,
     patch_w: u64 = 0, // [width][1200]: a native patch's row, column, channel
     table: u64 = 0, // [32 * 32][width] position rows
     cls: u64 = 0,
@@ -119,7 +130,7 @@ pub const Tower = struct {
         var b = try cuda.DeviceBuffer.alloc(t.d, @max(n, 256));
         errdefer b.free();
         try t.bufs.append(t.gpa, b);
-        t.bytes += n;
+        t.bytes += b.len;
         return b.ptr;
     }
 
@@ -135,6 +146,10 @@ pub const Tower = struct {
 
     /// The tower from the checkpoint at `dir` (its model.visual.* tensors, bf16 as released), scratch for `max_tokens`.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, dir: []const u8, max_tokens: u32) !*Tower {
+        return loadWithWidth(gpa, io, d, dir, max_tokens, hidden);
+    }
+
+    pub fn loadWithWidth(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, dir: []const u8, max_tokens: u32, output_width: usize) !*Tower {
         if (max_tokens == 0) return error.ImageTokens;
         const t = try gpa.create(Tower);
         errdefer gpa.destroy(t);
@@ -142,7 +157,7 @@ pub const Tower = struct {
         errdefer k.unload();
         var vk = try vit.Kernels.load(d);
         errdefer vk.unload();
-        t.* = .{ .gpa = gpa, .d = d, .k = k, .vk = vk, .g = try vit.Gemms.init(gpa, d), .max_tokens = max_tokens };
+        t.* = .{ .gpa = gpa, .d = d, .k = k, .vk = vk, .g = try vit.Gemms.init(gpa, d), .max_tokens = max_tokens, .output_width = output_width };
         errdefer {
             for (t.bufs.items) |*b| b.free();
             t.bufs.deinit(gpa);
@@ -157,7 +172,7 @@ pub const Tower = struct {
         t.pre_w = try t.get(&ck, pre ++ "ln_pre.weight", &.{width});
         t.pre_b = try t.get(&ck, pre ++ "ln_pre.bias", &.{width});
         t.proj_in = try t.get(&ck, "model.visual.proj_in.weight", &.{ proj_inter, merged });
-        t.proj_out = try t.get(&ck, "model.visual.proj_out.weight", &.{ hidden, proj_inter });
+        t.proj_out = try t.get(&ck, "model.visual.proj_out.weight", &.{ output_width, proj_inter });
         const w = try gpa.alloc(u8, 3 * width * width * 2);
         defer gpa.free(w);
         for (&t.layers, 0..) |*l, i| {
@@ -207,13 +222,7 @@ pub const Tower = struct {
 
     /// The device bytes load takes for `dir`: the tower's tensors as stored, scratch and workspace for `max_tokens`.
     pub fn bytesFor(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, max_tokens: u32) !u64 {
-        var ck = try openTower(gpa, io, dir);
-        defer core.checkpoint.cache.close(&ck);
-        var total: u64 = scratchBytes(max_tokens);
-        for (ck.files.items) |*f| for (f.names.keys()) |name| {
-            total += f.get(name).?.bytes.len;
-        };
-        return total;
+        return try weightBytes(gpa, io, dir) + scratchBytes(max_tokens);
     }
 
     pub fn deinit(t: *Tower) void {
@@ -275,7 +284,7 @@ pub const Tower = struct {
         // the projector: each token's four patch rows (merge order, after the class row) as one 4096-wide row
         try t.g.run(s, t.x + width * 2, t.proj_in, t.p1, T, proj_inter, merged, .bf16);
         try t.vk.pointwise(s, t.p1, null, t.p1, T * proj_inter, .gelu);
-        try t.g.run(s, t.p1, t.proj_out, out, T, hidden, proj_inter, .bf16);
+        try t.g.run(s, t.p1, t.proj_out, out, T, t.output_width, proj_inter, .bf16);
     }
 
     fn layer(t: *Tower, s: cuda.Stream, l: Layer, R: usize) !void {
@@ -308,6 +317,21 @@ pub const Tower = struct {
         try go(t.k.scale_add, s, .{ .x = @intCast((n + 255) / 256) }, 256, 0, &a);
     }
 };
+
+/// Resident BF16 weights in the vision sidecar or the original checkpoint's vision namespace.
+pub fn weightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !u64 {
+    var ck = try openTower(gpa, io, dir);
+    defer core.checkpoint.cache.close(&ck);
+    var total: u64 = 0;
+    for (ck.files.items) |*f| for (f.names.keys()) |name| {
+        if (!std.mem.startsWith(u8, name, prefixes[0])) continue;
+        const tensor = f.get(name).?;
+        if (tensor.dtype != .bf16) return error.UnsupportedVisionDType;
+        total += tensor.bytes.len;
+    };
+    if (total == 0) return error.NoVisionWeights;
+    return total;
+}
 
 /// Prompt rows [at, at + n) take image rows [row, row + n) (rows of the encoded pictures, in prompt order).
 pub const Span = struct { at: u32, n: u32, row: u32 };

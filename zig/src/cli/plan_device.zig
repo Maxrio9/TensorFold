@@ -24,6 +24,10 @@ pub const Options = struct {
     unified: bool = false,
     no_drafts: bool = false,
     drafter: ?[]const u8 = null,
+    vision: bool = false,
+    image_tokens: u32 = 4096,
+    max_images: u32 = 4,
+    fixed_image_share: bool = false,
     json: bool = false,
 
     fn total(o: Options) u64 {
@@ -47,6 +51,8 @@ pub fn parse(args: []const []const u8) ?Options {
             o.unified = true;
         } else if (eql(u8, flag, "--no-drafts")) {
             o.no_drafts = true;
+        } else if (eql(u8, flag, "--vision")) {
+            o.vision = true;
         } else if (eql(u8, flag, "--json")) {
             o.json = true;
         } else {
@@ -72,6 +78,14 @@ pub fn parse(args: []const []const u8) ?Options {
                 o.drafter = value;
             } else if (eql(u8, flag, "--context")) {
                 o.context = std.fmt.parseInt(u32, value, 10) catch return null;
+            } else if (eql(u8, flag, "--vision-max-images")) {
+                o.max_images = std.fmt.parseInt(u32, value, 10) catch return null;
+                if (o.max_images < 1 or o.max_images > 100) return null;
+            } else if (eql(u8, flag, "--vision-image-tokens")) {
+                o.image_tokens = std.fmt.parseInt(u32, value, 10) catch return null;
+                if (o.image_tokens < 16 or o.image_tokens > 262144) return null;
+            } else if (eql(u8, flag, "--vision-image-share")) {
+                if (eql(u8, value, "fixed")) o.fixed_image_share = true else if (eql(u8, value, "request")) o.fixed_image_share = false else return null;
             } else if (eql(u8, flag, "--kv-cache")) {
                 if (eql(u8, value, "bf16")) o.bf16 = true else if (eql(u8, value, "fp8")) o.bf16 = false else return null;
             } else return null;
@@ -153,6 +167,11 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         .format = if (o.bf16) .bf16 else .fp8,
         .drafts = !o.no_drafts,
         .drafter = o.drafter,
+        .vision = if (o.vision) .{
+            .image_tokens = o.image_tokens,
+            .max_images = o.max_images,
+            .image_share = if (o.fixed_image_share) .fixed else .request,
+        } else null,
     };
     var problem: []const u8 = "";
     const r = try mini.plan(a, io, dir, pool, q, &problem) orelse {

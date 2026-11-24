@@ -59,6 +59,8 @@ pub const Backend = struct {
 
     graphs: ?@import("loop_graphs.zig").Graphs = null,
     drafter: ?draft_runtime.Drafter = null,
+    vision: ?*@import("mini_vision.zig").Images = null,
+    image_rows: [engine.max_slots]?cuda.DeviceBuffer = @splat(null),
     costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     shared_costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     propose_ms: f64 = 0,
@@ -158,16 +160,20 @@ pub const Backend = struct {
         try b.m.addSlots(b.s, streams);
         if (b.drafter) |*d| try d.reserve(streams);
         try b.slotBuffers(streams);
+        if (b.vision) |v| for (b.image_rows[0..streams]) |*slot| {
+            if (slot.* == null) slot.* = try cuda.DeviceBuffer.alloc(b.d, v.slot_bytes);
+        };
     }
 
     pub fn streamBytesWithDraft(b: *const Backend) u64 {
         const draft_bytes = if (b.drafter) |d| std.meta.activeTag(d).sessionBytes(b.m.context) else 0;
-        return streamBytes(b.m) + draft_bytes;
+        return streamBytes(b.m) + draft_bytes + if (b.vision) |v| v.slot_bytes else 0;
     }
 
     pub fn deinit(b: *Backend) void {
         for (&b.lanes_) |*x| if (x.*) |*l| l.rows.deinit(b.gpa);
         for (b.slot[0..b.held]) |*pair| for (pair) |*x| x.free();
+        for (&b.image_rows) |*slot| if (slot.*) |*rows| rows.free();
         if (b.graphs) |*g| g.deinit();
         if (b.drafter) |*d| d.deinit();
         b.meta.free();
@@ -261,6 +267,7 @@ pub const Backend = struct {
     fn opening(b: *Backend, s: *lanes.Stream) !*Lane {
         const prompt = s.prompt();
         if (prompt.len == 0) return error.EmptyPrompt;
+        if (s.images.len > 0 and b.vision == null) return error.Inkling2LoopTextOnly;
         if (prompt.len > b.m.context or s.max_new > b.m.context - prompt.len) return error.PastContext;
         if (b.slotOf(s) == null) {
             const i = b.freeSlot() orelse return error.NoFreeSlot;
@@ -280,6 +287,7 @@ pub const Backend = struct {
             if (s.reuse.saved != null) s.reuse_failed = true; // rebuild the drafter's context along with the target
             break :blk 0;
         } else b.resumeSaved(s);
+        if (s.images.len > 0) try b.vision.?.begin(b.s, s, at, b.image_rows[b.m.slot].?.ptr);
         l.len = at;
         l.fill = at;
         s.fill_at.store(@intCast(at), .monotonic);
@@ -295,7 +303,17 @@ pub const Backend = struct {
             if (mark > at and mark < end) end = mark;
         }
         const done = end == prompt.len;
-        try b.m.forward(b.k, b.s, prompt[at..end], at, end - at - 1, @intFromBool(done), false);
+        if (s.images.len == 0) {
+            try b.m.forward(b.k, b.s, prompt[at..end], at, end - at - 1, @intFromBool(done), false);
+        } else {
+            const chain: round.Chain = .{ .slot = b.m.slot, .position = at, .tokens = prompt[at..end] };
+            const shape = try round.prepare(b.m, b.s, &.{chain}, end - at - 1, @intFromBool(done), b.m.capture_taps);
+            try round.executePrompt(b.m, b.k, b.s, shape, .{
+                .buffer = b.image_rows[b.m.slot].?.ptr,
+                .images = s.images,
+                .position = at,
+            });
+        }
         if (b.m.capture_taps) {
             const d = &b.drafter.?;
             try d.prefill(b.m.slot, &b.k.glue, b.s, at, end - at, prompt.len, b.m.w.c.text.eps);
