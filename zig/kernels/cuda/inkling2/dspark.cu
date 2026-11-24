@@ -91,9 +91,8 @@ struct QkArgs {
 };
 
 // Per (row, head): RMSNorm * weight rounded to bf16, then neox RoPE at pos0 + row; key and value heads to the caches.
-extern "C" __global__ void __launch_bounds__(64) tf_ink2_dsp_qk(QkArgs a) {
+__device__ __forceinline__ void ink2DraftQk(QkArgs a, int pos0, float* sh) {
     using namespace ink2d;
-    __shared__ float sh[32];
     const int row = blockIdx.x, h = blockIdx.y, i = threadIdx.x;
     const bool isq = h < a.hq;
     const uint16_t* x = a.x + row * a.ld + static_cast<long long>(h) * kD;
@@ -101,7 +100,7 @@ extern "C" __global__ void __launch_bounds__(64) tf_ink2_dsp_qk(QkArgs a) {
     const float inv = 1.0f / sqrtf(blockSum(x0 * x0 + x1 * x1, sh) / kD + a.eps);
     const uint16_t* w = isq ? a.qw : a.kw;
     const float y0 = bfr(x0 * inv * bf(w[i])), y1 = bfr(x1 * inv * bf(w[i + 64]));
-    const int pos = a.pos0 + row;
+    const int pos = pos0 + row;
     const float f = static_cast<float>(pos) * (1.0f / powf(a.theta, static_cast<float>(2 * i) / kD));
     const float co = cosf(f), si = sinf(f);
     const uint16_t o0 = tobf(y0 * co - y1 * si), o1 = tobf(y1 * co + y0 * si);
@@ -120,6 +119,11 @@ extern "C" __global__ void __launch_bounds__(64) tf_ink2_dsp_qk(QkArgs a) {
     a.vc[at + i + 64] = v[i + 64];
 }
 
+extern "C" __global__ void __launch_bounds__(64) tf_ink2_dsp_qk(QkArgs a) {
+    __shared__ float sh[32];
+    ink2DraftQk(a, a.pos0, sh);
+}
+
 struct AttnArgs {
     const uint16_t* q;  // bf16 [T][hq][128]
     const uint16_t* kc;  // bf16 [ring][hk][128]
@@ -131,13 +135,19 @@ struct AttnArgs {
 };
 
 // A block's rows against keys [lo, hi], unmasked (the block sees itself whole); a 1,024-key chunk and key head a block.
-extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
+template<bool sliding>
+__device__ __forceinline__ void ink2DraftAttn(AttnArgs a, int pos0, int window) {
     using namespace ink2d;
     __shared__ float sq[kMaxQ][kD];
     __shared__ uint16_t sk[kKT][kD + 8];
     __shared__ uint16_t sv[kKT][kD];
     __shared__ float sp[kMaxQ][kKT];
     __shared__ float sm[kMaxQ], sl[kMaxQ], sa[kMaxQ];
+    if constexpr (sliding) {
+        a.lo = max(0, pos0 - window + 1);
+        a.hi = pos0 + a.T - 1;
+        a.c0 = a.lo / kChunk;
+    }
     const int j = blockIdx.y, c = a.c0 + blockIdx.x, tid = threadIdx.x;
     const int g = a.hq / a.hk, nq = a.T * g, nqt = a.T * a.hq;
     const int k0 = max(a.lo, c * kChunk), k1 = min(a.hi + 1, (c + 1) * kChunk);
@@ -165,7 +175,8 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
         for (int idx = tid; idx < nq * kKT; idx += blockDim.x) {
             const int qi = idx / kKT, kk = idx % kKT;
             float s = -INFINITY;
-            if (kk < nk) {
+            const int key = kt + kk;
+            if (kk < nk && (!sliding || key >= pos0 || key > pos0 + qi / g - window)) {
                 s = 0.0f;
                 for (int dd = 0; dd < kD; ++dd) s += sq[qi][dd] * bf(sk[kk][dd]);
                 s *= a.scale;
@@ -176,10 +187,10 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
         for (int qi = tid; qi < nq; qi += blockDim.x) {
             float mx = sm[qi];
             for (int kk = 0; kk < nk; ++kk) mx = fmaxf(mx, sp[qi][kk]);
-            const float al = expf(sm[qi] - mx);
+            const float al = sliding && mx == -INFINITY ? 1.0f : expf(sm[qi] - mx);
             float sum = 0.0f;
             for (int kk = 0; kk < nk; ++kk) {
-                const float p = expf(sp[qi][kk] - mx);
+                const float p = sliding && mx == -INFINITY ? 0.0f : expf(sp[qi][kk] - mx);
                 sp[qi][kk] = p;
                 sum += p;
             }
@@ -208,6 +219,12 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
         }
     }
 }
+
+extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
+    ink2DraftAttn<false>(a, 0, 0);
+}
+
+#include "dflash2.cuh"
 
 // Each (row, head)'s chunks folded in order: out bf16 [T][hq][128].
 extern "C" __global__ void __launch_bounds__(128) tf_ink2_dsp_merge(const float* __restrict__ po, const float* __restrict__ pml,

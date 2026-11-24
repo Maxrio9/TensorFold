@@ -69,6 +69,13 @@ pub fn run(gpu: check.Gpu, model: []const u8, drafter: []const u8, fixture: []co
     if (o.backend.graphs) |*g| std.debug.print("VERIFY GRAPHS AT LOAD held={d} captured={d} eager={d}\n", .{
         g.cache.count(), g.cache.stats.captured, g.cache.stats.eager,
     });
+    var caches: [8]cuda.graph_cache.Snapshot = undefined;
+    const n_caches = cuda.graph_cache.snapshots(&caches);
+    for (caches[0..n_caches]) |*cache| {
+        std.debug.print("VERIFY CUDA CACHE {s} held={d} captured={d} replayed={d} eager={d}\n", .{
+            cache.name(), cache.counts.held, cache.counts.captured, cache.counts.replayed, cache.counts.eager,
+        });
+    }
     const v = o.weights.c.text.unpadded_vocab;
     const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = max_width * v * 4 };
     const window = try a.alloc(f32, max_width * v);

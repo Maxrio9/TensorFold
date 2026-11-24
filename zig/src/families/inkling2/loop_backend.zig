@@ -5,6 +5,7 @@ const lanes = @import("lanes");
 const engine = @import("loop_engine.zig");
 const ops = @import("ops.zig");
 const dspark = @import("dspark_cuda.zig");
+const draft_runtime = @import("loop_drafter.zig");
 const masked_draw = @import("loop_masked_draw.zig");
 
 const Model = engine.Model;
@@ -57,7 +58,7 @@ pub const Backend = struct {
     held: usize = 0, // slots with buffers
 
     graphs: ?@import("loop_graphs.zig").Graphs = null,
-    drafter: ?dspark.Drafter = null,
+    drafter: ?draft_runtime.Drafter = null,
     costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     shared_costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     propose_ms: f64 = 0,
@@ -77,7 +78,8 @@ pub const Backend = struct {
         }
         try g.warm(b.m, b.k, b.s, 1, false);
         const d = if (b.drafter) |*d| d else return;
-        b.m.taps = .{ .function = d.k.tap, .buffer = d.scratch.taps };
+        d.enableGraphs(b.gpa);
+        b.m.taps = d.taps();
         b.m.capture_taps = true;
         defer b.m.capture_taps = false;
         const max = @min(b.costs.len, b.m.context);
@@ -92,20 +94,21 @@ pub const Backend = struct {
             const verify_ms = elapsed(io, t0);
             var propose_ms: f64 = 0;
             if (width > 1) {
-                const session = &d.sessions[0];
+                const session = d.session(0);
                 session.reset();
-                try d.absorb(session, &b.k.glue, b.s, d.scratch.taps, 0, width, b.m.w.c.text.eps);
+                try d.absorb(0, &b.k.glue, b.s, b.m.taps.?.buffer, 0, width, b.m.w.c.text.eps);
                 try b.s.synchronize();
+                if (d.* == .dflash2) try d.propose(0, b.m, b.k, b.s, 0, width - 1, null);
                 const t1 = std.Io.Clock.awake.now(io);
-                try d.propose(session, b.m, b.k, b.s, 0, width - 1, null);
+                try d.propose(0, b.m, b.k, b.s, 0, width - 1, null);
                 propose_ms = elapsed(io, t1);
             }
             b.costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms + propose_ms };
             b.shared_costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms };
-            if (width == 2) b.propose_ms = propose_ms;
+            if (width == 2 or (d.* == .dflash2 and width == max)) b.propose_ms = propose_ms;
         }
         b.priced_width = max;
-        d.sessions[0].reset();
+        d.session(0).reset();
         try b.m.reset(b.s);
         try b.s.synchronize();
     }
@@ -158,7 +161,8 @@ pub const Backend = struct {
     }
 
     pub fn streamBytesWithDraft(b: *const Backend) u64 {
-        return streamBytes(b.m) + if (b.drafter != null) dspark.Session.bytes(b.m.context) else 0;
+        const draft_bytes = if (b.drafter) |d| std.meta.activeTag(d).sessionBytes(b.m.context) else 0;
+        return streamBytes(b.m) + draft_bytes;
     }
 
     pub fn deinit(b: *Backend) void {
@@ -179,6 +183,7 @@ pub const Backend = struct {
     pub fn facts(b: *const Backend) lanes.Model {
         const drafting = b.drafter != null;
         return .{
+            .fixed_draft_block = if (b.drafter) |d| d == .dflash2 else false,
             .exact_width = window_rows,
             .gpu_tokens = false,
             .mtp = drafting,
@@ -271,7 +276,7 @@ pub const Backend = struct {
         l.len = 0;
         try b.m.reset(b.s);
         const at = if (b.m.capture_taps) blk: {
-            b.drafter.?.sessions[b.m.slot].reset();
+            b.drafter.?.session(b.m.slot).reset();
             if (s.reuse.saved != null) s.reuse_failed = true; // rebuild the drafter's context along with the target
             break :blk 0;
         } else b.resumeSaved(s);
@@ -293,7 +298,7 @@ pub const Backend = struct {
         try b.m.forward(b.k, b.s, prompt[at..end], at, end - at - 1, @intFromBool(done), false);
         if (b.m.capture_taps) {
             const d = &b.drafter.?;
-            try d.absorb(&d.sessions[b.m.slot], &b.k.glue, b.s, d.scratch.taps, at, end - at, b.m.w.c.text.eps);
+            try d.prefill(b.m.slot, &b.k.glue, b.s, at, end - at, prompt.len, b.m.w.c.text.eps);
         }
         if (done) try b.d.check(b.d.api.cuMemcpyDtoDAsync_v2(l.last, b.m.s.logits, b.m.w.c.text.unpadded_vocab * 4, b.s.handle), "cuMemcpyDtoDAsync");
         l.len = end;
@@ -417,7 +422,7 @@ pub const Backend = struct {
             try l.rows.append(b.gpa, w.pending);
             if (w.held > 0) {
                 if (!b.m.capture_taps) return error.NoDraftHead;
-                const session = &b.drafter.?.sessions[b.m.slot];
+                const session = b.drafter.?.session(b.m.slot);
                 if (w.held > session.held_len) return error.NoHeldDrafts;
                 try l.rows.appendSlice(b.gpa, session.held[0..w.held]);
             }
@@ -435,8 +440,8 @@ pub const Backend = struct {
             const n = chain.tokens.len;
             if (w.stream.drafts and b.drafter != null) {
                 const d = &b.drafter.?;
-                const from = d.scratch.taps + row0 * dspark.tap_stride;
-                const session = &d.sessions[chain.slot];
+                const from = b.m.taps.?.buffer + row0 * dspark.tap_stride;
+                const session = d.session(chain.slot);
                 try b.m.copy(b.s, session.taps + session.pending * dspark.tap_stride, from, n * dspark.tap_stride);
             }
             const src = b.m.s.logits + row0 * v * 4;
@@ -484,7 +489,7 @@ pub const Backend = struct {
             if (r.depth != 0) return error.NoDraftHead;
             return;
         };
-        const session = &d.sessions[b.m.slot];
+        const session = d.session(b.m.slot);
         const pending = if (r.rows) |rows| blk: {
             if (r.start != l.base or rows.len == 0 or rows.len > l.len - l.base or rows.len > r.follow.len or r.position != r.start + rows.len + 1)
                 return error.PositionMismatch;
@@ -493,7 +498,7 @@ pub const Backend = struct {
             session.pending += rows.len;
             session.held_len = 0;
             if (r.depth != 0 or session.pending >= window_rows or !r.stream.shared_round) {
-                try d.absorb(session, &b.k.glue, b.s, session.taps, session.end, session.pending, b.m.w.c.text.eps);
+                try d.absorb(b.m.slot, &b.k.glue, b.s, session.taps, session.end, session.pending, b.m.w.c.text.eps);
                 session.pending = 0;
             }
             break :blk r.follow[rows.len - 1];
@@ -502,7 +507,7 @@ pub const Backend = struct {
             if (r.depth == 0) return;
             break :blk try b.feed(r.first orelse return error.NoFirstToken);
         };
-        if (r.depth != 0) try d.propose(session, b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
+        if (r.depth != 0) try d.propose(b.m.slot, b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
     }
 
     pub fn saveState(b: *Backend, owner: ?*anyopaque, at: u32) !*Model.Saved {

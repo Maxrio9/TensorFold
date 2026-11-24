@@ -11,6 +11,8 @@ const pack = @import("pack_weights.zig");
 const weights = @import("loop_weights.zig");
 const draft_weights = @import("dspark_weights.zig");
 const draft = @import("dspark_cuda.zig");
+const dflash = @import("dflash2_cuda.zig");
+const draft_runtime = @import("loop_drafter.zig");
 const Dense = cuda.exl3.Dense;
 
 pub const Format = loop.CacheFormat;
@@ -46,9 +48,10 @@ pub const Checkpoint = struct {
     checkpoint_bytes: u64,
     target_arena: u64,
     draft_arena: u64,
+    draft_kind: draft_runtime.Kind = .dspark,
     dense_scratch: u64,
 
-    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, why: *config.Why) !Checkpoint {
+    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, why: *config.Why) !Checkpoint {
         const c = try native.readConfig(a, io, dir, why);
         try loop.validateLoad(&c, 1, false);
         if (c.exl3) try pack.validate(c.text);
@@ -68,8 +71,8 @@ pub const Checkpoint = struct {
                 try @import("loop_kernels.zig").reserveProjections(&dense, undefined, p);
             }
         }
-        const drafter_dir = try native.drafterDir(a, io, dir, c.exl3, .{ .drafts = drafts, .context = 1 });
-        const drafter = if (drafter_dir) |path| try draft_weights.checkpointBytes(a, io, &c, path) else 0;
+        const src = try native.drafterSource(a, io, dir, &c, .{ .drafts = drafts, .context = 1, .drafter = drafter_dir });
+        const drafter = if (src) |d| try d.checkpointBytes(a, io, &c) else 0;
         return .{
             .text = c.text,
             .schedule = schedule,
@@ -77,6 +80,7 @@ pub const Checkpoint = struct {
             .checkpoint_bytes = bytes,
             .target_arena = weights.arenaBytes(bytes),
             .draft_arena = drafter,
+            .draft_kind = if (src) |d| d.kind else .dspark,
             .dense_scratch = dense.bytes(),
         };
     }
@@ -91,8 +95,11 @@ pub const Checkpoint = struct {
         const global_kv = global * std.mem.alignForward(u64, context, 64);
         const drafted = ck.draft_arena > 0;
         const shared_taps = if (drafted) draft.shared_tap_bytes else 0;
-        const draft_partials = if (drafted) draft.partialBytes(context) else 0;
-        const prepared_head: u64 = if (drafted) draft_weights.prepared_head_bytes else 0;
+        const ds = drafted and ck.draft_kind == .dspark;
+        const df = drafted and ck.draft_kind == .dflash2;
+        const draft_partials = if (ds) draft.partialBytes(context) else if (df) dflash.partialBytes() else 0;
+        const draft_scratch = if (ds) draft.Drafter.scratchBytes(context) else if (df) dflash.scratchBytes() else 0;
+        const prepared_head: u64 = if (ds) draft_weights.prepared_head_bytes else 0;
         return .{
             .target_weights = ck.target_arena,
             .drafter_weights_and_padding = ck.draft_arena - prepared_head,
@@ -100,7 +107,7 @@ pub const Checkpoint = struct {
             .dense_scratch = ck.dense_scratch,
             .model_working = try engine.Model.planScratch(ck.text, context, if (ck.exl3) pack.expertGeometry(ck.text) else null),
             .backend_shared = shared[0] + shared[1] + shared[2],
-            .drafter_shared_other = if (drafted) draft.Drafter.scratchBytes(context) - shared_taps - draft_partials else 0,
+            .drafter_shared_other = draft_scratch - shared_taps - draft_partials,
             .drafter_shared_taps = shared_taps,
             .drafter_attention_partials = draft_partials,
             .target_global_kv = global_kv,
@@ -108,9 +115,9 @@ pub const Checkpoint = struct {
             .target_conv = conv,
             .target_rewind = slot[1] + slot[2] + slot[3],
             .backend_lane = lane[0] + lane[1],
-            .drafter_kv = if (drafted) draft.Session.kvBytes(context) else 0,
+            .drafter_kv = if (ds) draft.Session.kvBytes(context) else if (df) dflash.kvBytes(context) else 0,
             .drafter_pending_taps = if (drafted) draft.Session.tap_bytes else 0,
-            .drafter_newest = if (drafted) draft.Session.newest_bytes else 0,
+            .drafter_newest = if (ds) draft.Session.newest_bytes else 0,
             .global_kv_per_token = global,
         };
     }
@@ -186,6 +193,22 @@ test "Mini capacity: published stream and FP8 KV sizes" {
     const plain = try ck.allocations(8704, .fp8);
     try std.testing.expectEqual(435_506_696, plain.stream());
     try std.testing.expectEqual(16_896, plain.global_kv_per_token);
+}
+
+test "Mini DFlash2 capacity keeps a fixed sliding ring and does not charge a DSpark folded head" {
+    var ck = try testCheckpoint(std.testing.allocator);
+    ck.draft_kind = .dflash2;
+    ck.draft_arena = 989_967_360;
+    const short = try ck.allocations(128, .fp8);
+    const long = try ck.allocations(8704, .fp8);
+    const longer = try ck.allocations(131072, .fp8);
+    try std.testing.expectEqual(ck.draft_arena, long.drafter_weights_and_padding);
+    try std.testing.expectEqual(0, long.drafter_prepared_head);
+    try std.testing.expectEqual(0, long.drafter_newest);
+    try std.testing.expectEqual(5 * (128 + 8) * 4096, short.drafter_kv);
+    try std.testing.expectEqual(5 * (2047 + 8) * 4096, long.drafter_kv);
+    try std.testing.expectEqual(long.drafter_kv, longer.drafter_kv);
+    try std.testing.expectEqual(long.drafterShared(), longer.drafterShared());
 }
 
 const Record = struct {

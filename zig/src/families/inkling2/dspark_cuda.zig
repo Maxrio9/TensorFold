@@ -83,8 +83,8 @@ const Scratch = struct {
 /// KV, the last fusion vector, and the target taps waiting to be committed belong to a request.
 pub const Session = struct {
     memory: cuda.DeviceBuffer,
-    k: [3]u64,
-    v: [3]u64,
+    k: [5]u64,
+    v: [5]u64,
     newest: u64,
     taps: u64,
     end: usize = 0,
@@ -109,17 +109,23 @@ pub const Session = struct {
     }
 
     pub fn init(d: *const cuda.Driver, context: usize) !Session {
-        const memory = try cuda.DeviceBuffer.alloc(d, bytes(context));
+        return initRings(d, &kvRings(context), newest_bytes);
+    }
+
+    pub fn initRings(d: *const cuda.Driver, rings: []const usize, newest_size: usize) !Session {
+        var kv_bytes: usize = 0;
+        for (rings) |ring| kv_bytes += ring * 2 * kv * 2;
+        const memory = try cuda.DeviceBuffer.alloc(d, kv_bytes + newest_size + tap_bytes);
         var session: Session = .{ .memory = memory, .k = undefined, .v = undefined, .newest = undefined, .taps = undefined };
         var at = memory.ptr;
-        for (kvRings(context), &session.k, &session.v) |ring, *key, *value| {
+        for (rings, session.k[0..rings.len], session.v[0..rings.len]) |ring, *key, *value| {
             key.* = at;
             at += ring * kv * 2;
             value.* = at;
             at += ring * kv * 2;
         }
         session.newest = at;
-        session.taps = at + newest_bytes;
+        session.taps = at + newest_size;
         return session;
     }
 

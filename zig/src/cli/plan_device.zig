@@ -23,6 +23,7 @@ pub const Options = struct {
     bf16: bool = false,
     unified: bool = false,
     no_drafts: bool = false,
+    drafter: ?[]const u8 = null,
     json: bool = false,
 
     fn total(o: Options) u64 {
@@ -66,6 +67,9 @@ pub fn parse(args: []const []const u8) ?Options {
                 o.limit_gib = value;
             } else if (eql(u8, flag, "--parallel")) {
                 o.parallel = std.fmt.parseInt(u32, value, 10) catch return null;
+            } else if (eql(u8, flag, "--drafter")) {
+                if (value.len == 0) return null;
+                o.drafter = value;
             } else if (eql(u8, flag, "--context")) {
                 o.context = std.fmt.parseInt(u32, value, 10) catch return null;
             } else if (eql(u8, flag, "--kv-cache")) {
@@ -143,7 +147,13 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         .reserve = try budget.reserveBytes(o.reserve_gib, o.total(), o.unified),
         .limit = try budget.limitBytes(o.limit_gib),
     };
-    const q: mini.Query = .{ .parallel = o.parallel, .context = o.context, .format = if (o.bf16) .bf16 else .fp8, .drafts = !o.no_drafts };
+    const q: mini.Query = .{
+        .parallel = o.parallel,
+        .context = o.context,
+        .format = if (o.bf16) .bf16 else .fp8,
+        .drafts = !o.no_drafts,
+        .drafter = o.drafter,
+    };
     var problem: []const u8 = "";
     const r = try mini.plan(a, io, dir, pool, q, &problem) orelse {
         if (o.json) {

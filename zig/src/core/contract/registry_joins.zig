@@ -20,6 +20,7 @@ pub const cuda_after = @import("registry_media.zig").cuda ++
     @import("minimax_cuda_records.zig").cuda ++
     @import("inkling2_cuda_records.zig").cuda ++
     @import("inkling2_dspark_records.zig").cuda ++
+    @import("inkling2_dflash2_records.zig").cuda ++
     @import("moss_image_cuda_records.zig").cuda ++
     @import("nemo_audio_cuda_records.zig").cuda ++
     @import("idol_cuda_sets.zig").cuda ++

@@ -19,6 +19,7 @@ pub const Query = struct {
     context: ?u32 = null,
     format: Format = .fp8,
     drafts: bool = true,
+    drafter: ?[]const u8 = null,
 };
 
 pub const Result = struct {
@@ -167,7 +168,7 @@ fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool
 
 pub fn plan(a: Allocator, io: std.Io, dir: []const u8, before: budget.Pool, q: Query, problem: *[]const u8) !?Report {
     var why: @import("inkling2").capacity.ConfigWhy = .{};
-    const ck = mini.capacity.Checkpoint.read(a, io, dir, q.drafts, &why) catch |err| {
+    const ck = mini.capacity.Checkpoint.read(a, io, dir, q.drafts, q.drafter, &why) catch |err| {
         if (err == error.OutOfMemory) return err;
         problem.* = if (why.text().len > 0) try a.dupe(u8, why.text()) else mini.native.explain(null, err) orelse @errorName(err);
         return null;

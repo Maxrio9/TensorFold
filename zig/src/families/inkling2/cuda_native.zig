@@ -10,8 +10,8 @@ const engine = @import("loop_engine.zig");
 const backend = @import("loop_backend.zig");
 const pack = @import("pack_weights.zig");
 const weights = @import("loop_weights.zig");
-const draft_weights = @import("dspark_weights.zig");
-const dspark = @import("dspark_cuda.zig");
+const draft_runtime = @import("loop_drafter.zig");
+const dflash_weights = @import("dflash2_weights.zig");
 
 pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
@@ -126,6 +126,12 @@ pub fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: boo
     return dir;
 }
 
+pub fn drafterSource(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, c: *const config.Config, o: Options) !?draft_runtime.Source {
+    const path = try drafterDir(gpa, io, dir, c.exl3, o) orelse return null;
+    const dflash = o.drafter != null and try dflash_weights.isDFlash2(gpa, io, path, c);
+    return .{ .kind = if (dflash) .dflash2 else .dspark, .path = path };
+}
+
 pub fn openCheckpoint(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool) !core.Checkpoint {
     var ck = if (exl3)
         try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars)
@@ -166,7 +172,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     try loop.validateLoad(&c, 1, false);
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
-    const drafter_dir = try drafterDir(gpa, io, dir, c.exl3, o);
+    const drafter = try drafterSource(gpa, io, dir, &c, o);
     var ck = try openCheckpoint(gpa, io, dir, c.exl3);
     defer ck.close();
     const p = try checkpointPlan(gpa, &ck, &c);
@@ -175,18 +181,11 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
     errdefer w.deinit();
     if (ck.unused() != 0) return error.UnusedCheckpointTensor;
-    var dw = if (drafter_dir) |path| try draft_weights.load(
-        gpa,
-        io,
-        ctx.d,
-        &c,
-        path,
-        try ck.expect("model.llm.unembed.weight", .bf16, &.{ c.text.vocab, c.text.hidden }),
-    ) else null;
+    var dw = if (drafter) |src| try src.load(gpa, io, ctx.d, &c, &ck) else null;
     errdefer if (dw) |*d| d.deinit();
     ck.release();
     const target_weights = w.bytes;
-    const draft_weights_bytes = if (dw) |d| d.memory.len else 0;
+    const draft_weights_bytes = if (dw) |*d| d.bytes() else 0;
     const before_state = cuda.usage(false).device;
     const state_room = if (o.room) |room| room.read(room.ctx) orelse return error.Inkling2CacheRoom else null;
     var k = try engine.Kernels.load(ctx, c.exl3);
@@ -199,7 +198,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
     errdefer be.deinit();
     if (dw) |d| {
-        be.drafter = try dspark.Drafter.init(ctx.d, d, o.context);
+        be.drafter = try draft_runtime.Drafter.init(ctx.d, d, o.context);
         dw = null;
     }
     if (state_room) |room| try checkCacheRoom(cuda.usage(false).device -| before_state, room);
@@ -224,7 +223,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         .ctx = out,
         .deinit = release,
         .target = out,
-        .draft_kind = if (out.backend.drafter != null) "DSpark" else null,
+        .draft_kind = if (drafter) |src| src.kind.name() else null,
     };
 }
 
@@ -248,7 +247,9 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
     return switch (err) {
         error.Inkling2LoopOneRankOnly => "Inkling 2 Mini runs at one CUDA rank with one segment; TP and multi-segment modes are refused",
         error.Inkling2LoopTextOnly => "Inkling 2 Mini is text-only on CUDA: images and --vision are refused",
-        error.Inkling2DraftNeedsExl3 => "Mini DSpark on CUDA requires the EXL3 text checkpoint",
+        error.Inkling2DraftNeedsExl3 => "Mini drafting on CUDA requires the EXL3 text checkpoint",
+        error.UnsupportedMiniDFlash2Config => "Mini DFlash2 requires the BF16 Inkling 2 Mini drafter configuration",
+        error.MiniDFlash2Tensor => "Mini DFlash2 weights do not match the checkpoint configuration",
         error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
@@ -258,6 +259,7 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
 }
 
 test "Mini native registration and refusal wording are explicit" {
+    _ = dflash_weights;
     try std.testing.expectEqualStrings("inkling2_loop", model_type);
     try std.testing.expect(max_segments == 1 and prompt_rows == 2048 and window_rows == 16);
     try std.testing.expectEqual(16, engine.max_slots); // the stream cap explain() names
