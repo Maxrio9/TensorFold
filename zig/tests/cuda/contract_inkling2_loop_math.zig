@@ -321,6 +321,10 @@ const gate_shapes = [_]c.Shape{
     .{ .rows = 16, .n = mini_h, .k = 2 * mini_h },
     .{ .rows = 2048, .n = 128, .k = 256 },
 };
+const prepared_gate_shapes = [_]c.Shape{
+    .{ .rows = 129, .n = mini_h, .k = 2 * mini_h },
+    .{ .rows = 2048, .n = 128, .k = 256 },
+};
 
 /// The served gate, or a control: forget weights again for gain (up half), or zeta from half the rank pairs (down).
 pub const GateFault = enum { none, wrong_gain, half_ranks };
@@ -329,6 +333,7 @@ pub const GateFault = enum { none, wrong_gain, half_ranks };
 pub const Gate = struct {
     kern: *const lm.Kernels,
     fault: GateFault = .none,
+    prepare_once: bool = false,
     shape: c.Shape = undefined,
     h: []f32 = &.{},
     m: []f32 = &.{},
@@ -337,10 +342,19 @@ pub const Gate = struct {
     gain: []u16 = &.{},
     dev: [5]u64 = @splat(0),
     zeta: u64 = 0,
+    prepared: u64 = 0,
     out: u64 = 0,
     base: u64 = 0,
 
     pub fn spec(self: *const Gate) c.Spec {
+        if (self.prepare_once) return .{
+            .name = "inkling2 loop tf_ink2_loop_gate_down_prepared + _up",
+            .accum = .f32,
+            .depth = depth,
+            .out = .f32,
+            .served = &prepared_gate_shapes,
+            .replaces = "tf_ink2_loop_gate",
+        };
         const name = switch (self.fault) {
             .none => "inkling2 loop tf_ink2_loop_gate_down + _up (BF16 down input/zeta, FP32 F/G tanh and four output steps)",
             .wrong_gain => "control: inkling2 loop rank-64 gate up half with forget weights again instead of gain",
@@ -394,6 +408,7 @@ pub const Gate = struct {
         }
         self.dev = .{ try ref.input(rig, self.h), try ref.input(rig, self.m), try ref.input(rig, self.d), try ref.input(rig, self.f), try ref.input(rig, self.gain) };
         self.zeta = try rig.scratch(shape.rows * lm.rank * 2);
+        self.prepared = if (self.prepare_once) try rig.scratch(shape.rows * cols * 4) else 0;
         self.base = try rig.scratch(shape.rows * cols * 4);
         self.out = try rig.output(shape.rows * cols * 4);
         return true;
@@ -403,7 +418,11 @@ pub const Gate = struct {
         const d = self.dev;
         const rows = self.shape.rows;
         const pairs: usize = if (self.fault == .half_ranks) lm.rank / 4 else lm.rank / 2;
-        try lm.gateDown(self.kern, rig.s, d[0], d[1], d[2], self.zeta, rows, pairs, self.shape.n, eps);
+        if (self.prepared != 0 and self.fault == .none) {
+            try lm.gateDownPrepared(self.kern, rig.s, d[0], d[1], self.prepared, d[2], self.zeta, rows, self.shape.n, eps);
+        } else {
+            try lm.gateDown(self.kern, rig.s, d[0], d[1], d[2], self.zeta, rows, pairs, self.shape.n, eps);
+        }
         try lm.gateUp(self.kern, rig.s, d[0], d[1], self.zeta, d[3], if (self.fault == .wrong_gain) d[3] else d[4], self.out, rows, self.shape.n);
     }
 

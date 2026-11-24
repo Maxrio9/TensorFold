@@ -25,6 +25,8 @@ pub const Kernels = struct {
     ar_fn: cuda.Function,
     messages_fn: cuda.Function,
     gate_down_fn: cuda.Function,
+    gate_prepare_fn: cuda.Function,
+    gate_prepared_fn: cuda.Function,
     gate_up_fn: cuda.Function,
     project_qkv_fn: cuda.Function,
     round_bf16_fn: cuda.Function,
@@ -38,6 +40,8 @@ pub const Kernels = struct {
             .ar_fn = try mod.function("tf_ink2_loop_ar"),
             .messages_fn = try mod.function("tf_ink2_loop_messages"),
             .gate_down_fn = try mod.function("tf_ink2_loop_gate_down"),
+            .gate_prepare_fn = try mod.function("tf_ink2_loop_gate_prepare"),
+            .gate_prepared_fn = try mod.function("tf_ink2_loop_gate_down_prepared"),
             .gate_up_fn = try mod.function("tf_ink2_loop_gate_up"),
             .project_qkv_fn = try mod.function("tf_ink2_loop_project_qkv"),
             .round_bf16_fn = try mod.function("tf_ink2_loop_round_bf16"),
@@ -99,12 +103,18 @@ pub fn gate(
     forget_bf16: u64,
     gain_bf16: u64,
     zeta_bf16: u64,
+    prepared_bf16: u64,
     out_f32: u64,
     rows: usize,
     c: usize,
     eps: f32,
 ) !void {
-    try gateDown(k, s, state_f32, message_f32, down_bf16, zeta_bf16, rows, rank / 2, c, eps);
+    // Shared decode rounds contain at most 128 rows.
+    if (prepared_bf16 != 0 and rows > 128) {
+        try gateDownPrepared(k, s, state_f32, message_f32, prepared_bf16, down_bf16, zeta_bf16, rows, c, eps);
+    } else {
+        try gateDown(k, s, state_f32, message_f32, down_bf16, zeta_bf16, rows, rank / 2, c, eps);
+    }
     try gateUp(k, s, state_f32, message_f32, zeta_bf16, forget_bf16, gain_bf16, out_f32, rows, c);
 }
 
@@ -116,6 +126,33 @@ pub fn gateDown(k: *const Kernels, s: cuda.Stream, state_f32: u64, message_f32: 
     a.add(int(c));
     a.add(eps);
     try go(k.gate_down_fn, s, .{ .x = @intCast(rows), .y = @intCast(pairs) }, 256, &a);
+}
+
+/// Normalize a prompt row once, then share its rounded inputs across the 32 rank pairs.
+pub fn gateDownPrepared(
+    k: *const Kernels,
+    s: cuda.Stream,
+    state: u64,
+    message: u64,
+    prepared: u64,
+    down: u64,
+    zeta: u64,
+    rows: usize,
+    c: usize,
+    eps: f32,
+) !void {
+    if (rows == 0 or c == 0) return error.Inkling2LoopGateShape;
+    const grid: u32 = @intCast(rows);
+    var a: cuda.Args = .{};
+    for ([_]u64{ state, message, prepared }) |v| a.add(v);
+    a.add(int(c));
+    a.add(eps);
+    try go(k.gate_prepare_fn, s, .{ .x = grid }, 256, &a);
+
+    var b: cuda.Args = .{};
+    for ([_]u64{ prepared, down, zeta }) |v| b.add(v);
+    b.add(int(c));
+    try go(k.gate_prepared_fn, s, .{ .x = grid, .y = rank / 2 }, 256, &b);
 }
 
 /// The up half: forget/gain from zeta and the four-step output, 64 columns a block.

@@ -218,6 +218,7 @@ pub const Model = struct {
             .bank1 = try buffers.alloc(rows * h * 2),
             .raw = try buffers.alloc(3 * rows * h * 4),
             .zeta = try buffers.alloc(rows * loop_math.rank * 2),
+            .gate_inputs = if (expert != null) try buffers.alloc(rows * 2 * h * 2) else 0,
             .messages = try buffers.alloc(4 * rows * h * 4),
             .normalized = try buffers.alloc(3 * rows * h * 2),
             .t = try buffers.alloc(rows * h * 4),

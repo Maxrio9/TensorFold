@@ -16,6 +16,7 @@ pub const Scratch = struct {
     bank1: u64,
     raw: u64, // three FP32 AR/gate rows per token
     zeta: u64, // a gate's 64 BF16 bottleneck values per token, between its down and up halves
+    gate_inputs: u64, // normalized BF16 state and message rows shared by the down projection
     messages: u64, // four FP32 message rows per token
     normalized: u64, // three BF16 rows per token
     t: u64,
