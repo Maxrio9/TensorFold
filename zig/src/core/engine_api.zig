@@ -225,7 +225,7 @@ pub const Family = struct {
 pub const Precision = enum { checkpoint, full };
 
 /// Which of --tp and --rank the command line named (a CUDA family's rank aliases fill the rest).
-pub const Given = struct { tp: bool = false, rank: bool = false };
+pub const Given = struct { tp: bool = false, rank: bool = false, kv_cache: bool = false };
 
 /// What a server asks of the engine it opens: the checkpoint, and the serve flags an engine reads.
 pub const Open = struct {

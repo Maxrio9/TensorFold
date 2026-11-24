@@ -3,6 +3,7 @@
 #include <cuda_bf16.h>
 
 #include "common/qmm_frag.cuh"
+#include "kv_fp8.cuh"
 
 namespace ink2p {
 
@@ -65,9 +66,29 @@ __device__ __forceinline__ void loadTile(uint16_t* ks, uint16_t* vs, const uint1
     tf_common::cp_commit();
 }
 
+// Expand only the current FP8 tile, without a widened global cache.
+__device__ __forceinline__ void loadTile8(uint16_t* ks, uint16_t* vs, const uint8_t* __restrict__ kc,
+                                          const uint8_t* __restrict__ vc, size_t head_base, size_t scale_base,
+                                          int ring, int kt, int k_hi) {
+    const size_t slot0 = static_cast<size_t>(kt % ring);
+    for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += kThreads) {
+        const int key = e >> 4, col = (e & 15) * 8;
+        uint4 k = make_uint4(0, 0, 0, 0), v = make_uint4(0, 0, 0, 0);
+        if (kt + key <= k_hi) {
+            const size_t slot = slot0 + key;
+            const size_t at = head_base + slot * kDim + col;
+            k = tf_kv_fp8::bf16x8(kc + at, reinterpret_cast<const float*>(kc + scale_base)[slot]);
+            v = tf_kv_fp8::bf16x8(vc + at, reinterpret_cast<const float*>(vc + scale_base)[slot]);
+        }
+        *reinterpret_cast<uint4*>(ks + piece(key, e & 15)) = k;
+        *reinterpret_cast<uint4*>(vs + piece(key, e & 15)) = v;
+    }
+}
+
 // A block's prompt pairs (tile of kPairs pairs, key head, chunk).
-__device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const uint16_t* __restrict__ kc,
-                                           const uint16_t* __restrict__ vc, const uint16_t* __restrict__ tab,
+template <typename Cache>
+__device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const Cache* __restrict__ kc,
+                                           const Cache* __restrict__ vc, const uint16_t* __restrict__ tab,
                                            const Seg* __restrict__ segs, float* __restrict__ part_o,
                                            float2* __restrict__ part_ml, int heads, int kv_heads, int ring,
                                            int chunk, int c0, int chunks, float scale, uint16_t* smem) {
@@ -115,12 +136,13 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
     // ldmatrix lanes: K rows 8j + (lane & 7), pieces 2k + lane / 8; V rows 16u + lane % 16, pieces n + lane / 16
     const int k_row = lane & 7, k_pc = lane >> 3;
     const int v_row = lane & 15, v_pc = lane >> 4;
-    const uint16_t* k16 = kc;
-    const uint16_t* v16 = vc;
-    for (int st = 0; st < kStages - 1; ++st) {
-        if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, k16, v16, head_base, ring,
-                                   b_lo + st * kKeys, b_lo, k_hi);
-        else tf_common::cp_commit();
+    constexpr bool fp8 = sizeof(Cache) == 1;
+    if constexpr (!fp8) {
+        for (int st = 0; st < kStages - 1; ++st) {
+            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base, ring,
+                                       b_lo + st * kKeys, b_lo, k_hi);
+            else tf_common::cp_commit();
+        }
     }
     for (int it = 0; it < n_tiles; ++it) {
         const int kt = b_lo + it * kKeys;
@@ -130,15 +152,23 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
             m[0] = m[1] = -INFINITY;
             l[0] = l[1] = 0.0f;
         }
-        tf_common::cp_wait<kStages - 2>();
-        __syncthreads();  // tile `it` is in; every warp is past tile it-1, whose stage the next load takes
-        if (it + kStages - 1 < n_tiles) {
-            uint16_t* nx = smem + ((it + kStages - 1) % kStages) * kStage;
-            loadTile(nx, nx + kTile, k16, v16, head_base, ring, kt + (kStages - 1) * kKeys, b_lo, k_hi);
+        if constexpr (fp8) {
+            const size_t scale_base = s.off + static_cast<size_t>(kv_heads) * ring * kDim * sizeof(Cache)
+                + static_cast<size_t>(kvh) * ring * sizeof(float);
+            __syncthreads();
+            loadTile8(smem, smem + kTile, kc, vc, head_base, scale_base, ring, kt, k_hi);
+            __syncthreads();
         } else {
-            tf_common::cp_commit();
+            tf_common::cp_wait<kStages - 2>();
+            __syncthreads();  // tile `it` is in; every warp is past tile it-1, whose stage the next load takes
+            if (it + kStages - 1 < n_tiles) {
+                uint16_t* nx = smem + ((it + kStages - 1) % kStages) * kStage;
+                loadTile(nx, nx + kTile, kc, vc, head_base, ring, kt + (kStages - 1) * kKeys, b_lo, k_hi);
+            } else {
+                tf_common::cp_commit();
+            }
         }
-        const uint16_t* ks = smem + (it % kStages) * kStage;
+        const uint16_t* ks = smem + (fp8 ? 0 : (it % kStages) * kStage);
         const uint16_t* vs = ks + kTile;
         if (busy && kt <= w_last) {  // a tile past all of a warp's rows is an exact no-op
             float sc[8][4];
@@ -238,13 +268,18 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
 
 }  // namespace ink2p
 
-#define TF_INK2_PROMPT_ARGS                                                                                       \
-    const uint16_t *__restrict__ q, const uint16_t *__restrict__ kc, const uint16_t *__restrict__ vc,             \
+#define TF_INK2_PROMPT_ARGS(Cache)                                                                                       \
+    const uint16_t *__restrict__ q, const Cache *__restrict__ kc, const Cache *__restrict__ vc,             \
         const uint16_t *__restrict__ tab, const ink2p::Seg *__restrict__ segs, float *__restrict__ part_o,      \
         float2 *__restrict__ part_ml, int heads, int kv_heads, int ring, int chunk, int c0, int chunks, float scale
 
 // One stream's prompt rows on a global layer with bf16 caches.
-extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_prompt(TF_INK2_PROMPT_ARGS) {
+extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_prompt(TF_INK2_PROMPT_ARGS(uint16_t)) {
+    extern __shared__ __align__(16) uint16_t smem[];
+    ink2p::promptTile(q, kc, vc, tab, segs, part_o, part_ml, heads, kv_heads, ring, chunk, c0, chunks, scale, smem);
+}
+
+extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_prompt_fp8(TF_INK2_PROMPT_ARGS(uint8_t)) {
     extern __shared__ __align__(16) uint16_t smem[];
     ink2p::promptTile(q, kc, vc, tab, segs, part_o, part_ml, heads, kv_heads, ring, chunk, c0, chunks, scale, smem);
 }

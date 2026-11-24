@@ -27,6 +27,7 @@ pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
 pub const Options = struct {
     context: usize,
     drafts: bool,
+    kv8: bool = true,
     segments: usize = 1,
     slide: bool = false,
     vision: ?VisionOptions = null,
@@ -55,6 +56,7 @@ pub const Loaded = struct {
     rows: u32,
     stream_bytes: usize,
     free_streams: u32 = 1,
+    auto_stream_limit: u32,
     ctx: *anyopaque,
     deinit: *const fn (*anyopaque) void,
     reserve: *const fn (*anyopaque, u32) anyerror!void = reserve,
@@ -106,6 +108,22 @@ pub fn textWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !?u6
     return try weights.checkpointBytes(&ck, true);
 }
 
+fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o: Options) !?[]const u8 {
+    if (!o.drafts) return null;
+    if (o.drafter) |path| {
+        if (!exl3) return error.Inkling2DraftNeedsExl3;
+        return path;
+    }
+    if (!exl3) return null;
+    const bundled = try std.fs.path.join(gpa, &.{ dir, "model-mtp.safetensors" });
+    defer gpa.free(bundled);
+    _ = std.Io.Dir.cwd().statFile(io, bundled, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return err,
+    };
+    return dir;
+}
+
 pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
     if (kernels != null) return error.Inkling2CapturedKernels;
     if (o.segments != 1 or o.tp != 1 or o.rank != 0) return error.Inkling2LoopOneRankOnly;
@@ -118,8 +136,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     try loop.validateLoad(&c, 1, false);
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
-    const drafter_dir = if (o.drafts) o.drafter else null;
-    if (drafter_dir != null and !c.exl3) return error.Inkling2DraftNeedsExl3;
+    const drafter_dir = try drafterDir(gpa, io, dir, c.exl3, o);
     var ck = if (c.exl3)
         try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars)
     else
@@ -152,18 +169,25 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     ) else null;
     errdefer if (dw) |*d| d.deinit();
     ck.release();
+    const target_weights = w.bytes;
+    const draft_weights_bytes = if (dw) |d| d.memory.len else 0;
+    const before_state = cuda.usage(false).device;
+    const state_room = if (o.room) |room| room.read(room.ctx) orelse return error.Inkling2CacheRoom else null;
     var k = try engine.Kernels.load(ctx, c.exl3);
     errdefer k.deinit();
     var stream = try cuda.Stream.init(ctx.d, true);
     errdefer stream.deinit();
     try k.reserveDense(stream, w.layers);
-    var m = try engine.Model.init(gpa, ctx.d, stream, &w, o.context);
+    var m = try engine.Model.init(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16);
     errdefer m.deinit();
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
     errdefer be.deinit();
     if (dw) |d| {
         be.drafter = try dspark.Drafter.init(ctx.d, d, o.context);
         dw = null;
+    }
+    if (state_room) |room| {
+        if (cuda.usage(false).device -| before_state > room) return error.Inkling2CacheRoom;
     }
     const out = try gpa.create(Owned);
     errdefer gpa.destroy(out);
@@ -173,11 +197,16 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     out.backend.m = &out.model;
     out.backend.k = &out.kernels;
     try out.backend.warm(io);
+    const global_kv = loop.CacheLayout.globalBytesPerToken(&w.p, m.layout.format);
+    std.log.info("Mini CUDA memory: target weights {d} bytes, drafter weights {d} bytes, {s} target KV {d} bytes per global token, {d} bytes allocated per stream", .{
+        target_weights, draft_weights_bytes, @tagName(m.layout.format), global_kv, backend.streamBytes(&out.model),
+    });
     return .{
         .backend = out.backend.backend(),
         .facts = out.backend.facts(),
         .rows = window_rows,
         .stream_bytes = backend.streamBytes(&out.model),
+        .auto_stream_limit = if (out.backend.drafter != null) 1 else engine.max_slots,
         .ctx = out,
         .deinit = release,
         .target = out,
@@ -206,7 +235,8 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
         error.Inkling2LoopOneRankOnly => "Inkling 2 Mini runs at one CUDA rank with one segment; TP and multi-segment modes are refused",
         error.Inkling2LoopTextOnly => "Inkling 2 Mini is text-only on CUDA: images and --vision are refused",
         error.Inkling2DraftNeedsExl3 => "Mini DSpark on CUDA requires the EXL3 text checkpoint",
-        error.Inkling2DraftOneStream => "Mini DSpark on CUDA serves one stream: set --parallel 1",
+        error.Inkling2DraftOneStream => "Mini DSpark on CUDA serves one stream: set --parallel 1, or use --no-drafts for more streams",
+        error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
         error.StructuresUnsupported, error.ChainsOnly => "Inkling 2 Mini serves only unconstrained, non-branching text drafts",
@@ -257,7 +287,7 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 806
     var m: engine.Model = undefined;
     m.d = @ptrFromInt(0x1000); // never called: the hook answers every allocation
     m.w = &w;
-    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192);
+    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .fp8);
     var b: backend.Backend = undefined;
     b.d = m.d;
     b.m = &m;
@@ -272,4 +302,29 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 806
     defer for (&b.slot[1]) |*x| x.free();
     try std.testing.expectEqual(@as(u64, rec.bytes), backend.streamBytes(&m));
     try std.testing.expectEqual(@as(u64, 48 * 4 * 32 + 200_058 * 4 + 32), backend.streamBytes(&m) - m.layout.bytes);
+    const conv = m.layout.bytes - m.layout.at(0).conv_offset;
+    const rows = 8 * 8192 + 40 * 1023;
+    try std.testing.expectEqual(conv + rows * 2 * 8 * 132, m.snapshotBytes(8192));
+    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .bf16);
+    try std.testing.expectEqual(conv + rows * 2 * 8 * 256, m.snapshotBytes(8192));
+}
+
+test "the bundled Mini drafter is picked for EXL3 unless drafts are disabled or a path is explicit" {
+    const a = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(io, ".", a);
+    defer a.free(dir);
+    var o: Options = .{ .context = 8192, .drafts = true };
+    try std.testing.expect(o.kv8);
+    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, true, o));
+    try tmp.dir.writeFile(io, .{ .sub_path = "model-mtp.safetensors", .data = "fixture" });
+    try std.testing.expectEqualStrings(dir, (try drafterDir(a, io, dir, true, o)).?);
+    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, false, o));
+    o.drafter = "explicit";
+    try std.testing.expectEqualStrings("explicit", (try drafterDir(a, io, dir, true, o)).?);
+    try std.testing.expectError(error.Inkling2DraftNeedsExl3, drafterDir(a, io, dir, false, o));
+    o.drafts = false;
+    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, true, o));
 }

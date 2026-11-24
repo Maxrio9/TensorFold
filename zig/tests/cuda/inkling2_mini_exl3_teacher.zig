@@ -17,7 +17,7 @@ pub fn run(gpu: check.Gpu, model_dir: []const u8, fixture: []const u8) !void {
         if (r.prompt_ids.len == 0 or r.generated_ids.len == 0) return error.EmptyTeacherFixture;
         context = @max(context, r.prompt_ids.len + r.generated_ids.len);
     }
-    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model_dir, null, .{ .context = context, .drafts = false });
+    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model_dir, null, .{ .context = context, .drafts = false, .kv8 = false });
     defer loaded.deinit(loaded.ctx);
     const o = loaded.target;
     var best = try cuda.DeviceBuffer.alloc(gpu.d, 8);

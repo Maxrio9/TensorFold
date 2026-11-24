@@ -10,6 +10,7 @@ const contract = core.contract;
 const c = contract.spec;
 const g = contract.gates;
 const K = ink.kernels;
+const codec = core.exlr8.codec;
 const D = ref.D;
 const heads = ref.heads;
 const kv = ref.kv;
@@ -21,6 +22,14 @@ pub const Path = enum { sliding, fold, split, prompt };
 
 /// A control's planted fault, through the device's inputs only: the served kernels run as they are.
 pub const Plant = enum { none, late_bias, no_sink, q_ulp };
+
+const fp8_shapes = [_]c.Shape{
+    .{ .rows = 7, .n = n_out, .k = 1025 },
+    .{ .rows = 3, .n = n_out, .k = 3073 },
+    .{ .rows = 65, .n = n_out, .k = 16385 },
+};
+const fp8_split_shapes = [_]c.Shape{ fp8_shapes[0], fp8_shapes[1], .{ .rows = 8, .n = n_out, .k = 16385 } };
+const fp8_fold_name = "inkling2 attn FP8 global fold";
 
 pub const fold_name = "inkling2 attn tf_ink2_attn_fold + tf_ink2_merge (global layers, 16,384-key chunks)";
 
@@ -66,12 +75,12 @@ pub fn spec(path: Path) c.Spec {
     return x;
 }
 
-/// Gate 4's value at key p of column col: period 1,024, its second half the first's negation a key along, + 1 on 8.
-fn periodic(p: usize, col: usize) f64 {
+/// Gate 4 values have period 1,024 and nearly cancel across the two halves.
+fn periodic(p: usize, col: usize, residue_keys: usize) f64 {
     const i = p % 1024;
     if (i < 512) return @floatFromInt(129 + (i * 73 + col * 31) % 127);
     const j = i - 512;
-    return -@as(f64, @floatFromInt(129 + ((j + 1) % 512 * 73 + col * 31) % 127)) + @as(f64, if (j < 8) 1 else 0);
+    return -@as(f64, @floatFromInt(129 + ((j + 1) % 512 * 73 + col * 31) % 127)) + @as(f64, if (j < residue_keys) 1 else 0);
 }
 
 pub const Attn = struct {
@@ -79,6 +88,7 @@ pub const Attn = struct {
     k: *const K.Kernels,
     path: Path,
     plant: Plant = .none,
+    fp8: bool = false,
     shape: c.Shape = undefined,
     fill: g.Fill = .random,
     layer: K.Layer = undefined,
@@ -124,6 +134,17 @@ pub const Attn = struct {
             .no_sink => "control: inkling2 attn global fold rows merged without their sink",
             .q_ulp => "control: inkling2 attn prompt rows with one q value a bf16 step up (bit equality must see it)",
         };
+        if (self.fp8) {
+            s.name = switch (self.path) {
+                .sliding => "inkling2 attn FP8 sliding",
+                .fold => fp8_fold_name,
+                .split => "inkling2 attn FP8 global split",
+                .prompt => "inkling2 attn FP8 global prompt",
+            };
+            s.replaces = if (self.path == .split or self.path == .prompt) fp8_fold_name else null;
+            s.served = if (self.path == .split) &fp8_split_shapes else &fp8_shapes;
+            s.tiles = @splat(.{});
+        }
         return .{ .spec = s, .ctx = self, .vt = &vt, .control = if (self.plant == .none) null else .shapes };
     }
 
@@ -153,7 +174,7 @@ pub const Attn = struct {
         const n1 = if (self.streams == 2) rows / 2 else 0;
         const n0 = rows - n1;
         const last1 = @max(n1, shape.k / 2);
-        const segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(ring * kv * D) } };
+        const segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(ring * kv * (D + (if (self.fp8) @as(usize, 4) else 0))) } };
         self.pos = try a.alloc(usize, rows);
         self.stream = try a.alloc(usize, rows);
         for (0..rows) |r| {
@@ -176,8 +197,8 @@ pub const Attn = struct {
         }
         const d = &self.dev;
         d.q = try self.rig.input(std.mem.sliceAsBytes(self.q));
-        d.kc = try self.rig.input(std.mem.sliceAsBytes(self.kc));
-        d.vc = try self.rig.input(std.mem.sliceAsBytes(self.vc));
+        d.kc = try self.cacheInput(self.kc, ring);
+        d.vc = try self.cacheInput(self.vc, ring);
         d.tab = try self.rig.input(std.mem.sliceAsBytes(self.tab));
         d.sink = try self.rig.input(std.mem.sliceAsBytes(self.sink));
         d.gate = try self.rig.input(std.mem.sliceAsBytes(self.gate));
@@ -193,6 +214,35 @@ pub const Attn = struct {
         d.out = try self.rig.output(rows * n_out * 2);
         if (self.path == .split or self.path == .prompt) d.base = try self.rig.scratch(rows * n_out * 2);
         return true;
+    }
+
+    /// Pack each stream's codes and FP32 scales. The independent reference sees the expanded BF16 values.
+    fn cacheInput(self: *Attn, data: []u16, ring: usize) !u64 {
+        if (!self.fp8) return self.rig.input(std.mem.sliceAsBytes(data));
+        const a = self.rig.gpu.gpa;
+        const rows = ring * kv;
+        const code_len = rows * D;
+        const bytes = try a.alloc(u8, self.streams * rows * (D + @sizeOf(f32)));
+        defer a.free(bytes);
+        for (0..self.streams) |st| {
+            const dst = bytes[st * rows * (D + 4) ..][0 .. rows * (D + 4)];
+            for (0..rows) |i| {
+                const row = data[(st * rows + i) * D ..][0..D];
+                var max: f32 = 0;
+                for (row) |val| {
+                    const x: f32 = @floatCast(ref.bf(val));
+                    if (std.math.isFinite(x)) max = @max(max, @abs(x));
+                }
+                const scale: f32 = if (max == 0) 1 else if (self.fill == .stress) max else max / 448;
+                std.mem.writeInt(u32, dst[code_len + i * 4 ..][0..4], @bitCast(scale), .little);
+                for (row, dst[i * D ..][0..D]) |*val, *code| {
+                    const x: f32 = @floatCast(ref.bf(val.*));
+                    code.* = if (std.math.isFinite(x)) codec.e4m3FromF32(x / scale) else 0x7f;
+                    val.* = c.toBf16(codec.e4m3Value(code.*) * scale);
+                }
+            }
+        }
+        return self.rig.input(bytes);
     }
 
     /// q, k clipped as prep leaves them, v rms-normed, the table rel . proj rounded once; stress: gate 4's rows.
@@ -224,7 +274,7 @@ pub const Attn = struct {
             }
             const inv = 1 / @sqrt(ss / D + ref.eps);
             const col0 = (slot / ring % kv) * D;
-            for (self.vc[slot * D ..][0..D], x, 0..) |*o, v, dd| o.* = ref.bits(if (stress) periodic(slot % ring, col0 + dd) else v * inv);
+            for (self.vc[slot * D ..][0..D], x, 0..) |*o, v, dd| o.* = ref.bits(if (stress) periodic(slot % ring, if (self.fp8) 0 else col0 + dd, if (self.fp8) 1 else 8) else v * inv);
         }
         var proj: [ref.d_rel * ref.extent]f64 = undefined;
         for (&proj) |*p| p.* = ref.rn(rng.floatNorm(f64) * 0.5);
@@ -308,7 +358,7 @@ pub const Attn = struct {
             .fold => r.streams = 2, // the dispatcher's multi-stream branch: a block a chunk, its sub-chunks folded in order
             .split => slots = self.shape.rows * heads * stride * K.subs,
         }
-        try K.attend(self.k, self.rig.s, r, self.layer, stride, slots, q, .{ .k = d.kc, .v = d.vc }, tab, d.po, d.pml, sink, d.gate, out);
+        try K.attend(self.k, self.rig.s, r, self.layer, stride, slots, q, .{ .k = d.kc, .v = d.vc, .format = if (self.fp8) .fp8 else .bf16 }, tab, d.po, d.pml, sink, d.gate, out);
     }
 
     pub fn run(self: *Attn) !void {

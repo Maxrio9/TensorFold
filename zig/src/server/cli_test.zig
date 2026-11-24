@@ -246,7 +246,7 @@ test "parse and capabilities share the table" {
     try std.testing.expectEqual(@as(u8, 0), (try parse(a, &.{ "m", "--drafter-bits", "0" }, &u)).drafter_bits);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--drafter-bits", "8" }, &u));
     try std.testing.expectEqualStrings("/r", (try parse(a, &.{ "m", "--record", "/r" }, &u)).record.?);
-    try std.testing.expectEqualStrings("fp8", (try parse(a, &.{ "m", "--kv-cache", "fp8" }, &u)).kv_cache);
+    try std.testing.expectEqualStrings("fp8", (try parse(a, &.{ "m", "--kv-cache", "fp8" }, &u)).kv_cache.?);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--kv-cache", "int4" }, &u));
     try std.testing.expectEqualStrings("int8", (try parse(a, &.{ "m", "--prompt-precision", "int8" }, &u)).prompt_precision);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--prompt-precision", "fp4" }, &u));

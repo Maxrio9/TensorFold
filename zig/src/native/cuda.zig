@@ -179,7 +179,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
 }
 fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: api.Open, problem: *[]const u8) !?api.Opened {
     const resolved = (try @import("cuda_launch.zig").resolve(F, a, asked, problem)) orelse return null; // resolved and placed, before admission
-    const o = family_memory.familyOpen(F, resolved);
+    var o = family_memory.familyOpen(F, resolved);
     if (refusals.family(F, o)) |why| {
         problem.* = why;
         return null;
@@ -330,6 +330,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         }
     };
     defer if (!opened) loaded.deinit(loaded.ctx);
+    if (comptime @hasField(@TypeOf(loaded), "auto_stream_limit")) {
+        if (!o.lanes_fixed) o.lanes = @min(o.lanes, loaded.auto_stream_limit);
+    }
     if (o.learn_conversations and kv_pages.ownCache(loaded)) {
         problem.* = "--learn-conversations writes the host prompt cache's states, and TF_QWEN_KV_SHARE keeps prompts as pool pages instead: serve with one of the two";
         return null;
@@ -386,7 +389,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     const cache = kept.copied;
     const cache_capacity = kv_pages.capacity(F, loaded, kept, @intCast(window));
     try kv_pages.report(a, layout, paged);
-    var shown = try kv_pages.text(F, a, served.stream_bytes, layout, paged, kv_pages.enginePaged(loaded), kv_pages.allOnPages(loaded), @intCast(window), kept, o.kv8);
+    var shown = try kv_pages.text(F, a, served.stream_bytes, layout, paged, kv_pages.enginePaged(loaded), kv_pages.allOnPages(loaded), @intCast(window), kept, if (@hasField(F.Options, "kv8")) opts.kv8 else o.kv8);
     if (counted.ledger) |lp| shown[0] = try @import("cuda_ledger.zig").text(a, lp, window);
     const cache_text = try kv_pages.cacheText(a, kv_pages.ownCache(loaded) or share, counted.slots, paged, layout, counted.planned, shown[1]);
     h.startup = try std.fmt.allocPrint(gpa, @import("cuda_startup.zig").format, .{

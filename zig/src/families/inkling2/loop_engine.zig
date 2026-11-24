@@ -108,7 +108,7 @@ pub const Model = struct {
     fn cacheOf(m: *const Model, visit: u32) attention.Cache {
         const slot = m.layout.at(visit);
         const base = m.slotBase() + slot.kv_offset;
-        return .{ .k = base, .v = base + slot.kv_bytes / 2 };
+        return .{ .k = base, .v = base + slot.kv_bytes / 2, .format = m.layout.format };
     }
 
     fn convOf(m: *const Model, visit: u32, site: usize) u64 {
@@ -135,8 +135,8 @@ pub const Model = struct {
         return m.convOf(visit, site) - (m.slotBase() + m.layout.at(0).conv_offset);
     }
 
-    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, s: cuda.Stream, w: *const weights_.Weights, context: usize) !Model {
-        const layout = try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context));
+    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, s: cuda.Stream, w: *const weights_.Weights, context: usize, format: loop.CacheFormat) !Model {
+        const layout = try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context), format);
         var m: Model = .{
             .gpa = gpa,
             .d = d,
@@ -499,6 +499,7 @@ pub const Model = struct {
         visits: u32,
         passes: u32,
         hidden: u32,
+        format: loop.CacheFormat,
         buf: cuda.DeviceBuffer,
     };
 
@@ -509,7 +510,7 @@ pub const Model = struct {
             const layer = m.w.p.at(m.w.p.visits[v].layer);
             const global = layer.kind == .global;
             const count = if (global) at else @min(at, m.w.c.text.window - 1);
-            const row = @as(u64, layer.heads.kv) * layer.heads.dim * 2;
+            const row = layer.heads.kv * m.layout.format.rowBytes(layer.heads.dim);
             bytes += 2 * count * row;
         }
         return bytes;
@@ -522,25 +523,33 @@ pub const Model = struct {
             const visit = m.w.p.visits[v];
             const layer = m.w.p.at(visit.layer);
             const geometry = m.layerGeometry(visit.layer);
-            const rb = @as(usize, layer.heads.dim) * 2; // the caches are head-major: [kv head][ring][dim]
             const global = layer.kind == .global;
             const count = if (global) at else @min(at, m.w.c.text.window - 1);
             const first = at - count;
             const cache = m.cacheOf(visit.cache_slot);
-            for ([2]u64{ cache.k, cache.v }) |k_or_v| for (0..layer.heads.kv) |head| {
-                const base = k_or_v + head * geometry.ring * rb;
-                var pos = first;
-                while (pos < at) {
-                    const row = pos % geometry.ring;
-                    const n = @min(at - pos, geometry.ring - row);
-                    const dev = base + row * rb;
-                    const src = if (out) dev else saved.buf.ptr + off;
-                    const dst = if (out) saved.buf.ptr + off else dev;
-                    try m.copy(s, dst, src, n * rb);
-                    off += n * rb;
-                    pos += n;
+            // Each plane is head-major codes followed by head-major scales in FP8 mode.
+            const code_bytes = @as(usize, layer.heads.dim) * (if (cache.format == .fp8) @as(usize, 1) else 2);
+            const pieces: []const usize = if (cache.format == .fp8) &.{ code_bytes, @sizeOf(f32) } else &.{code_bytes};
+            for ([2]u64{ cache.k, cache.v }) |k_or_v| {
+                var plane = k_or_v;
+                for (pieces) |rb| {
+                    for (0..layer.heads.kv) |head| {
+                        const base = plane + head * geometry.ring * rb;
+                        var pos = first;
+                        while (pos < at) {
+                            const row = pos % geometry.ring;
+                            const n = @min(at - pos, geometry.ring - row);
+                            const dev = base + row * rb;
+                            const src = if (out) dev else saved.buf.ptr + off;
+                            const dst = if (out) saved.buf.ptr + off else dev;
+                            try m.copy(s, dst, src, n * rb);
+                            off += n * rb;
+                            pos += n;
+                        }
+                    }
+                    plane += layer.heads.kv * geometry.ring * rb;
                 }
-            };
+            }
         }
         const conv = m.slotBase() + m.layout.at(0).conv_offset;
         const bytes = m.layout.bytes - m.layout.at(0).conv_offset;
@@ -553,7 +562,7 @@ pub const Model = struct {
         const saved = try gpa.create(Saved);
         errdefer gpa.destroy(saved);
         const lp = m.w.c.text.loop.?;
-        saved.* = .{ .at = at, .visits = m.w.p.n_visits, .passes = lp.passes, .hidden = m.w.c.text.hidden, .buf = try cuda.DeviceBuffer.alloc(m.d, @intCast(@max(snapshotBytes(m, at), 256))) };
+        saved.* = .{ .at = at, .visits = m.w.p.n_visits, .passes = lp.passes, .hidden = m.w.c.text.hidden, .format = m.layout.format, .buf = try cuda.DeviceBuffer.alloc(m.d, @intCast(@max(snapshotBytes(m, at), 256))) };
         errdefer saved.buf.free();
         try m.copyState(s, saved, true);
         return saved;
@@ -561,7 +570,7 @@ pub const Model = struct {
 
     pub fn restore(m: *const Model, s: cuda.Stream, saved: *const Saved) !void {
         const lp = m.w.c.text.loop.?;
-        if (saved.visits != m.w.p.n_visits or saved.passes != lp.passes or saved.hidden != m.w.c.text.hidden)
+        if (saved.visits != m.w.p.n_visits or saved.passes != lp.passes or saved.hidden != m.w.c.text.hidden or saved.format != m.layout.format)
             return error.StateOfAnotherModel;
         if (saved.at == 0 or saved.at > m.context or saved.buf.len < snapshotBytes(m, saved.at)) return error.BadLoopSnapshot;
         try m.copyState(s, saved, false);

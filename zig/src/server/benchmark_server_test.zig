@@ -508,7 +508,7 @@ test "the child's flags carry the cache format the benchmark asked for" {
         const args = try server.argv(a, p);
         var u: cli.Usage = .{};
         const parsed = try cli.parse(a, args[2..], &u);
-        try std.testing.expectEqualStrings(format, parsed.kv_cache);
+        try std.testing.expectEqualStrings(format, parsed.kv_cache.?);
         var n: usize = 0;
         for (args) |x| n += @intFromBool(std.mem.eql(u8, x, "--kv-cache"));
         try std.testing.expectEqual(@as(usize, 1), n);
@@ -517,4 +517,17 @@ test "the child's flags carry the cache format the benchmark asked for" {
     const args = try server.argv(a, p);
     var u: cli.Usage = .{};
     try std.testing.expectError(error.Usage, cli.parse(a, args[2..], &u));
+}
+
+test "serve preserves explicit cache formats alongside the family default" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var u: cli.Usage = .{};
+    const implicit = try cli.request(a, "d", "inkling2_loop", try cli.parse(a, &.{"m"}, &u));
+    try std.testing.expect(!implicit.given.kv_cache and !implicit.kv8);
+    const bf16 = try cli.request(a, "d", "inkling2_loop", try cli.parse(a, &.{ "m", "--kv-cache", "bf16" }, &u));
+    try std.testing.expect(bf16.given.kv_cache and !bf16.kv8);
+    const fp8 = try cli.request(a, "d", "inkling2_loop", try cli.parse(a, &.{ "m", "--kv-cache", "fp8" }, &u));
+    try std.testing.expect(fp8.given.kv_cache and fp8.kv8);
 }

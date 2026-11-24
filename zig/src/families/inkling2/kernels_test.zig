@@ -55,12 +55,26 @@ const Fake = struct {
 test "inkling2 kernels: one decode row at 1M splits 64 chunks into sub-chunks for each of a rank's 4 key heads" {
     var d: cuda.Driver = undefined;
     d.api.cuLaunchKernel = Fake.launch;
+    Fake.count = 0;
     const fun = struct {
         fn of(drv: *const cuda.Driver, i: usize) cuda.Function {
             return .{ .d = drv, .handle = @ptrFromInt(i) };
         }
     };
-    const kern: k.Kernels = .{ .mod = .{ .d = &d, .handle = null }, .prep = fun.of(&d, 1), .rel_table = fun.of(&d, 2), .attn = fun.of(&d, 3), .merge = fun.of(&d, 4), .attn_fold = fun.of(&d, 3), .pmod = .{ .d = &d, .handle = null }, .attn_prompt = fun.of(&d, 3) };
+    const kern: k.Kernels = .{
+        .mod = .{ .d = &d, .handle = null },
+        .pmod = .{ .d = &d, .handle = null },
+        .prep = fun.of(&d, 1),
+        .rel_table = fun.of(&d, 2),
+        .attn = fun.of(&d, 3),
+        .merge = fun.of(&d, 4),
+        .attn_fold = fun.of(&d, 3),
+        .attn_prompt = fun.of(&d, 3),
+        .prep_fp8 = fun.of(&d, 5),
+        .attn_fp8 = fun.of(&d, 6),
+        .attn_fold_fp8 = fun.of(&d, 7),
+        .attn_prompt_fp8 = fun.of(&d, 8),
+    };
     const s: cuda.Stream = .{ .d = &d, .handle = null };
     const r: k.Rows = .{ .rows = 1, .heads = 24, .kv_heads = 4, .pos = 0, .seg_of = 0, .segs = 0, .tiles = 0, .n_tiles = 1, .last_pos = 1048575 };
     const l = k.Layer.global(1048576);
@@ -91,6 +105,18 @@ test "inkling2 kernels: one decode row at 1M splits 64 chunks into sub-chunks fo
     prompt.rows = 2048;
     try k.attend(&kern, s, prompt, l, 64, 2048 * 24 * 64, 0, .{ .k = 0, .v = 0 }, 0, 0, 0, 0, 0, 0);
     try t.expectEqual([3]u32{ 96, 4, 64 }, Fake.grids[2]);
+    const fp8: k.Cache = .{ .k = 0, .v = 0, .format = .fp8 };
+    try k.prep(&kern, s, r, l, .{ .qk_clip = 22.6, .rel_clip = 8, .floor = 128000, .alpha = 0.1, .eps = 1e-6 }, .{ 0, 0, 0, 0 }, .{ 0, 0 }, 0, 0, fp8);
+    try t.expectEqual([3]u32{ 1, 32, 1 }, Fake.grids[4]);
+    try k.attend(&kern, s, r, l, 64, all, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 1, 4, 64 * k.subs }, Fake.grids[5]);
+    try k.attend(&kern, s, r, k.Layer.sliding(1024, 2048), 5, 0, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 1, 4, 6 }, Fake.grids[5]);
+    try k.attend(&kern, s, two, l, 64, all - 1, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 1, 4, 64 }, Fake.grids[6]);
+    try k.attend(&kern, s, prompt, l, 64, 2048 * 24 * 64, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 96, 4, 64 }, Fake.grids[7]);
+    try t.expectEqual(@as(u32, 32768), Fake.shared[7]);
     try t.expect(!k.split(.{ .rows = 65, .heads = 24, .kv_heads = 4, .pos = 0, .seg_of = 0, .segs = 0, .tiles = 0, .n_tiles = 7, .last_pos = 100 }, 1, 1 << 30));
 }
 

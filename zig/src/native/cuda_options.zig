@@ -41,7 +41,7 @@ pub fn set(comptime F: type, o: api.Open, opts: *F.Options, problem: *[]const u8
     if (comptime @hasField(F.Options, "drafter")) opts.drafter = o.drafter;
     if (comptime @hasField(F.Options, "drafter_bits")) opts.drafter_bits = o.drafter_bits;
     if (comptime @hasField(F.Options, "rope_yarn")) opts.rope_yarn = o.rope_yarn;
-    if (@hasField(F.Options, "kv8")) opts.kv8 = o.kv8;
+    if (@hasField(F.Options, "kv8") and (o.given.kv_cache or o.kv8)) opts.kv8 = o.kv8;
     if (@hasField(F.Options, "prompt_int8")) opts.prompt_int8 = o.prompt_int8;
     if (@hasField(F.Options, "loops")) opts.loops = o.loops;
     if (@hasField(F.Options, "learn_conversations")) opts.learn_conversations = o.learn_conversations;
@@ -109,4 +109,18 @@ test "full-only precision: checkpoint is unknown before a family can load or all
     var existing: Both.Options = .{};
     try std.testing.expect(set(Both, .{ .dir = "d", .model_type = "nemotron_h", .precision = .checkpoint }, &existing, &why));
     try std.testing.expectEqual(@as(?@typeInfo(@TypeOf(existing.precision)).optional.child, .checkpoint), existing.precision);
+}
+
+test "cache options preserve the family default and forward explicit BF16 and FP8" {
+    const F = struct {
+        pub const Options = struct { kv8: bool = true };
+    };
+    var opts: F.Options = .{};
+    var why: []const u8 = "";
+    var o: api.Open = .{ .dir = "d", .model_type = "inkling2_loop" };
+    try std.testing.expect(set(F, o, &opts, &why) and opts.kv8);
+    o.given.kv_cache = true;
+    try std.testing.expect(set(F, o, &opts, &why) and !opts.kv8);
+    o.kv8 = true;
+    try std.testing.expect(set(F, o, &opts, &why) and opts.kv8);
 }

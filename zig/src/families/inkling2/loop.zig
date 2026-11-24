@@ -10,6 +10,18 @@ pub fn validateLoad(c: *const config.Config, rank: usize, images: bool) !void {
     if (lp.gate_rank != 64) return error.UnsupportedLoopGateRank;
 }
 
+pub const CacheFormat = enum {
+    bf16,
+    fp8,
+
+    pub fn rowBytes(format: CacheFormat, dim: u32) u64 {
+        return switch (format) {
+            .bf16 => @as(u64, dim) * 2,
+            .fp8 => @as(u64, dim) + @sizeOf(f32),
+        };
+    }
+};
+
 pub const SnapshotSlot = struct {
     kv_offset: u64,
     kv_bytes: u64,
@@ -22,11 +34,13 @@ pub const CacheLayout = struct {
     slots: [config.max_visits]SnapshotSlot,
     n: u32,
     bytes: u64,
+    format: CacheFormat,
 
-    pub fn init(c: *const config.Text, p: *const plan_.Plan, context: u32) !CacheLayout {
+    pub fn init(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat) !CacheLayout {
         if (context == 0 or context > c.max_context or p.n_visits != c.visitCount()) return error.BadLoopCache;
         var out: CacheLayout = undefined;
         out.n = p.n_visits;
+        out.format = format;
         out.bytes = 0;
         const conv_values = 3 * (2 * @as(u64, c.local.kv * c.local.dim) + 2 * @as(u64, c.hidden));
         for (p.visits[0..p.n_visits], 0..) |visit, i| {
@@ -36,7 +50,7 @@ pub const CacheLayout = struct {
                 std.mem.alignForward(u32, context, 64)
             else
                 std.mem.alignForward(u32, c.window + rows - 1, 64);
-            const kv = try std.math.mul(u64, tokens, 2 * @as(u64, layer.heads.kv * layer.heads.dim * 2));
+            const kv = try std.math.mul(u64, tokens, 2 * layer.heads.kv * format.rowBytes(layer.heads.dim));
             // The recurrence rounds each site then widens its complete state to FP32 before the FMAs.
             const conv = try std.math.mul(u64, conv_values, 4);
             out.slots[i] = .{ .kv_offset = out.bytes, .kv_bytes = kv, .conv_offset = 0, .conv_bytes = conv };
@@ -49,6 +63,15 @@ pub const CacheLayout = struct {
         }
         out.bytes = conv_offset;
         return out;
+    }
+
+    pub fn globalBytesPerToken(p: *const plan_.Plan, format: CacheFormat) u64 {
+        var bytes: u64 = 0;
+        for (p.visits[0..p.n_visits]) |visit| {
+            const layer = p.layers[visit.layer];
+            if (layer.kind == .global) bytes += 2 * layer.heads.kv * format.rowBytes(layer.heads.dim);
+        }
+        return bytes;
     }
 
     pub fn at(l: *const CacheLayout, visit: u32) SnapshotSlot {
@@ -96,7 +119,7 @@ test "a saved prompt restores every visit byte and owns its copy" {
     const c = try config.parse(arena.allocator(), @import("config_test.zig").mini, &why);
     var prec: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &prec);
-    const layout = try CacheLayout.init(&c.text, &p, 1);
+    const layout = try CacheLayout.init(&c.text, &p, 1, .bf16);
     const state = try std.testing.allocator.alloc(u8, @intCast(layout.bytes));
     defer std.testing.allocator.free(state);
     for (state, 0..) |*v, i| v.* = @truncate(i * 29 + 7);
@@ -117,7 +140,7 @@ test "Mini has 48 independent KV and convolution slots and a whole-state snapsho
     const c = try config.parse(a, config_test.mini, &why);
     var prec: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &prec);
-    const layout = try CacheLayout.init(&c.text, &p, 1_048_576);
+    const layout = try CacheLayout.init(&c.text, &p, 1_048_576, .bf16);
     try std.testing.expectEqual(@as(u32, 48), layout.n);
     try std.testing.expectEqual(@as(u64, 3072 * 2 * 8 * 128 * 2), layout.at(0).kv_bytes);
     try std.testing.expectEqual(@as(u64, 1_048_576 * 2 * 8 * 128 * 2), layout.at(5).kv_bytes);
@@ -161,8 +184,27 @@ test "pass snapshots and rollback layout cover every visit" {
     const c = try config.parse(arena.allocator(), config_test.mini, &why);
     var precisions: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &precisions);
-    const layout = try CacheLayout.init(&c.text, &p, 4096);
+    const layout = try CacheLayout.init(&c.text, &p, 4096, .bf16);
     try std.testing.expectEqual(@as(u32, 48), layout.n);
     try std.testing.expect(layout.at(17).kv_offset != layout.at(29).kv_offset);
     try std.testing.expectEqual(@as(u64, layout.at(46).conv_offset + layout.at(46).conv_bytes), layout.at(47).conv_offset);
+}
+
+test "FP8 holds one E4M3 code per value and one FP32 scale per head row of every visit" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var why: config.Why = .{};
+    const c = try config.parse(arena.allocator(), @import("config_test.zig").mini, &why);
+    const p = try plan_.build(&c.text, &(@as([24]plan_.Precision, @splat(.nvfp4))));
+    const bf16 = try CacheLayout.init(&c.text, &p, 8705, .bf16);
+    const fp8 = try CacheLayout.init(&c.text, &p, 8705, .fp8);
+    var end: u64 = 0;
+    for (fp8.slots[0..fp8.n], bf16.slots[0..bf16.n]) |small, wide| {
+        try std.testing.expectEqual(end, small.kv_offset);
+        try std.testing.expectEqual(wide.kv_bytes / 256 * 132, small.kv_bytes);
+        try std.testing.expectEqual(wide.conv_bytes, small.conv_bytes);
+        end += small.kv_bytes;
+    }
+    try std.testing.expectEqual(end, fp8.at(0).conv_offset);
+    try std.testing.expectEqual(@as(u64, 64 * 16896), (try CacheLayout.init(&c.text, &p, 8769, .fp8)).bytes - fp8.bytes);
 }

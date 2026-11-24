@@ -51,7 +51,7 @@ pub fn excluded(args: cli.Args) ?[]const u8 {
         .{ "--vision", args.vision },
         .{ "--tp", args.tp > 1 },
         .{ "--speed-up", args.speed_up != null },
-        .{ "--kv-cache", !std.mem.eql(u8, args.kv_cache, "bf16") },
+        .{ "--kv-cache", std.mem.eql(u8, args.kv_cache orelse "bf16", "fp8") },
         .{ "--prompt-precision", !std.mem.eql(u8, args.prompt_precision, "bf16") },
         .{ "--rope-yarn", args.rope_yarn != null },
     };

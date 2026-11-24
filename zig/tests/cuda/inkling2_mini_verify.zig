@@ -131,6 +131,59 @@ pub fn run(gpu: check.Gpu, model: []const u8, drafter: []const u8, fixture: []co
     });
 }
 
+/// Compare full-vocabulary next-token distributions from both cache formats on the same history.
+pub fn cacheFidelity(gpu: check.Gpu, model: []const u8, fixture: []const u8) !void {
+    const a = gpu.gpa;
+    const data = try std.Io.Dir.cwd().readFileAlloc(gpu.io, fixture, a, .limited(1 << 22));
+    defer a.free(data);
+    const fixtures = try std.json.parseFromSlice([]const Row, a, data, .{ .ignore_unknown_fields = true });
+    defer fixtures.deinit();
+    var context: usize = 0;
+    var positions: usize = 0;
+    for (fixtures.value) |row| {
+        if (row.prompt_ids.len == 0 or row.generated_ids.len == 0) return error.BadTeacherFixture;
+        context = @max(context, row.prompt_ids.len + row.generated_ids.len);
+        positions += row.generated_ids.len;
+    }
+    if (positions == 0) return error.BadTeacherFixture;
+
+    var reference: []f32 = &.{};
+    defer a.free(reference);
+    var candidate: []f32 = &.{};
+    defer a.free(candidate);
+    for ([_]bool{ false, true }) |kv8| {
+        const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, .{ .context = context, .drafts = false, .kv8 = kv8 });
+        defer loaded.deinit(loaded.ctx);
+        const o = loaded.target;
+        const v = o.weights.c.text.unpadded_vocab;
+        const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = v * 4 };
+        if (!kv8) reference = try a.alloc(f32, positions * v) else candidate = try a.alloc(f32, v);
+        var total: Score = .{};
+        var pos: usize = 0;
+        for (fixtures.value) |row| {
+            try fill(o, row.prompt_ids, true);
+            var per: Score = .{};
+            for (row.generated_ids, 0..) |token, i| {
+                const expected = reference[pos * v ..][0..v];
+                try o.stream.synchronize();
+                try live.download(0, std.mem.sliceAsBytes(if (kv8) candidate else expected));
+                if (kv8) try per.add(expected, candidate);
+                pos += 1;
+                if (i + 1 < row.generated_ids.len) try o.backend.decode(&.{token}, row.prompt_ids.len + i, false);
+            }
+            if (kv8) {
+                print(row.id, 1, per);
+                total.n += per.n;
+                total.hits += per.hits;
+                total.kl += per.kl;
+                total.max_kl = @max(total.max_kl, per.max_kl);
+                total.gap = @max(total.gap, per.gap);
+            }
+        }
+        if (kv8) print("FP8 vs BF16 TOTAL", 1, total);
+    }
+}
+
 fn print(name: []const u8, width: usize, score: Score) void {
     std.debug.print("VERIFY {s} width={d} top1={d}/{d} mean_kl={e:.7} max_kl={e:.7} max_mismatch_gap={d:.5}\n", .{
         name, width, score.hits, score.n, score.kl / @as(f64, @floatFromInt(score.n)), score.max_kl, score.gap,
