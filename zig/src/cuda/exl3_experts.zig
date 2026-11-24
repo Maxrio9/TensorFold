@@ -49,7 +49,7 @@ pub const Layer = struct {
 pub const Items = struct {
     router: *const grouped.Router,
     plan: grouped.Plan,
-    tile: usize = 16, // 16, or 32 for the 64-column wide kernel (mul1 only)
+    tile: usize = 16, // 8, 32 and 64 select mul1-specific kernels
 };
 
 /// What one projection launches (experts.py default_config): the 8-tile 4-warp K splits, shape-fixed; n % 128 required.
@@ -144,6 +144,8 @@ pub const Experts = struct {
     gateup: Function,
     down_combine: Function,
     wide: Function = undefined, // tf_exl3_grouped_wide_2: 32-member items by 64 columns, mul1
+    short: ?Function = null, // tf_exl3_grouped_short_2: 8-member items by 128 columns, mul1
+    prefill: ?Function = null, // tf_exl3_grouped_prefill_2: 64-member gate/up items by 64 columns, mul1
     capped: Function = undefined, // the gate/up epilogue for act_mode 3
     prompt: prompt.Kernels = undefined,
     plan_rotate: Function = undefined,
@@ -213,20 +215,27 @@ pub const Experts = struct {
                 return @intCast(v);
             }
         }.f;
-        // An item plan: the picks grouped into 16- or 32-pair items, the grouped kernels in standard mode.
+        // An item plan: the picks grouped into fixed-size items, the grouped kernels in standard mode.
         const items = it != null;
         const tile: usize = if (items) it.?.tile else 16;
-        const wide = tile == 32; // 32-pair items take the wide kernel, built for mul1
+        const prefill = tile == 64;
         if (items and (it.?.plan.members == 0 or it.?.plan.items == 0 or it.?.plan.counts == 0)) return error.TileNotBuilt;
-        if ((tile != 16 and !wide) or (wide and l.codebook != .mul1)) return error.TileNotBuilt;
+        if (tile != 16 and l.codebook != .mul1) return error.TileNotBuilt;
         const nx: usize = if (items) grouped.maxItems(p, l.experts + 1, tile) else maxu; // grid x and nexp_max
         const mtu: usize = if (items) 1 else mt; // member tiles a program (one item, or ceil(rows/16))
         const uids = if (items) it.?.plan.items else sc.ids;
         const ucount = if (items) it.?.plan.counts else sc.count;
         const members = if (items) it.?.plan.members else sc.members;
         const maxm_a: i32 = if (items) i32d(tile) else i32d(rows);
-        const proj = if (wide) e.wide else e.grouped[@backingInt(l.codebook)];
-        const cols: usize = if (wide) 64 else 128;
+        const proj = switch (tile) {
+            8 => e.short orelse return error.TileNotBuilt,
+            16 => e.grouped[@backingInt(l.codebook)],
+            32, 64 => e.wide,
+            else => return error.TileNotBuilt,
+        };
+        const gate_proj = if (prefill) e.prefill orelse return error.TileNotBuilt else proj;
+        const down_tiles = if (prefill) 2 else mtu; // the down kernel consumes a 64-member item as two 32-member tiles
+        const cols: usize = if (tile >= 32) 64 else 128;
         const std_a: i32 = if (items) 1 else 0;
         const skip_a: i32 = if (items) i32d(l.experts) else -1;
 
@@ -281,7 +290,7 @@ pub const Experts = struct {
         g.add(i32d(l.gu_stride));
         g.add(std_a);
         g.add(skip_a);
-        try launch_.launch(proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(w / cols), .z = @intCast(2 * g_sk * mtu) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &g);
+        try launch_.launch(gate_proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(w / cols), .z = @intCast(2 * g_sk * mtu) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &g);
 
         var ep: launch_.Args = .{};
         ep.add(sc.z);
@@ -321,7 +330,7 @@ pub const Experts = struct {
         dn.add(@as(i32, 0));
         dn.add(std_a);
         dn.add(skip_a);
-        try launch_.launch(proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(d / cols), .z = @intCast(d_sk * mtu) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &dn);
+        try launch_.launch(proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(d / cols), .z = @intCast(d_sk * down_tiles) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &dn);
 
         var cb: launch_.Args = .{};
         cb.add(sc.z);
