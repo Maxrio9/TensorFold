@@ -7,6 +7,7 @@ pub const ops = @import("ops.zig");
 pub const experts = @import("experts.zig");
 pub const modelopt = @import("modelopt.zig");
 pub const loop = @import("loop.zig");
+pub const loop_exl3_experts = @import("loop_exl3_experts.zig");
 pub const loop_model = @import("loop_model.zig");
 pub const loop_math_cuda = @import("loop_math_cuda.zig");
 pub const native = @import("cuda_native.zig");
@@ -24,5 +25,8 @@ test {
     _ = native;
     _ = loop;
     _ = loop_model;
+    _ = loop_exl3_experts;
+    _ = @import("pack_weights.zig");
+    _ = @import("exl3.zig");
     _ = loop_math_cuda;
 }
