@@ -22,6 +22,7 @@ pub const prompt_rows: u32 = engine.prompt_rows;
 pub const window_rows: u32 = engine.window_rows;
 pub const explains_open = true;
 pub const takes_drafter = true;
+pub const framed_structures = true;
 
 pub const VisionOptions = struct { image_tokens: u32, max_images: u32 };
 pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
@@ -251,7 +252,7 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
         error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
-        error.StructuresUnsupported, error.ChainsOnly => "Inkling 2 Mini serves only unconstrained, non-branching text drafts",
+        error.ChainsOnly => "Inkling 2 Mini supports only non-branching text drafts",
         else => null,
     };
 }

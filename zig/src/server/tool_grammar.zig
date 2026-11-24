@@ -241,7 +241,7 @@ fn call(a: Allocator, s: Style, name: []const u8, schema: Value, constrained: bo
 }
 
 /// The tool's parameter schema (OpenAI's function.parameters, a bare tool's parameters or input_schema).
-fn parameters(a: Allocator, tool: Value) Allocator.Error!Value {
+pub fn parameters(a: Allocator, tool: Value) Allocator.Error!Value {
     const function = if (tool.get("function")) |f| (if (f == .object) f else tool) else tool;
     for ([_][]const u8{ "parameters", "input_schema" }) |k| if (function.get(k)) |p| if (p == .object) return p;
     const empty = try json.newObject(a);

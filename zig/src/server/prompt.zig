@@ -50,6 +50,7 @@ pub fn renderStarts(srv: *Server, cx: *Cx, messages: Value, tools: []const Value
         .add_generation_prompt = generation,
         .enable_thinking = thinking,
         .reasoning_effort = if (thinking) effort else cx.named_effort orelse srv.off_effort,
+        .tool_instruction = if (srv.info.framed_structures and srv.text.native_inkling2) try @import("inkling_structure.zig").instructionOf(cx.a, cx.template_fields) else null,
         .clear_thinking = cx.clear_thinking,
         .tool_choice = cx.template_fields.get("tool_choice"),
         .response_format = cx.template_fields.get("response_format"),

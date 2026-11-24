@@ -26,6 +26,7 @@ pub const Capability = enum {
     speech,
     embeddings,
     readouts,
+    framed_structures,
     rerank,
     thinking_switch,
     thinking_applicable,

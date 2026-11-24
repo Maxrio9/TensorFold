@@ -11,16 +11,25 @@ const Value = json.Value;
 
 pub fn attach(r: anytype, reply: *chat.Reply) Allocator.Error!?[]Value {
     const tools = r.plan.input.tools;
-    if (tools.len == 0) return null;
+    if (tools.len == 0) {
+        if (r.plan.policy.guard) reply.content = try r.plan.policy.content(r.a, reply.content);
+        return null;
+    }
     if (reply.native_tool_format) {
         const found = reply.native_calls;
+        if (r.plan.policy.drop_rejected and reply.content.len > 0) {
+            const parsed = try tool_parse.parseGuarded(r.a, reply.content, tools, null, true);
+            if (parsed.hidden_unoffered > 0 and (found != null or parsed.content.len > 0)) reply.content = parsed.content;
+        }
         const calls = (if (r.turn != null) cortheon.clientCalls(found) else found) orelse return null;
         reply.content = try r.plan.policy.parsedContent(r.a, reply.content);
         if (!reply.native_cut_calls) reply.finish_reason = "tool_calls";
         reply.tool_calls_streamed = false;
         return if (r.plan.policy.single and calls.len > 1) calls[0..1] else calls;
     }
-    const parsed = try tool_parse.parse(r.a, reply.content, tools, r.plan.policy.maxCalls());
+    var parsed = try tool_parse.parseGuarded(r.a, reply.content, tools, r.plan.policy.maxCalls(), r.plan.policy.drop_rejected);
+    if (parsed.hidden_unoffered > 0 and parsed.calls == null and parsed.content.len == 0)
+        parsed = try tool_parse.parse(r.a, reply.content, tools, r.plan.policy.maxCalls());
     if (parsed.rejected_envelopes > 0) {
         log.line("warning: kept {d} malformed or unoffered tool envelopes as content", .{parsed.rejected_envelopes});
         r.srv.metrics.keptToolCalls(r.srv.io, parsed.kept_unoffered, parsed.kept_malformed);
@@ -31,13 +40,13 @@ pub fn attach(r: anytype, reply: *chat.Reply) Allocator.Error!?[]Value {
     if (cut != null) reply.content = try @import("reply_text.zig").cutProse(r.a, reply.content);
     const found = cut orelse parsed.calls;
     const calls = (if (r.turn != null) cortheon.clientCalls(found) else found) orelse {
-        if (r.plan.policy.single or parsed.calls != null) reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
+        if (r.plan.policy.single or parsed.calls != null or parsed.hidden_unoffered > 0) reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
         return null;
     };
     if (cut != null) return try numbered(r, calls);
     reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
     reply.finish_reason = "tool_calls";
-    if (r.plan.policy.single) reply.tool_calls_streamed = false;
+    if (r.plan.policy.single or r.plan.policy.drop_rejected) reply.tool_calls_streamed = false;
     return try numbered(r, if (r.plan.policy.single and calls.len > 1) calls[0..1] else calls);
 }
 

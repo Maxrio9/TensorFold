@@ -32,6 +32,12 @@ pub fn open(h: *LaneHost, job: *Job) bool {
         job.custom = ps.make(ps.ctx, h.gpa, r.prompt, r.eos) catch return !h.drop(job, "the drafter could not start");
     } else job.proposer = lanes.SuffixLookup.init(h.gpa, .{ .min_match = h.min_match }) catch return !h.drop(job, "the drafter could not start");
     const recall = recalls.reader(h, job);
+    // Ours until Stream.init succeeds: the stream only borrows it, and a stream that never starts never frees it.
+    const reply_grammar = if (r.structure) |st| h.constraint(st) catch |e| {
+        freeProposer(h, job);
+        recalls.release(job);
+        return !h.drop(job, if (e == error.OutOfMemory) "out of memory" else "the reply's grammar could not start (xgrammar)");
+    } else null;
     job.stream = lanes.Stream.init(h.gpa, .{
         .id = "request",
         .prompt = r.prompt,
@@ -41,7 +47,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
         .eos = r.eos,
         .sampling = r.sampling,
         .penalties = r.penalties,
-        .drafts = r.drafts,
+        .drafts = r.drafts and (reply_grammar == null or h.core.backend.draft_grammar),
         .proposer = job.custom orelse job.proposer.proposer(),
         .recall = recall,
         .stop_check = if (r.stop) |s| .{ .ptr = s.ctx, .check = s.check } else null,
@@ -60,11 +66,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
         .history_len = r.history_len,
         .shared_prefixes = r.shared_prefixes,
         .reuse = reuse,
-        .grammar = if (r.structure) |st| h.constraint(st) catch |e| {
-            freeProposer(h, job);
-            recalls.release(job);
-            return !h.drop(job, if (e == error.OutOfMemory) "out of memory" else "the reply's grammar could not start (xgrammar)");
-        } else null,
+        .grammar = reply_grammar,
         .decode_spans = h.spans(r),
         .decide = r.decide,
         .untaught = r.untaught,
@@ -74,6 +76,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
     }) catch {
         freeProposer(h, job);
         recalls.release(job);
+        if (reply_grammar) |g| g.deinit(h.gpa);
         return !h.drop(job, "out of memory");
     };
     job.started = true;

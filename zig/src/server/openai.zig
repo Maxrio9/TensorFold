@@ -92,6 +92,7 @@ pub const Plan = struct {
     separate_usage: bool,
     policy: tool_stream.Policy,
     named: []const u8,
+    reasoning_alias: bool = false,
     prompts: []const []const u8 = &.{}, // a raw completion's list of prompts, each its own choice (prompt_list.zig)
     choices: u32 = 1, // ``n``: engine requests on the one prompt (choices.zig)
 };
@@ -111,7 +112,7 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
     const logprobs = if (is_chat) try fields.probabilityOptions(cx, body, exact_bytes) else try fields.legacyLogprobs(cx, body, exact_bytes);
     const n = try fields.choiceCount(cx, body);
     if (!cx.skip_request_log) if (srv.config.request_log) |path| request_log.append(cx.a, path, body);
-    var input: chat.Input = .{ .fields = undefined, .format = format, .execution_witness = try @import("witness_reply.zig").asked(srv, cx, body) };
+    var input: chat.Input = .{ .fields = undefined, .format = format, .chat_route = is_chat, .execution_witness = try @import("witness_reply.zig").asked(srv, cx, body) };
     if (is_chat) {
         input.messages = try messages.normalizeWith(cx, body.get("messages"), "system", srv.needs_user_after_tool, srv.media());
         input.tools = if (srv.text.native_deepseek) try @import("deepseek_request.zig").active(cx, body.get("tools"), body.get("tool_choice")) else try tool_specs.active(cx, body.get("tools"), body.get("tool_choice"));
@@ -138,10 +139,15 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
     try grammar.refusal(cx, body);
     if (input.tools.len > 0 and try tool_specs.choiceRequiresCall(cx.a, body.get("tool_choice"))) try sampling.put(cx.a, "tool_call_required", .{ .bool = true });
     if (body.field("parallel_tool_calls")) |p| if (p == .bool and !p.bool) try sampling.put(cx.a, "tool_call_single", .{ .bool = true });
+    if (is_chat and srv.info.framed_structures and srv.text.native_inkling2 and input.tools.len > 0) {
+        const structure = @import("inkling_structure.zig");
+        if (try structure.instruction(cx.a, body.get("tool_choice"), !sampling.contains("tool_call_single"))) |sentence|
+            try sampling.put(cx.a, structure.instruction_field, .{ .string = sentence });
+    }
     // a choice's rows or required call would be its own: these alone do not split over n choices
     if (n > 1 and (logprobs != null or sampling.contains("tool_call_required"))) return cx.refuse("n above 1 cannot be served with logprobs or a required tool call");
     if (n > 1 and cortheon.engages(srv, cx.a, raw, is_chat, &input)) return cx.refuse("n above 1 is not served by --cortheon's turn loop: send \"cortheon\": false");
-    const thinking = try fields.thinkingFields(cx, body, srv.effort_levels);
+    const thinking = try fields.thinkingFieldsFor(cx, body, srv.effort_levels, srv.text.native_inkling2);
     if (thinking.effort) |e| try sampling.put(cx.a, "reasoning_effort", .{ .string = e });
     if (thinking.enable) |on| try sampling.put(cx.a, "enable_thinking", .{ .bool = on });
     if (thinking.clear) |c| try sampling.put(cx.a, "clear_thinking", .{ .bool = c });
@@ -155,6 +161,14 @@ pub fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value, format: ?[]const u
     if (body.field("parallel_tool_calls")) |p| {
         if (p != .bool) return cx.refuse("parallel_tool_calls must be a boolean");
         policy.single = !p.bool;
+    }
+    if (is_chat and @import("tool_guard.zig").on() and try grammar.spec(cx, body) == null) {
+        if (input.tools.len > 0) {
+            policy.drop_rejected = true;
+        } else if (@import("tool_guard.zig").usedTools(input.messages)) {
+            input.messages = try @import("tool_guard.zig").withNote(cx.a, input.messages);
+            policy.guard = true;
+        }
     }
     const options = body.get("stream_options");
     return .{
@@ -193,6 +207,8 @@ pub fn runNamed(srv: *Server, a: Allocator, out: Out, gone: Gone, is_chat: bool,
         return;
     };
     p.input.id = id;
+    const path = std.mem.sliceTo(gone.conn.path, '?');
+    p.reasoning_alias = is_chat and std.mem.endsWith(u8, path, "/chat/completions");
     // held until the reply is written: POST /v1/requests/{id}/cancel finds the request by each id its client gets
     var asked: cancel_ids.Entry = .{ .owner = gone.conn.key_digest };
     const names = [_][]const u8{ id, cancel_ids.alias orelse "" };
@@ -241,6 +257,8 @@ pub const Run = struct {
         try choice.put(a, "index", .{ .int = "0" });
         if (r.is_chat) {
             const d: Value = if (delta) |v| (if (v == .object) v else if (v.string.len > 0) try chat.deltaOf(a, "content", v.string) else .{ .object = try json.newObject(a) }) else .{ .object = try json.newObject(a) };
+            if (r.plan.reasoning_alias) if (d.get("reasoning_content")) |thought| if (thought == .string)
+                try @import("reasoning_field.zig").put(a, d.object, thought.string);
             try choice.put(a, "delta", d);
             // a content delta's rows (logprobs.Stream) are the choice's, as OpenAI streams them
             if (d == .object) if (d.object.fetchOrderedRemove("logprobs")) |kv| try choice.put(a, "logprobs", kv.value);
@@ -362,7 +380,12 @@ pub const Run = struct {
             const message = try json.newObject(a);
             try message.put(a, "role", .{ .string = "assistant" });
             try message.put(a, "content", if (calls != null and reply.content.len == 0) .null else .{ .string = reply.content });
-            if (reply.reasoning) |t| if (t.len > 0) try message.put(a, "reasoning_content", .{ .string = t });
+            if (reply.reasoning) |t| if (t.len > 0) {
+                if (r.plan.reasoning_alias)
+                    try @import("reasoning_field.zig").put(a, message, t)
+                else
+                    try message.put(a, "reasoning_content", .{ .string = t });
+            };
             if (calls) |c| try message.put(a, "tool_calls", .{ .array = c });
             try choice.put(a, "message", .{ .object = message });
             try choice.put(a, "finish_reason", .{ .string = reply.finish_reason });
@@ -407,7 +430,8 @@ pub const Run = struct {
             if (!s.tools) {
                 // completions stream text only, with its logprob rows when asked
                 if (!r.is_chat and delta != .string and (delta != .object or delta.object.get("content") == null)) return;
-                return r.emit(r.chunk(delta, null) catch return error.Closed);
+                const visible = if (r.plan.policy.guard) (r.policyDelta(delta) catch return error.Closed) orelse return else delta;
+                return r.emit(r.chunk(visible, null) catch return error.Closed);
             }
             @import("openai_calls.zig").streamed(r, delta) catch return error.Closed;
             const filtered = r.policyDelta(delta) catch return error.Closed;
@@ -420,7 +444,9 @@ pub const Run = struct {
 
     /// The one-call policy on a streamed delta: text filtered, tool_calls dropped; null when nothing is left.
     fn policyDelta(r: *Run, delta: Value) Allocator.Error!?Value {
-        if (!r.plan.policy.single) return if (delta.truthy()) delta else null;
+        if (!r.plan.policy.filtering() and !r.plan.policy.drop_rejected) return if (delta.truthy()) delta else null;
+        // With tools offered, the guard waits for the full envelope to determine whether it is valid.
+        if (r.plan.policy.drop_rejected and delta == .string) return null;
         if (delta == .string) {
             const t = try r.plan.policy.text(r.a, delta.string);
             return if (t.len > 0) Value{ .string = t } else null;
@@ -430,7 +456,7 @@ pub const Run = struct {
         for (delta.object.keys(), delta.object.values()) |k, v| {
             if (std.mem.eql(u8, k, "tool_calls")) continue;
             if (std.mem.eql(u8, k, "content") and v == .string) {
-                content = v.string;
+                if (!r.plan.policy.drop_rejected) content = v.string;
                 continue;
             }
             try o.put(r.a, k, v);
@@ -525,6 +551,10 @@ pub const Run = struct {
             } else if (r.plan.policy.kept(reply.content, r.prose_sent.items)) |rest| {
                 r.emit(r.chunk(.{ .string = rest }, null) catch return) catch return;
             }
+        } else if (r.plan.policy.guard) {
+            _ = r.attachCalls(&reply) catch return;
+            const tail = r.plan.policy.flush();
+            if (tail.len > 0) r.emit(r.chunk(.{ .string = tail }, null) catch return) catch return;
         }
         @import("logprobs.zig").project(r.srv, &cx, &reply, r.plan.input.tools, calls) catch |e| return r.streamFailed(if (e == error.Refused) cx.message else "out of memory");
         // the entries no chunk carried yet, once the stop and tool policies are final

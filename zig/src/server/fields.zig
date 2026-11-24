@@ -205,6 +205,10 @@ pub const Thinking = struct { effort: ?[]const u8 = null, enable: ?bool = null, 
 
 /// ``thinking_fields``: a request's effort and thinking switch where it sets them.
 pub fn thinkingFields(cx: *Cx, body: Value, levels: []const []const u8) errors.Refused!Thinking {
+    return thinkingFieldsFor(cx, body, levels, false);
+}
+
+pub fn thinkingFieldsFor(cx: *Cx, body: Value, levels: []const []const u8, numeric: bool) errors.Refused!Thinking {
     var out: Thinking = .{};
     const raw = body.get("chat_template_kwargs");
     const kwargs: ?Value = if (raw != null and raw.?.truthy()) raw.? else null;
@@ -219,6 +223,16 @@ pub fn thinkingFields(cx: *Cx, body: Value, levels: []const []const u8) errors.R
     var effort = body.field("reasoning_effort");
     if (effort == null and kw_object) if (kwargs) |k| {
         effort = k.field("reasoning_effort");
+    };
+    if (numeric) if (effort) |e| {
+        const value: ?f64 = if (e == .string) effortNumber(e.string) else if (e == .int or e == .float) e.float64() else null;
+        if (value) |x| {
+            if (!(x >= 0 and x <= 0.99)) return cx.refuse("reasoning_effort must be between 0 and 0.99, or a named effort");
+            const q = @round(@round(x * 1000) / 1000 * 100) / 100;
+            out.effort = try std.fmt.allocPrint(cx.a, "{d}", .{q});
+            out.enable = true;
+            effort = null;
+        }
     };
     if (effort) |e| {
         if (e != .string or !isEffort(e.string)) return cx.refuse("reasoning_effort must be none, minimal, low, medium, high, xhigh or max");
@@ -238,6 +252,11 @@ pub fn thinkingFields(cx: *Cx, body: Value, levels: []const []const u8) errors.R
         out.clear = c.bool;
     };
     return out;
+}
+
+pub fn effortNumber(s: []const u8) ?f64 {
+    if (s.len == 0 or std.mem.indexOfScalar(u8, "0123456789.-+", s[0]) == null) return null;
+    return std.fmt.parseFloat(f64, s) catch null;
 }
 
 fn isEffort(s: []const u8) bool {

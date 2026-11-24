@@ -158,6 +158,7 @@ pub const Server = struct {
         const source = text.templateSource();
         srv.effort_levels = try fields.effortLevels(a, source);
         if (srv.recipients and srv.effort_levels.len > 0) srv.off_effort = fields.coerceEffort("minimal", srv.effort_levels);
+        if (text.native_inkling2) srv.off_effort = "none";
         // MiniMax-M3's template decides on its own; thinking off closes the block in the prompt (prompt.zig)
         srv.thinking_switch = minimax or std.mem.indexOf(u8, source, "enable_thinking") != null or
             std.mem.indexOf(u8, source, "thinking_mode") != null;
@@ -271,25 +272,39 @@ pub const Server = struct {
     }
 
     /// The grammar a request asks for, or its refusal when the engine cannot enforce it.
-    pub fn checkFeatures(srv: *Server, cx: *Cx, f: Value, has_tools: bool, thinking: bool, prompt_ids: []const u32, tools: []const Value, request: *api.Request) errors.Refused!void {
-        _ = prompt_ids;
+    pub fn checkFeatures(srv: *Server, cx: *Cx, f: Value, has_tools: bool, thinking: bool, chat_route: bool, tools: []const Value, request: *api.Request) errors.Refused!void {
         errdefer srv.release(false, request.*); // a refused request frees what it compiled here
         const required = if (f.get("tool_call_required")) |r| r.truthy() else false;
         const one_call = if (f.get("tool_call_single")) |x| x.truthy() else false;
         const all = has_tools and !required and (tool_grammar.autoAllEnv() catch return cx.fail(.server, "invalid TF_DSV41_TOOL_GRAMMAR: expected 0 or 1", .{}));
+        const inkling_chat = srv.info.framed_structures and srv.text.native_inkling2 and chat_route;
+        const spec = try grammar.spec(cx, f);
+        if (inkling_chat and spec == null and !required and tool_grammar.autoWanted(tools, all))
+            return cx.refuse("Inkling 2 Mini cannot constrain strict tools under tool_choice \"auto\". Use a required or named function.");
         if (has_tools and required) {
             if (!srv.info.capability(.structures)) return cx.fail(.request, "backend '{s}' cannot enforce tool_choice \"required\" or a named function: it has no token grammar support; send \"auto\" or \"none\"", .{srv.backendName()});
-            request.structure = try tool_grammar.structure(srv, cx, tools, !one_call, thinking);
-        } else if (has_tools and srv.info.capability(.structures) and tool_grammar.autoWanted(tools, all) and srv.grammarCompiler() != null) {
+            if (inkling_chat) {
+                const text = try @import("inkling_structure.zig").calls(srv, cx, tools, !one_call, thinking);
+                if (text.len > grammar.max_text) return cx.refuse("tool_choice: the tools' names and schemas exceed the grammar size limit");
+                request.structure = try srv.compiledStructure(cx, .structural_tag, text, "tool_choice", false);
+            } else request.structure = try tool_grammar.structure(srv, cx, tools, !one_call, thinking);
+        } else if (!inkling_chat and has_tools and srv.info.capability(.structures) and tool_grammar.autoWanted(tools, all) and srv.grammarCompiler() != null) {
             // auto with a strict tool (any, TENSORFOLD_TOOL_GRAMMAR=1): text or calls; no grammar library, no grammar
             request.structure = try tool_grammar.optionalStructure(srv, cx, tools, all, !one_call, thinking);
         }
-        if (try grammar.spec(cx, f)) |s| {
+        if (spec) |s| {
             if (!srv.info.capability(.structures)) return cx.refuse("structured output (response_format and the guided_* fields) is not supported by this engine yet");
             if (s.text.len > grammar.max_text) return cx.fail(.request, "{s}: the grammar is {d} bytes, more than the {d} KiB a grammar may be", .{ s.field, s.text.len, grammar.max_text / 1024 });
-            const st = try srv.compiledStructure(cx, s.kind, s.text, s.field, thinking);
+            const st = if (inkling_chat and s.kind != .structural_tag)
+                try srv.compiledStructure(cx, .structural_tag, try @import("inkling_structure.zig").framed(srv, cx, s, thinking), s.field, false)
+            else
+                try srv.compiledStructure(cx, s.kind, s.text, s.field, thinking and !inkling_chat);
             if (request.structure) |tool| tool.free();
             request.structure = st;
+        }
+        if (inkling_chat and request.structure != null) {
+            if (fields.flag(f, "ignore_eos") orelse false) return cx.refuse("ignore_eos cannot be combined with a constrained Inkling 2 reply");
+            if (f.get("stop")) |stop| if (stop.truthy()) return cx.refuse("stop cannot be combined with a constrained Inkling 2 reply");
         }
         try budgetStructure(cx, f, request);
     }

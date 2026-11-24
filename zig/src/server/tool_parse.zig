@@ -27,6 +27,7 @@ pub const Parsed = struct {
     content: []const u8,
     calls: ?[]Value,
     rejected_envelopes: usize = 0,
+    hidden_unoffered: usize = 0,
     kept_unoffered: usize = 0,
     kept_malformed: usize = 0,
     /// The names the model wrote for kept calls that named an unoffered tool: eight at most, 64 bytes each.
@@ -104,6 +105,11 @@ pub fn envelopes(a: Allocator, text: []const u8) Allocator.Error![]Envelope {
 
 /// ``parse_tool_calls_from_content``: the reply's content and its calls (null when it makes none).
 pub fn parse(a: Allocator, text: []const u8, tools: []const Value, max_calls: ?usize) Allocator.Error!Parsed {
+    return parseGuarded(a, text, tools, max_calls, false);
+}
+
+/// Drop well-formed calls to unoffered tools while retaining malformed envelopes.
+pub fn parseGuarded(a: Allocator, text: []const u8, tools: []const Value, max_calls: ?usize, hide_unoffered: bool) Allocator.Error!Parsed {
     if (tools.len == 0) return .{ .content = text, .calls = null };
     var known: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
     for (tools) |tool| {
@@ -120,6 +126,7 @@ pub fn parse(a: Allocator, text: []const u8, tools: []const Value, max_calls: ?u
     var cursor: usize = 0;
     var rejected: usize = 0;
     var kept_unoffered: usize = 0;
+    var hidden_unoffered: usize = 0;
     var kept_malformed: usize = 0;
     next_envelope: for (envs) |env| {
         try residue.appendSlice(a, text[cursor..env.start]);
@@ -158,6 +165,10 @@ pub fn parse(a: Allocator, text: []const u8, tools: []const Value, max_calls: ?u
             break :blk if (unoffered) .unoffered else .none;
         };
         if (reject != .none) {
+            if (hide_unoffered and reject == .unoffered) {
+                hidden_unoffered += 1;
+                continue;
+            }
             try residue.appendSlice(a, text[env.start..env.end]);
             rejected += 1;
             if (reject == .unoffered) kept_unoffered += 1 else kept_malformed += 1;
@@ -179,6 +190,7 @@ pub fn parse(a: Allocator, text: []const u8, tools: []const Value, max_calls: ?u
         .content = strip(residue.items),
         .calls = if (calls.items.len > 0) calls.items else null,
         .rejected_envelopes = rejected,
+        .hidden_unoffered = hidden_unoffered,
         .kept_unoffered = kept_unoffered,
         .kept_malformed = kept_malformed,
         .unoffered_names = kept_names.items,

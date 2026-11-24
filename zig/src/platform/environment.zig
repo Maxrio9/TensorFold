@@ -40,6 +40,8 @@ pub fn isReal(kind: Kind) bool {
 }
 
 pub const rules = [_]Rule{
+    .{ .name = "TF_TOOL_CALL_GUARD", .scope = .common, .kind = .flag, .forms = "0 or 1 (default 0)" },
+    .{ .name = "TF_REASONING_FIELD", .scope = .common, .kind = .word, .words = &.{ "reasoning_content", "reasoning", "both" }, .forms = "reasoning_content, reasoning or both (default reasoning_content)" },
     .{ .name = "TF_CUDA_POOL_AFTER_WARMUP", .scope = .cuda, .kind = .flag, .blank_default = false, .forms = "0 or 1 (default 0; size an idle Qwen DFlash2 device pool after warm-up)" },
     .{ .name = "TF_QWEN_KV_HOST_GIB", .scope = .cuda, .kind = .u64, .min = 1, .max = std.math.maxInt(u64) >> 30, .forms = "positive whole GiB fitting an unsigned 64-bit byte count; blank or unset: one full KV window" },
     .{ .name = "TF_CACHE_EVICT", .scope = .common, .kind = .word, .words = &.{ "main", "decayed_resume" }, .forms = "main or decayed_resume (default main)" },

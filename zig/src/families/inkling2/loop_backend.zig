@@ -5,6 +5,7 @@ const lanes = @import("lanes");
 const engine = @import("loop_engine.zig");
 const ops = @import("ops.zig");
 const dspark = @import("dspark_cuda.zig");
+const masked_draw = @import("loop_masked_draw.zig");
 
 const Model = engine.Model;
 const Kernels = engine.Kernels;
@@ -172,7 +173,7 @@ pub const Backend = struct {
     }
 
     pub fn backend(b: *Backend) be.Backend {
-        return .{ .ptr = b, .vtable = &vtable };
+        return .{ .ptr = b, .vtable = &vtable, .draft_grammar = false };
     }
 
     pub fn facts(b: *const Backend) lanes.Model {
@@ -365,8 +366,20 @@ pub const Backend = struct {
         return h;
     }
 
-    fn firstMasked(_: *anyopaque, _: *lanes.Stream, _: u64, _: []const u32) anyerror!u64 {
-        return error.StructuresUnsupported;
+    fn firstMasked(ptr: *anyopaque, s: *lanes.Stream, position: u64, mask: []const u32) anyerror!u64 {
+        const b = self(ptr);
+        const l = try b.laneOf(s);
+        if (position != l.len or l.fill != null) return error.PositionMismatch;
+        const h = b.next;
+        const at = b.handle();
+        try b.drawMasked(s, l.last, &.{position}, at, mask);
+        return h;
+    }
+
+    fn drawMasked(b: *Backend, s: *const lanes.Stream, src: u64, positions: []const u64, at: usize, masks: []const u32) !void {
+        var picked: [window_rows]u32 = undefined;
+        try masked_draw.pick(b.gpa, b.s, b.m.w.c.text.unpadded_vocab, b.m.w.c.text.vocab, src, positions, s.sampling, masks, picked[0..positions.len]);
+        try b.upload(b.tokens.ptr + at * 4, std.mem.sliceAsBytes(picked[0..positions.len]));
     }
 
     fn feed(b: *Backend, value: be.Feed) !u32 {
@@ -396,7 +409,6 @@ pub const Backend = struct {
         var taps = false;
         for (windows, chains[0..windows.len]) |w, *chain| {
             if (w.parents != null) return error.ChainsOnly;
-            if (w.masks.len != 0) return error.StructuresUnsupported;
             const l = try b.laneOf(w.stream);
             const n = w.rows();
             if (n == 0 or n > window_rows) return error.WindowTooWide;
@@ -427,7 +439,11 @@ pub const Backend = struct {
                 const session = &d.sessions[chain.slot];
                 try b.m.copy(b.s, session.taps + session.pending * dspark.tap_stride, from, n * dspark.tap_stride);
             }
-            try b.drawRows(l, b.m.s.logits + row0 * v * 4, n, w.positions[0], token_ring + row0);
+            const src = b.m.s.logits + row0 * v * 4;
+            if (w.masks.len == 0)
+                try b.drawRows(l, src, n, w.positions[0], token_ring + row0)
+            else
+                try b.drawMasked(w.stream, src, w.positions, token_ring + row0, w.masks);
             row0 += n;
         }
         var got: [engine.round_rows]u32 = undefined;

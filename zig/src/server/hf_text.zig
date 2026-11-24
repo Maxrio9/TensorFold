@@ -4,6 +4,7 @@ const tokenizer = @import("tokenizer");
 const template = @import("template");
 const json = @import("json");
 const model_text = @import("model_text.zig");
+const inkling_structure = @import("inkling_structure.zig");
 const KimiText = @import("kimi_text.zig").KimiText;
 const dsv41_chat = @import("dsv41_chat");
 const dsv41 = if (@hasDecl(dsv41_chat, "template")) dsv41_chat.template else dsv41_chat;
@@ -408,15 +409,27 @@ pub const HfText = struct {
         try globals.put(a, "thinking_mode", .{ .string = if (options.enable_thinking) "thinking" else "chat" });
         var context: std.json.ObjectMap = .empty;
         try context.put(a, "enable_thinking", .{ .bool = options.enable_thinking });
-        if (options.reasoning_effort) |e| try context.put(a, "reasoning_effort", .{ .string = e });
+        if (options.reasoning_effort) |e| {
+            const numeric = if (t.native_inkling2) @import("fields.zig").effortNumber(e) else null;
+            try context.put(a, "reasoning_effort", if (numeric) |n| .{ .float = n } else .{ .string = e });
+        }
         if (t.clear_thinking) |clear| try context.put(a, "clear_thinking", .{ .bool = options.clear_thinking orelse clear });
         var diag: template.Diag = .{};
         const tools: std.json.Value = if (options.tools) |tl| try toStd(a, tl) else .null;
-        const out = template.renderMarked(a, compiled, try toStd(a, messages), tools, .{ .object = context }, .{ .object = globals }, options.add_generation_prompt, &diag, options.message_starts) catch |e| {
+        // Inkling 2 adds the tool choice to the leading system message or the effort block.
+        var rendered_messages = messages;
+        var effort_sentence: ?[]const u8 = null;
+        const declared = if (options.tools) |tl| tl == .array and tl.array.len > 0 else false;
+        if (t.native_inkling2 and declared) if (options.tool_instruction) |sentence| {
+            if (try inkling_structure.withInstruction(a, messages, sentence)) |m| rendered_messages = m else effort_sentence = sentence;
+        };
+        const out = template.renderMarked(a, compiled, try toStd(a, rendered_messages), tools, .{ .object = context }, .{ .object = globals }, options.add_generation_prompt, &diag, options.message_starts) catch |e| {
             if (e == error.OutOfMemory) return error.OutOfMemory;
             problem.* = diag.msg;
             return error.Template;
         };
+
+        if (effort_sentence) |sentence| return inkling_structure.appendToEffort(a, compiled, tools, context, globals, out.s, out.spans, options.message_starts, sentence, problem);
         return .{ .text = out.s, .spans = out.spans };
     }
 };

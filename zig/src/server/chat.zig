@@ -54,6 +54,7 @@ pub const Input = struct {
     cache_salt: u64 = 0,
     /// The client's own name for the grammar field (text.format, output_config.format); null on chat and completions.
     format: ?[]const u8 = null,
+    chat_route: bool = false,
     /// The encoded image bytes the request may send; chat's limits unless a route (OCR) sets its own.
     image_bytes: images.ByteLimits = .{},
     /// With a known window, the reply may fill all the room the prompt leaves; max_tokens otherwise.
@@ -224,7 +225,7 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
     if (salt != 0) request.cache_key = try @import("cache_salt.zig").key(srv, cx, request.cacheKey(), salt);
     request.salted = salt != 0;
     request.cache_salt = salt;
-    try srv.checkFeatures(cx, f, input.tools.len > 0, reasoning, rendered.ids, input.tools, &request);
+    try srv.checkFeatures(cx, f, input.tools.len > 0, reasoning, input.chat_route, input.tools, &request);
     server_mod.nameStructure(input.format, &request);
     errdefer srv.release(false, request);
     if (reasoning) {

@@ -32,7 +32,7 @@ fn messageIds(srv: *Server, cx: *Cx, body: Value) errors.Refused![]const u32 {
         error.Refused => return cx.refuse(cx.message), // a ValueError here is a RequestError
         else => |x| return x,
     };
-    const thinking = try fields.thinkingFields(cx, body, srv.effort_levels);
+    const thinking = try fields.thinkingFieldsFor(cx, body, srv.effort_levels, srv.text.native_inkling2);
     const on = thinking.enable orelse srv.config.enable_thinking;
     cx.clear_thinking = thinking.clear;
     cx.named_effort = fields.namedEffort(thinking.effort, srv.effort_levels);

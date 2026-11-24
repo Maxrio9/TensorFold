@@ -173,7 +173,8 @@ void* tfg_compile(void* cp, int kind, const char* text, size_t len, char* err, s
                     }
                     return c->compiler.CompileGrammar(ebnf);
                 }
-                case 5: return c->compiler.CompileStructuralTag(t);
+                // xgrammar 0.2.8 can reuse token masks across structural tags. The whole-compile cache remains.
+                case 5: return xgrammar::GrammarCompiler(c->info, 8, false, CACHE_BYTES).CompileStructuralTag(t);
                 default: return c->compiler.CompileGrammar(t);
             }
         };

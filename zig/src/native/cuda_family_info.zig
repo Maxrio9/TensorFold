@@ -7,6 +7,7 @@ const registry = @import("cuda_families.zig").registry;
 pub fn familyInfo(comptime F: type, host: api.Info) api.Info {
     var info = host;
     info.reasoning = reasoning(F);
+    if (@hasDecl(F, "framed_structures")) info.framed_structures = F.framed_structures;
     if (@hasDecl(F, "thinking")) F.thinking(&info); // a family's own think block rules
     return info;
 }

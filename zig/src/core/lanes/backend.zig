@@ -95,6 +95,8 @@ pub const Backend = struct {
     chunk_invariant: bool = false,
     /// Whether image requests may run a background warm prefill; wrappers preserve the target policy.
     warm_images: bool = true,
+    /// Whether this target can verify its drafts under a reply grammar.
+    draft_grammar: bool = true,
     ptr: *anyopaque,
     vtable: *const VTable,
 
