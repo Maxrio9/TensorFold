@@ -21,6 +21,7 @@ pub const prompt_pairs = 128;
 pub const prompt_threads = 256;
 pub const prompt_shared_fp8 = 2 * tile_keys * head_dim * 2;
 pub const prompt_shared = 3 * prompt_shared_fp8;
+pub const sliding_prompt_min_rows = 64;
 
 /// One stream's rows in a call (attention.cu's Seg): rows row0.. at positions p0.., its caches `off` elements in.
 pub const Seg = extern struct { row0: i32, n: i32, p0: i32, pad: i32 = 0, off: i64 };
@@ -105,6 +106,7 @@ pub const Kernels = struct {
     pmod: cuda.Module,
     attn_prompt: cuda.Function,
     attn_prompt_fp8: cuda.Function,
+    attn_slide: ?[2]cuda.Function = null,
 
     pub fn load(d: *const cuda.Driver) !Kernels {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
@@ -115,11 +117,18 @@ pub const Kernels = struct {
         const attn_prompt = try pmod.function("tf_ink2_attn_prompt");
         try attn_prompt.allowDynamicShared(prompt_shared);
         const attn_prompt_fp8 = try pmod.function("tf_ink2_attn_prompt_fp8");
+        const slide_on = try @import("sys").environment.read(bool, "TF_INKLING2_PREFILL_SLIDE", true);
+        const attn_slide: ?[2]cuda.Function = if (slide_on) .{
+            try pmod.function("tf_ink2_attn_slide"),
+            try pmod.function("tf_ink2_attn_slide_fp8"),
+        } else null;
+        if (attn_slide) |slide| try slide[0].allowDynamicShared(prompt_shared);
         return .{
             .mod = mod,
             .pmod = pmod,
             .attn_prompt = attn_prompt,
             .attn_prompt_fp8 = attn_prompt_fp8,
+            .attn_slide = attn_slide,
             .prep = try mod.function("tf_ink2_prep"),
             .prep_fp8 = try mod.function("tf_ink2_prep_fp8"),
             .rel_table = try mod.function("tf_ink2_rel_table"),
@@ -153,6 +162,7 @@ pub const Rows = struct {
     n_tiles: u32,
     last_pos: u32, // the call's latest row position (a global layer's chunks run to it)
     streams: u32 = 1, // segments in `segs`: one stream's prompt rows take the prompt kernel
+    sliding_prompt: bool = false,
 };
 
 fn int(x: anytype) c_int {
@@ -192,6 +202,17 @@ pub fn relTable(k: *const Kernels, s: cuda.Stream, r: Rows, rel: u64, proj: u64,
 pub fn attend(k: *const Kernels, s: cuda.Stream, r: Rows, l: Layer, stride: u32, slots: usize, q: u64, kv: Cache, tab: u64, part_o: u64, part_ml: u64, sink: u64, gate: u64, out: u64) !void {
     if (slotsFor(l, r.last_pos + 1) > stride) return error.Inkling2Partials;
     const scale: f32 = 1.0 / @sqrt(@as(f32, head_dim));
+    if (r.sliding_prompt and l.window != 0 and r.streams == 1) {
+        if (k.attn_slide) |slide| {
+            const fp8 = kv.format == .fp8;
+            var p: cuda.Args = .{};
+            for ([_]u64{ q, kv.k, kv.v, tab, r.segs, sink, gate, out }) |v| p.add(v);
+            for ([_]u32{ r.heads, r.kv_heads, l.ring, l.window, l.chunk }) |v| p.add(int(v));
+            p.add(scale);
+            const blocks = std.math.divCeil(u32, r.rows * (r.heads / r.kv_heads), prompt_pairs) catch unreachable;
+            return goShared(slide[@intFromBool(fp8)], s, .{ .x = blocks, .y = r.kv_heads }, prompt_threads, if (fp8) prompt_shared_fp8 else prompt_shared, &p);
+        }
+    }
     var a: cuda.Args = .{};
     for ([_]u64{ q, kv.k, kv.v, tab, r.segs, r.tiles, part_o, part_ml }) |v| a.add(v);
     var slots_rh = stride; // partials a row and head

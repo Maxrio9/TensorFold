@@ -11,7 +11,7 @@ const modelopt = @import("modelopt.zig");
 const exl3_experts = @import("loop_exl3_experts.zig");
 const loop_math = @import("loop_math_cuda.zig");
 
-pub const prompt_rows: usize = 2048;
+pub const prompt_rows = loop.exl3_prompt_rows;
 pub const window_rows: usize = 16;
 pub const round_rows = 128;
 
@@ -117,11 +117,15 @@ pub const Model = struct {
         try m.d.check(m.d.api.cuMemsetD8Async(ptr, 0, bytes, s.handle), "cuMemsetD8Async");
     }
 
+    pub fn promptRows(m: *const Model) usize {
+        return m.layout.rows_per_pass;
+    }
+
     pub fn layerGeometry(m: *const Model, layer: u32) attention.Layer {
         return if (config.isGlobal(layer))
             attention.Layer.global(@intCast(m.context))
         else
-            attention.Layer.sliding(m.w.c.text.window, @intCast(@min(prompt_rows, m.context)));
+            attention.Layer.sliding(m.w.c.text.window, @intCast(@min(m.promptRows(), m.context)));
     }
 
     pub fn cacheOf(m: *const Model, visit: u32) attention.Cache {
@@ -155,7 +159,7 @@ pub const Model = struct {
     }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, s: cuda.Stream, w: *const weights_.Weights, context: usize, format: loop.CacheFormat) !Model {
-        const layout = try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context), format);
+        const layout = try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context), format, loop.promptRows(w.c.exl3));
         var m: Model = .{
             .gpa = gpa,
             .d = d,
@@ -174,7 +178,7 @@ pub const Model = struct {
             .modelopt => null,
             .exl3 => |e| e.layer,
         };
-        m.s = try scratchAlloc(m, m.w.c.text, m.context, expert);
+        m.s = try scratchAlloc(m, m.w.c.text, m.context, m.promptRows(), expert);
     }
 
     pub fn planScratch(c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer) !usize {
@@ -186,17 +190,16 @@ pub const Model = struct {
             }
         };
         var counter: Counter = .{};
-        _ = try scratchAlloc(&counter, c, context, expert);
+        _ = try scratchAlloc(&counter, c, context, loop.promptRows(expert != null), expert);
         return counter.bytes;
     }
 
-    fn scratchAlloc(buffers: anytype, c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer) !Scratch {
+    fn scratchAlloc(buffers: anytype, c: config.Text, context: usize, rows: usize, expert: ?cuda.exl3_experts.Layer) !Scratch {
         const h: usize = c.hidden;
         const q: usize = @as(usize, c.global.q) * c.global.dim;
         const kv: usize = @as(usize, c.local.kv) * c.local.dim;
-        const rows = prompt_rows;
         const rel_rows = rows * c.global.q * attention.extent;
-        const local = attention.Layer.sliding(c.window, @intCast(@min(prompt_rows, context)));
+        const local = attention.Layer.sliding(c.window, @intCast(@min(rows, context)));
         const global = attention.Layer.global(@intCast(context));
         const local_slots = attention.slotsFor(local, context);
         const global_slots = attention.slotsFor(global, context);

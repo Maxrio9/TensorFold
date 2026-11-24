@@ -52,10 +52,10 @@ const Scratch = struct {
     position: u64,
     walk: u64,
 
-    fn layout(base: u64, total: *usize) Scratch {
+    fn layout(base: u64, rows_per_pass: usize, total: *usize) Scratch {
         const b = 2;
         const sizes = .{
-            .taps = dspark.shared_tap_bytes,
+            .taps = dspark.sharedTapBytes(rows_per_pass),
             .mixed = max_context_rows * h * b,
             .matrix = @max(max_context_rows * 2 * w_.kv, block * 2 * w_.inter) * b,
             .accum = @max(max_context_rows * h, block * 2 * w_.inter) * 4,
@@ -87,9 +87,9 @@ const Scratch = struct {
     }
 };
 
-pub fn scratchBytes() usize {
+pub fn scratchBytes(rows_per_pass: usize) usize {
     var size: usize = 0;
-    _ = Scratch.layout(0, &size);
+    _ = Scratch.layout(0, rows_per_pass, &size);
     return size;
 }
 
@@ -113,12 +113,12 @@ pub const Drafter = struct {
     graphs: ?GraphCache = null,
 
     /// Takes ownership of weights on success.
-    pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize) !Drafter {
+    pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize, rows_per_pass: usize) !Drafter {
         var k = try dsp.Kernels.load(d);
         errdefer k.unload();
         var dense = try cuda.dense_rows.DenseRows.load(d);
         errdefer dense.unload();
-        var memory = try cuda.DeviceBuffer.alloc(d, scratchBytes());
+        var memory = try cuda.DeviceBuffer.alloc(d, scratchBytes(rows_per_pass));
         errdefer memory.free();
         var used: usize = 0;
         var out: Drafter = .{
@@ -130,7 +130,7 @@ pub const Drafter = struct {
             .convolve = try k.mod.function("tf_ink2_df_conv"),
             .select = try k.mod.function("tf_ink2_df_select"),
             .memory = memory,
-            .scratch = Scratch.layout(memory.ptr, &used),
+            .scratch = Scratch.layout(memory.ptr, rows_per_pass, &used),
             .ring_size = ring(context),
             .graph_engine = .{ .d = d },
         };

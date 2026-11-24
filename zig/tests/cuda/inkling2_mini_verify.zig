@@ -51,10 +51,45 @@ fn fill(o: *ink.native.Owned, prompt: []const u32, last: bool) !void {
     try o.model.reset(o.stream);
     var at: usize = 0;
     while (at < prompt.len) {
-        const end = @min(at + ink.native.prompt_rows, prompt.len);
+        const end = @min(at + o.model.promptRows(), prompt.len);
         try o.model.forward(&o.kernels, o.stream, prompt[at..end], at, end - at - 1, @intFromBool(last and end == prompt.len), false);
         at = end;
     }
+}
+
+/// Export the last prompt position's complete target distribution for cross-build comparisons.
+pub fn prefillLogits(gpu: check.Gpu, model: []const u8, fixture: []const u8, output: []const u8) !void {
+    const a = gpu.gpa;
+    const data = try std.Io.Dir.cwd().readFileAlloc(gpu.io, fixture, a, .limited(1 << 22));
+    defer a.free(data);
+    const rows = try std.json.parseFromSlice([]const Row, a, data, .{ .ignore_unknown_fields = true });
+    defer rows.deinit();
+    var context: usize = 0;
+    for (rows.value) |row| {
+        if (row.prompt_ids.len == 0) return error.BadTeacherFixture;
+        context = @max(context, row.prompt_ids.len);
+    }
+    if (context == 0) return error.BadTeacherFixture;
+    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, .{ .context = context, .drafts = false, .kv8 = true });
+    defer loaded.deinit(loaded.ctx);
+    const o = loaded.target;
+    const vocab = o.weights.c.text.unpadded_vocab;
+    const logits = try a.alloc(f32, vocab);
+    defer a.free(logits);
+    const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = logits.len * @sizeOf(f32) };
+    const f = try std.Io.Dir.cwd().createFile(gpu.io, output, .{});
+    defer f.close(gpu.io);
+    var buffer: [4096]u8 = undefined;
+    var writer = f.writer(gpu.io, &buffer);
+    try writer.interface.writeInt(u32, vocab, .little);
+    for (rows.value) |row| {
+        try fill(o, row.prompt_ids, true);
+        try o.stream.synchronize();
+        try live.download(0, std.mem.sliceAsBytes(logits));
+        try writer.interface.writeAll(std.mem.sliceAsBytes(logits));
+        std.debug.print("PREFILL LOGITS {s} rows={d} vocab={d}\n", .{ row.id, row.prompt_ids.len, vocab });
+    }
+    try writer.interface.flush();
 }
 
 pub fn run(gpu: check.Gpu, model: []const u8, drafter: []const u8, fixture: []const u8) !void {

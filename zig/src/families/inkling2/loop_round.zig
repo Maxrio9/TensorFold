@@ -12,7 +12,7 @@ const Model = engine.Model;
 const Kernels = engine.Kernels;
 const prompt_rows = engine.prompt_rows;
 const window_rows = engine.window_rows;
-const max_tiles: usize = 128;
+const max_tiles = attention.tileCount(prompt_rows, 4);
 const window_tiles: usize = 2; // up to 16 rows at the Mini's three query heads per KV head
 pub const tile_storage: usize = @max(2 * max_tiles, engine.max_slots * 2 * window_tiles);
 
@@ -27,7 +27,7 @@ const Part = struct {
     slot: u8 = 0,
     row0: u16 = 0,
     rows: u16 = 0,
-    tiles: [2]u8 = @splat(0),
+    tiles: [2]u16 = @splat(0),
     record: bool = false,
 };
 
@@ -45,23 +45,26 @@ fn tileOffset(count: usize, i: usize, kind: usize) usize {
     return (2 * i + kind) * (if (count == 1) max_tiles else window_tiles);
 }
 
-fn shapeFor(chains: []const Chain, head0: usize, heads: usize, taps: bool, context: usize, slots: usize, groups: [2]u32) !Shape {
+fn shapeFor(chains: []const Chain, head0: usize, heads: usize, taps: bool, context: usize, slots: usize, rows_per_pass: usize, groups: [2]u32) !Shape {
     if (chains.len == 0 or chains.len > engine.max_slots or heads > engine.round_rows) return error.BadLoopRows;
     var shape: Shape = .{ .count = chains.len, .head0 = head0, .heads = heads, .taps = taps };
     var seen: std.StaticBitSet(engine.max_slots) = .empty;
     for (chains, shape.parts[0..chains.len]) |chain, *part| {
         const n = chain.tokens.len;
-        if (chain.slot >= slots or n == 0 or chain.position > context or n > context - chain.position or n > prompt_rows - shape.rows)
+        if (chain.slot >= slots or n == 0 or chain.position > context or n > context - chain.position or n > rows_per_pass - shape.rows)
             return error.BadLoopRows;
         if (seen.isSet(chain.slot)) return error.BadLoopRows;
         seen.set(chain.slot);
         if ((chain.record or chains.len > 1) and n > window_rows) return error.WindowTooWide;
+        const tiles = [2]usize{ attention.tileCount(n, groups[0]), attention.tileCount(n, groups[1]) };
+        const capacity = if (chains.len == 1) max_tiles else window_tiles;
+        if (tiles[0] > capacity or tiles[1] > capacity) return error.TooManyTiles;
         part.* = .{
             .slot = @intCast(chain.slot),
             .row0 = @intCast(shape.rows),
             .rows = @intCast(n),
             .record = chain.record,
-            .tiles = .{ @intCast(attention.tileCount(n, groups[0])), @intCast(attention.tileCount(n, groups[1])) },
+            .tiles = .{ @intCast(tiles[0]), @intCast(tiles[1]) },
         };
         shape.rows += n;
     }
@@ -74,7 +77,7 @@ fn shapeFor(chains: []const Chain, head0: usize, heads: usize, taps: bool, conte
 pub fn prepare(m: *Model, s: cuda.Stream, chains: []const Chain, head0: usize, heads: usize, taps: bool) !Shape {
     const c = m.w.c.text;
     const groups = [2]u32{ c.local.q / c.local.kv, c.global.q / c.global.kv };
-    const shape = try shapeFor(chains, head0, heads, taps, m.context, m.n_slots, groups);
+    const shape = try shapeFor(chains, head0, heads, taps, m.context, m.n_slots, m.promptRows(), groups);
     var ids: [prompt_rows]i32 = undefined;
     var pos: [prompt_rows]i32 = undefined;
     const seg_of: [prompt_rows]i32 = @splat(0);
@@ -170,15 +173,7 @@ pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
         const q_width: usize = @as(usize, layer.heads.q) * layer.heads.dim;
         const kv_width: usize = @as(usize, layer.heads.kv) * layer.heads.dim;
         if (lw.attn.exl3) |a| {
-            const d = &k.dense.?;
-            if (rows <= window_rows and u_q == u_k and u_q == u_v) {
-                try d.decodeGroup(s, &.{ a.q, a.k, a.v }, u_q, .bf16, rows, &.{ m.s.q_raw, m.s.k_raw, m.s.v_raw }, .bf16);
-            } else {
-                try Kernels.project(d, s, a.q, u_q, rows, m.s.q_raw);
-                try Kernels.project(d, s, a.k, u_k, rows, m.s.k_raw);
-                try Kernels.project(d, s, a.v, u_v, rows, m.s.v_raw);
-            }
-            try Kernels.project(d, s, a.gate, u_q, rows, m.s.gate);
+            try k.projectAttention(s, a, .{ u_q, u_k, u_v }, .{ m.s.q_raw, m.s.k_raw, m.s.v_raw, m.s.gate }, rows, shape.count == 1);
         } else {
             try loop_math.projectQkv(&k.loop, s, u_q, u_k, u_v, lw.attn.wq, lw.attn.wk, lw.attn.wv, m.s.q_raw, m.s.k_raw, m.s.v_raw, rows, h, q_width, kv_width);
             try ops.rowdot(&k.glue, s, u_q, lw.attn.gate, m.s.gate, rows, q_width, h, true, false);
@@ -195,7 +190,7 @@ pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
             try loop_math.roundBf16(&k.loop, s, dyn_out, dyn_out, rows * conv_width);
         };
         const stride = attention.slotsFor(geometry, m.context);
-        const part_capacity = prompt_rows * layer.heads.q * stride;
+        const part_capacity = m.promptRows() * layer.heads.q * stride;
         const prep: attention.Prep = .{ .qk_clip = c.qk_clip, .rel_clip = c.rel_clip, .floor = @floatFromInt(c.log_floor), .alpha = c.log_alpha, .eps = c.eps };
         for (parts, 0..) |part, i| {
             m.slot = part.slot;
@@ -228,6 +223,8 @@ pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
                 .tiles = m.s.tiles + tileOffset(shape.count, i, kind) * @sizeOf(attention.Tile),
                 .n_tiles = part.tiles[kind],
                 .last_pos = @intCast(m.context - 1),
+                .sliding_prompt = lw.attn.exl3 != null and shape.count == 1 and !part.record and
+                    part.rows >= attention.sliding_prompt_min_rows,
             };
             const cache = m.cacheOf(visit.cache_slot);
             try attention.prep(&k.attn, s, r, geometry, prep, .{ m.s.q_raw + q_off, m.s.k_conv + kv_off, m.s.v_conv + kv_off, m.s.rel_raw + rel_off }, .{ lw.attn.q_scale, lw.attn.rel_scale }, m.s.q_prepared, m.s.rel_prepared, cache);
@@ -317,13 +314,21 @@ test "shared windows retain slot, row offset, rewind and tile shape" {
         .{ .slot = 3, .position = 3030, .tokens = &.{11} },
         .{ .slot = 1, .position = 22, .tokens = &.{ 41, 42, 43 }, .record = true },
     };
-    const shape = try shapeFor(&inputs, 0, 4, true, 4096, 4, .{ 3, 3 });
+    const shape = try shapeFor(&inputs, 0, 4, true, 4096, 4, prompt_rows, .{ 3, 3 });
     try std.testing.expectEqual(@as(usize, 4), shape.rows);
     try std.testing.expectEqual(Part{ .slot = 3, .rows = 1, .tiles = .{ 1, 1 } }, shape.parts[0]);
     try std.testing.expectEqual(Part{ .slot = 1, .row0 = 1, .rows = 3, .tiles = .{ 1, 1 }, .record = true }, shape.parts[1]);
     inputs[0].position += 63;
     inputs[1].tokens = &.{ 8, 9, 10 };
-    try std.testing.expectEqual(shape, try shapeFor(&inputs, 0, 4, true, 4096, 4, .{ 3, 3 }));
+    try std.testing.expectEqual(shape, try shapeFor(&inputs, 0, 4, true, 4096, 4, prompt_rows, .{ 3, 3 }));
     inputs[1].slot = 3;
-    try std.testing.expectError(error.BadLoopRows, shapeFor(&inputs, 0, 4, true, 4096, 4, .{ 3, 3 }));
+    try std.testing.expectError(error.BadLoopRows, shapeFor(&inputs, 0, 4, true, 4096, 4, prompt_rows, .{ 3, 3 }));
+}
+
+test "a 4096-row EXL3 pass fits the prepared attention tiles" {
+    const ids: [prompt_rows]u32 = @splat(0);
+    const chain: Chain = .{ .slot = 0, .position = 4096, .tokens = &ids };
+    const shape = try shapeFor(&.{chain}, ids.len - 1, 1, true, 8192, 1, prompt_rows, .{ 3, 3 });
+    try std.testing.expectEqual(@as(u16, 192), shape.parts[0].tiles[0]);
+    try std.testing.expectEqual(@as(usize, 4096), shape.rows);
 }

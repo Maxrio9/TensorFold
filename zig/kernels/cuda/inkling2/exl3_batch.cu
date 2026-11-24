@@ -13,3 +13,12 @@ extern "C" __global__ void tf_exl3_grouped_prefill_2(tf_exl3::GroupedArgs a) {
         __syncthreads();
     }
 }
+
+// Decode each mixed-width tile once per CTA for up to 128 members, in gate/up and down.
+extern "C" __global__ void __launch_bounds__(256, 2) tf_exl3_grouped_prefill_128_2(tf_exl3::GroupedArgs a) {
+#pragma unroll 1
+    for (int stripe = 0; stripe < 2; ++stripe) {
+        tf_exl3::grouped_prefill<8>(a, blockIdx.x, blockIdx.y * 2 + stripe, blockIdx.z);
+        __syncthreads();
+    }
+}

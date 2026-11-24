@@ -69,10 +69,10 @@ pub const Drafter = union(Kind) {
     dspark: dspark.Drafter,
     dflash2: dflash.Drafter,
 
-    pub fn init(d: *const cuda.Driver, w: Weights, context: usize) !Drafter {
+    pub fn init(d: *const cuda.Driver, w: Weights, context: usize, rows_per_pass: usize) !Drafter {
         return switch (w) {
-            .dspark => |x| .{ .dspark = try dspark.Drafter.init(d, x, context) },
-            .dflash2 => |x| .{ .dflash2 = try dflash.Drafter.init(d, x, context) },
+            .dspark => |x| .{ .dspark = try dspark.Drafter.init(d, x, context, rows_per_pass) },
+            .dflash2 => |x| .{ .dflash2 = try dflash.Drafter.init(d, x, context, rows_per_pass) },
         };
     }
 

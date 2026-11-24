@@ -81,7 +81,8 @@ pub fn run(gpu: check.Gpu) !void {
         .caps = .{ caps.gate, caps.up },
     };
 
-    for ([_]usize{ 1, 4, 8, 17, 512, 1025 }) |rows| {
+    if (k.batch) |batch| k.main.prefill_128 = try batch.function("tf_exl3_grouped_prefill_128_2");
+    for ([_]usize{ 1, 4, 8, 17, 512, 1025, 2048 }) |rows| {
         try compare(gpu, s, &k, l, caps, random, rows);
     }
 }
@@ -99,6 +100,7 @@ fn compare(gpu: check.Gpu, s: cuda.Stream, k: *const ink.loop_exl3_experts.Kerne
     defer a.free(weights);
     @memset(weights, 1.0 / @as(f32, slots));
     for (picks, 0..) |*e, i| e.* = @intCast((i / slots + i % slots) % experts);
+    if (rows == 2048) picks[0] = 8; // 127- and 129-member experts straddle the 128-row item boundary.
     var pick = try fill(gpu, std.mem.sliceAsBytes(picks));
     defer pick.free();
     var weight = try fill(gpu, std.mem.sliceAsBytes(weights));

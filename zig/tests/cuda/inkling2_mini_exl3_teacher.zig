@@ -28,7 +28,7 @@ pub fn run(gpu: check.Gpu, model_dir: []const u8, fixture: []const u8) !void {
         try o.model.reset(o.stream);
         var at: usize = 0;
         while (at < r.prompt_ids.len) {
-            const end = @min(at + ink.native.prompt_rows, r.prompt_ids.len);
+            const end = @min(at + o.model.promptRows(), r.prompt_ids.len);
             try o.model.forward(&o.kernels, o.stream, r.prompt_ids[at..end], at, end - at - 1, @intFromBool(end == r.prompt_ids.len), false);
             at = end;
         }

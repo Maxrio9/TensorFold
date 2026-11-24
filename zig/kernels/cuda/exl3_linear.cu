@@ -474,4 +474,30 @@ extern "C" __global__ void __launch_bounds__(256) tf_exl3_group_8_2_8(tf_exl3::G
 }
 #undef TF_EXL3_CODEBOOK
 #undef TF_EXL3_WIDTHS
+
+// Inspired by MiaAI-Lab's patch 0009 (Copyright 2026 MiaAI-Lab, Apache-2.0).
+struct PromptPairRotation {
+    const void* x[2];
+    const half* scales[2];
+    half* rotated[2];
+    int k;
+};
+
+extern "C" __global__ void __launch_bounds__(128) tf_ink2_exl3_prompt_rotate_pair(PromptPairRotation a) {
+    const int i = blockIdx.z;
+    rot_in_body(a.x[i], BF16, a.scales[i], a.rotated[i], a.k);
+}
+
+struct PromptPair {
+    LinearArgs args[2];
+};
+
+extern "C" __global__ void __launch_bounds__(128) tf_ink2_exl3_prompt_pair_1(PromptPair a) {
+    linear_mpg_body<12, 2, 4, 1>(a.args[blockIdx.z]);
+}
+
+extern "C" __global__ void __launch_bounds__(128) tf_ink2_exl3_prompt_pair_2(PromptPair a) {
+    linear_mpg_body<12, 2, 4, 2>(a.args[blockIdx.z]);
+}
+
 }  // namespace tf_exl3

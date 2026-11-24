@@ -162,7 +162,7 @@ fn freshAndResumed(gpu: Gpu, loaded: *native.Loaded, prompt: []const u32) !void 
 }
 
 fn serve(gpu: Gpu, loaded: *native.Loaded, s: *lanes.Stream, proposer: ?lanes.proposer.Proposer) !void {
-    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, native.prompt_rows, native.window_rows);
+    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, loaded.prompt_rows, native.window_rows);
     defer cfg.deinit(gpu.gpa);
     cfg.timed = false;
     var clock: lanes.fake.FixedClock = .{};
@@ -183,7 +183,7 @@ fn admission(gpu: Gpu, loaded: *native.Loaded, a: []const u32, b: []const u32) !
     defer first.deinit(gpu.gpa);
     var second = try lanes.Stream.init(gpu.gpa, .{ .id = "mini-second", .prompt = b, .max_new = 10, .sampling = sampled });
     defer second.deinit(gpu.gpa);
-    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, native.prompt_rows, native.window_rows);
+    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, loaded.prompt_rows, native.window_rows);
     defer cfg.deinit(gpu.gpa);
     cfg.timed = false;
     var clock: lanes.fake.FixedClock = .{};
@@ -241,7 +241,7 @@ fn concurrent(gpu: Gpu, loaded: *native.Loaded, ids: []const u32) !void {
         streams[i] = try lanes.Stream.init(gpu.gpa, .{ .id = "mini-concurrent", .prompt = ids[c[0]..c[1]], .max_new = 10, .sampling = if (i % 2 == 0) null else sampled });
         made += 1;
     }
-    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, native.prompt_rows, native.window_rows);
+    var cfg = try lanes.Config.init(gpu.gpa, loaded.facts, loaded.prompt_rows, native.window_rows);
     defer cfg.deinit(gpu.gpa);
     cfg.timed = false;
     var clock: lanes.fake.FixedClock = .{};

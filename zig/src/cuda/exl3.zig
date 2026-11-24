@@ -402,6 +402,10 @@ pub const Dense = struct {
         if (groupable(ws, 16)) _ = try de.groupScratch(s, ws, 16);
     }
 
+    pub fn reservePromptPair(de: *Dense, s: Stream, ws: [2]Weight) !void {
+        _ = try de.groupScratch(s, &ws, 128);
+    }
+
     /// A group's scratch at `rows`: its members' split partials, counters and rotated inputs side by side.
     pub fn groupScratch(de: *Dense, s: Stream, ws: []const Weight, rows: usize) !struct { z: u64, counters: u64, xh: u64 } {
         const bytes = groupBytes(ws, rows);
