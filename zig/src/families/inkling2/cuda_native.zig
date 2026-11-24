@@ -199,14 +199,14 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     try out.backend.warm(io);
     const global_kv = loop.CacheLayout.globalBytesPerToken(&w.p, m.layout.format);
     std.log.info("Mini CUDA memory: target weights {d} bytes, drafter weights {d} bytes, {s} target KV {d} bytes per global token, {d} bytes allocated per stream", .{
-        target_weights, draft_weights_bytes, @tagName(m.layout.format), global_kv, backend.streamBytes(&out.model),
+        target_weights, draft_weights_bytes, @tagName(m.layout.format), global_kv, out.backend.streamBytesWithDraft(),
     });
     return .{
         .backend = out.backend.backend(),
         .facts = out.backend.facts(),
         .rows = window_rows,
-        .stream_bytes = backend.streamBytes(&out.model),
-        .auto_stream_limit = if (out.backend.drafter != null) 1 else engine.max_slots,
+        .stream_bytes = out.backend.streamBytesWithDraft(),
+        .auto_stream_limit = engine.max_slots,
         .ctx = out,
         .deinit = release,
         .target = out,
@@ -235,7 +235,6 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
         error.Inkling2LoopOneRankOnly => "Inkling 2 Mini runs at one CUDA rank with one segment; TP and multi-segment modes are refused",
         error.Inkling2LoopTextOnly => "Inkling 2 Mini is text-only on CUDA: images and --vision are refused",
         error.Inkling2DraftNeedsExl3 => "Mini DSpark on CUDA requires the EXL3 text checkpoint",
-        error.Inkling2DraftOneStream => "Mini DSpark on CUDA serves one stream: set --parallel 1, or use --no-drafts for more streams",
         error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
@@ -248,7 +247,7 @@ test "Mini native registration and refusal wording are explicit" {
     try std.testing.expectEqualStrings("inkling2_loop", model_type);
     try std.testing.expect(max_segments == 1 and prompt_rows == 2048 and window_rows == 16);
     try std.testing.expectEqual(16, engine.max_slots); // the stream cap explain() names
-    for ([_]anyerror{ error.Inkling2LoopOneRankOnly, error.Inkling2LoopTextOnly, error.Inkling2DraftNeedsExl3, error.Inkling2DraftOneStream, error.Inkling2CapturedKernels, error.Inkling2TooManyStreams }) |err| {
+    for ([_]anyerror{ error.Inkling2LoopOneRankOnly, error.Inkling2LoopTextOnly, error.Inkling2DraftNeedsExl3, error.Inkling2CapturedKernels, error.Inkling2TooManyStreams }) |err| {
         try std.testing.expect(explain(null, err) != null);
     }
 }
@@ -263,7 +262,7 @@ test "the complete prompt snapshot hooks match the store vtable" {
     try std.testing.expect(@intFromPtr(pc.save) != 0);
 }
 
-test "stream_bytes is what an extra stream's slot and lane buffers allocate, 806,408 bytes past the cache on Mini" {
+test "stream_bytes is what an extra stream's slot and lane buffers allocate, 25,087,496 bytes past the cache on Mini" {
     const Record = struct { // a DeviceBuffer hook that hands out addresses and sums what is asked
         bytes: usize = 0,
         next: u64 = 1 << 32,
@@ -297,11 +296,11 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 806
     cuda.memory.setHook(.{ .ctx = &rec, .alloc = Record.alloc, .free = Record.free });
     defer cuda.memory.setHook(before);
     var slot = try m.newSlot();
-    defer for ([2]*cuda.DeviceBuffer{ &slot.cache, &slot.sites }) |x| x.free();
+    defer slot.deinit();
     try b.slotBuffers(2); // the second stream's lane buffers; the first already holds its own
     defer for (&b.slot[1]) |*x| x.free();
     try std.testing.expectEqual(@as(u64, rec.bytes), backend.streamBytes(&m));
-    try std.testing.expectEqual(@as(u64, 48 * 4 * 32 + 200_058 * 4 + 32), backend.streamBytes(&m) - m.layout.bytes);
+    try std.testing.expectEqual(@as(u64, 48 * 4 * 32 + 48 * (3 + engine.window_rows) * 6656 * 4 + 200_058 * 4 + 32), backend.streamBytes(&m) - m.layout.bytes);
     const conv = m.layout.bytes - m.layout.at(0).conv_offset;
     const rows = 8 * 8192 + 40 * 1023;
     try std.testing.expectEqual(conv + rows * 2 * 8 * 132, m.snapshotBytes(8192));

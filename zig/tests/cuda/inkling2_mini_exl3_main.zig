@@ -24,6 +24,8 @@ pub fn main(init: std.process.Init) !void {
         return @import("inkling2_mini_exl3_teacher.zig").run(gpu, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-kv-fidelity"))
         return @import("inkling2_mini_verify.zig").cacheFidelity(gpu, args[2], args[3]);
+    if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-concurrent"))
+        return @import("inkling2_mini_verify.zig").concurrent(gpu, args[2], args[3]);
     if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-verify"))
         return @import("inkling2_mini_verify.zig").run(gpu, args[2], args[3], args[4]);
     return error.BadArguments;

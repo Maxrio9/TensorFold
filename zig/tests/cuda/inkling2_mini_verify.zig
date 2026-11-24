@@ -189,3 +189,93 @@ fn print(name: []const u8, width: usize, score: Score) void {
         name, width, score.hits, score.n, score.kl / @as(f64, @floatFromInt(score.n)), score.max_kl, score.gap,
     });
 }
+
+/// Compare one-token FP8 solo logits with four shared chains, including mixed widths and partial commits.
+pub fn concurrent(gpu: check.Gpu, model: []const u8, fixture: []const u8) !void {
+    const a = gpu.gpa;
+    const data = try std.Io.Dir.cwd().readFileAlloc(gpu.io, fixture, a, .limited(1 << 22));
+    defer a.free(data);
+    const fixtures = try std.json.parseFromSlice([]const Row, a, data, .{ .ignore_unknown_fields = true });
+    defer fixtures.deinit();
+    const count = 4;
+    const steps = 64;
+    if (fixtures.value.len != count) return error.BadTeacherFixture;
+    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, .{ .context = 8704, .drafts = true });
+    defer loaded.deinit(loaded.ctx);
+    try loaded.reserve(loaded.ctx, count);
+    const o = loaded.target;
+    const v = o.weights.c.text.unpadded_vocab;
+    const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = count * max_width * v * 4 };
+    const solo = try a.alloc(f32, count * steps * v);
+    defer a.free(solo);
+    const batch = try a.alloc(f32, count * max_width * v);
+    defer a.free(batch);
+    const rows = fixtures.value;
+    const pinned = [count]usize{ 3, 0, 2, 1 };
+    for (rows, 0..) |row, i| {
+        if (row.prompt_ids.len == 0 or row.generated_ids.len < steps or row.prompt_ids.len + steps > o.model.context)
+            return error.BadTeacherFixture;
+        o.model.slot = 0;
+        try fill(o, row.prompt_ids, false);
+        for (row.generated_ids[0..steps], 0..) |token, j| {
+            try o.backend.decode(&.{token}, row.prompt_ids.len + j, false);
+            try o.stream.synchronize();
+            try live.download(0, std.mem.sliceAsBytes(solo[(i * steps + j) * v ..][0..v]));
+        }
+    }
+    const Chain = @TypeOf(o.model).Chain;
+    const width_sets = [_][count]usize{ .{ 1, 1, 1, 1 }, .{ 1, 2, 4, 8 }, .{ 3, 5, 6, 7 }, .{ 8, 1, 1, 1 } };
+    for ([_]bool{ false, true }) |mixed| {
+        for (rows, pinned) |row, slot| {
+            o.model.slot = slot;
+            try fill(o, row.prompt_ids, false);
+        }
+        var progress: [count]usize = @splat(0);
+        var scores: [count]Score = @splat(.{});
+        var round_no: usize = 0;
+        while (std.mem.min(usize, &progress) < steps) : (round_no += 1) {
+            var chains: [count]Chain = undefined;
+            var map: [count]usize = undefined;
+            var active: usize = 0;
+            var total: usize = 0;
+            const widths = if (mixed) width_sets[round_no % width_sets.len] else width_sets[0];
+            for (rows, pinned, widths, progress, 0..) |row, slot, width, at, i| {
+                if (at == steps) continue;
+                const n = @min(width, steps - at);
+                chains[active] = .{ .slot = slot, .position = row.prompt_ids.len + at, .tokens = row.generated_ids[at..][0..n], .record = n > 1 };
+                map[active] = i;
+                active += 1;
+                total += n;
+            }
+            try o.backend.decodeRound(chains[0..active], total, mixed);
+            try o.stream.synchronize();
+            try live.download(0, std.mem.sliceAsBytes(batch[0 .. total * v]));
+            var offset: usize = 0;
+            for (chains[0..active], map[0..active]) |chain, i| {
+                for (0..chain.tokens.len) |j| {
+                    const ref = (i * steps + progress[i] + j) * v;
+                    const got = (offset + j) * v;
+                    try scores[i].add(solo[ref..][0..v], batch[got..][0..v]);
+                }
+                offset += chain.tokens.len;
+                const kept = chain.tokens.len - @intFromBool(chain.record and (round_no + i) % 2 == 0);
+                if (kept < chain.tokens.len) {
+                    o.model.slot = chain.slot;
+                    try o.model.rewind(&o.kernels, o.stream, kept);
+                }
+                progress[i] += kept;
+            }
+        }
+        for (scores, rows) |score, row| {
+            const mean = score.kl / @as(f64, @floatFromInt(score.n));
+            std.debug.print("SHARED mixed={} {s} top1={d}/{d} mean_kl={d:.8} max_kl={d:.8} max_top1_gap={d:.6}\n", .{
+                mixed, row.id, score.hits, score.n, mean, score.max_kl, score.gap,
+            });
+            if (score.hits * 100 < score.n * 95 or mean > 0.01 or score.max_kl > 0.1 or score.gap > 0.125)
+                return error.MiniConcurrentFidelity;
+        }
+    }
+    if (o.backend.graphs) |*g| std.debug.print("SHARED GRAPHS captured={d} replays={d} eager={d}\n", .{
+        g.cache.stats.captured, g.cache.stats.replayed, g.cache.stats.eager,
+    });
+}

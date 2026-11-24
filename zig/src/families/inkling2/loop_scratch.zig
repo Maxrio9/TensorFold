@@ -8,7 +8,6 @@ pub const Scratch = struct {
     seg_of: u64,
     segs: u64,
     tiles: u64,
-    global_tiles: u64,
     blocks: [ops.max_blocks]u64 = @splat(0),
     partial_a: u64,
     partial_b: u64,
@@ -45,6 +44,4 @@ pub const Scratch = struct {
     exl3_scratch: ?cuda.exl3_experts.Scratch,
     hidden: u64,
     logits: u64,
-    backup: u64,
-    hist: u64,
 };

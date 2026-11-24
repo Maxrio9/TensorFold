@@ -6,29 +6,41 @@ const loop = @import("loop.zig");
 const weights_ = @import("loop_weights.zig");
 const ops = @import("ops.zig");
 const attention = @import("kernels.zig");
+pub const round = @import("loop_round.zig");
 const modelopt = @import("modelopt.zig");
 const exl3_experts = @import("loop_exl3_experts.zig");
 const loop_math = @import("loop_math_cuda.zig");
 
 pub const prompt_rows: usize = 2048;
 pub const window_rows: usize = 16;
-const max_tiles = 128;
-const tile_bytes = max_tiles * @sizeOf(attention.Tile);
+pub const round_rows = 128;
 
 pub const Kernels = @import("loop_kernels.zig").Kernels;
 
 const Scratch = @import("loop_scratch.zig").Scratch;
 
-/// A stream's state (every visit's K/V rows and conv states, its rewind sites); at most `max_slots`, one in use.
-const Slot = struct { cache: cuda.DeviceBuffer, sites: cuda.DeviceBuffer };
+/// The cache, rewind sites, and convolution backup and history are private to each stream.
+const Slot = struct {
+    cache: cuda.DeviceBuffer,
+    sites: cuda.DeviceBuffer,
+    backup: cuda.DeviceBuffer,
+    hist: cuda.DeviceBuffer,
+    recorded: usize = 0,
+
+    pub fn deinit(slot: *Slot) void {
+        for ([_]*cuda.DeviceBuffer{ &slot.hist, &slot.backup, &slot.sites, &slot.cache }) |b| b.free();
+    }
+};
 pub const max_slots = 16;
 
-/// The bytes a slot's allocations ask for: the cache layout and four rewind sites a visit.
-pub fn slotAllocs(layout: *const loop.CacheLayout, n_visits: u32) [2]usize {
-    return .{ @intCast(layout.bytes), @as(usize, n_visits) * 4 * @sizeOf(ops.RewindSite) };
+pub fn slotAllocs(layout: *const loop.CacheLayout, n_visits: u32) [4]usize {
+    const conv = layout.bytes - layout.at(0).conv_offset;
+    return .{ @intCast(layout.bytes), @as(usize, n_visits) * 4 * @sizeOf(ops.RewindSite), conv, conv / 3 * window_rows };
 }
 
 pub const Model = struct {
+    pub const Chain = round.Chain;
+
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
     w: *const weights_.Weights,
@@ -39,11 +51,10 @@ pub const Model = struct {
     slot: usize = 0, // the slot forwards, snapshots and rewinds use; forwards share the scratch
     taps: ?struct { function: cuda.Function, buffer: u64 } = null,
     capture_taps: bool = false,
-    recorded: ?usize = null, // the slot whose window `backup` and `hist` hold
     s: Scratch = undefined,
     buffers: std.ArrayList(cuda.DeviceBuffer) = .empty,
 
-    fn slotBase(m: *const Model) u64 {
+    pub fn slotBase(m: *const Model) u64 {
         return m.slots[m.slot].cache.ptr;
     }
 
@@ -56,12 +67,12 @@ pub const Model = struct {
         var sites: [config.max_visits * 4]ops.RewindSite = undefined;
         while (m.n_slots < n) {
             var slot = try m.newSlot();
-            errdefer for ([2]*cuda.DeviceBuffer{ &slot.sites, &slot.cache }) |b| b.free();
+            errdefer slot.deinit();
             m.slots[m.n_slots] = slot;
             m.slot = m.n_slots;
             for (0..m.w.p.n_visits) |v| for (0..4) |site| {
                 const c = if (site < 2) kv else m.w.c.text.hidden;
-                const hist = m.histOf(@intCast(v), site) - m.s.hist;
+                const hist = m.histOf(@intCast(v), site) - slot.hist.ptr;
                 sites[v * 4 + site] = .{ .state = m.convOf(@intCast(v), site), .hist = @intCast(hist), .backup = @intCast(m.backupOf(@intCast(v), site)), .c = @intCast(c) };
             };
             try m.upload(s, slot.sites.ptr, std.mem.sliceAsBytes(sites[0 .. m.w.p.n_visits * 4]));
@@ -71,12 +82,16 @@ pub const Model = struct {
         }
     }
 
-    /// A slot's two allocations, sized by slotAllocs: its cache and its rewind-site table.
+    /// Allocate one slot before publishing it to the serving backend.
     pub fn newSlot(m: *const Model) !Slot {
         const sizes = slotAllocs(&m.layout, m.w.p.n_visits);
         var cache = try cuda.DeviceBuffer.alloc(m.d, sizes[0]);
         errdefer cache.free();
-        return .{ .cache = cache, .sites = try cuda.DeviceBuffer.alloc(m.d, sizes[1]) };
+        var sites = try cuda.DeviceBuffer.alloc(m.d, sizes[1]);
+        errdefer sites.free();
+        var backup = try cuda.DeviceBuffer.alloc(m.d, sizes[2]);
+        errdefer backup.free();
+        return .{ .cache = cache, .sites = sites, .backup = backup, .hist = try cuda.DeviceBuffer.alloc(m.d, sizes[3]) };
     }
 
     fn alloc(m: *Model, bytes: usize) !u64 {
@@ -86,11 +101,11 @@ pub const Model = struct {
         return b.ptr;
     }
 
-    fn upload(m: *const Model, s: cuda.Stream, dst: u64, bytes: []const u8) !void {
+    pub fn upload(m: *const Model, s: cuda.Stream, dst: u64, bytes: []const u8) !void {
         try cuda.copy_source.enqueue(m.d, dst, bytes, s);
     }
 
-    fn copy(m: *const Model, s: cuda.Stream, dst: u64, src: u64, bytes: usize) !void {
+    pub fn copy(m: *const Model, s: cuda.Stream, dst: u64, src: u64, bytes: usize) !void {
         try m.d.check(m.d.api.cuMemcpyDtoDAsync_v2(dst, src, bytes, s.handle), "cuMemcpyDtoDAsync");
     }
 
@@ -98,20 +113,20 @@ pub const Model = struct {
         try m.d.check(m.d.api.cuMemsetD8Async(ptr, 0, bytes, s.handle), "cuMemsetD8Async");
     }
 
-    fn layerGeometry(m: *const Model, layer: u32) attention.Layer {
+    pub fn layerGeometry(m: *const Model, layer: u32) attention.Layer {
         return if (config.isGlobal(layer))
             attention.Layer.global(@intCast(m.context))
         else
             attention.Layer.sliding(m.w.c.text.window, @intCast(@min(prompt_rows, m.context)));
     }
 
-    fn cacheOf(m: *const Model, visit: u32) attention.Cache {
+    pub fn cacheOf(m: *const Model, visit: u32) attention.Cache {
         const slot = m.layout.at(visit);
         const base = m.slotBase() + slot.kv_offset;
         return .{ .k = base, .v = base + slot.kv_bytes / 2, .format = m.layout.format };
     }
 
-    fn convOf(m: *const Model, visit: u32, site: usize) u64 {
+    pub fn convOf(m: *const Model, visit: u32, site: usize) u64 {
         const c = m.w.c.text;
         const kv: usize = @as(usize, c.local.kv) * c.local.dim;
         const h: usize = c.hidden;
@@ -121,12 +136,12 @@ pub const Model = struct {
         return at;
     }
 
-    fn histOf(m: *const Model, visit: u32, site: usize) u64 {
+    pub fn histOf(m: *const Model, visit: u32, site: usize) u64 {
         const c = m.w.c.text;
         const kv: usize = @as(usize, c.local.kv) * c.local.dim;
         const h: usize = c.hidden;
         const widths = [4]usize{ kv, kv, h, h };
-        var at = m.s.hist + visit * window_rows * (2 * kv + 2 * h) * 4;
+        var at = m.slots[m.slot].hist.ptr + visit * window_rows * (2 * kv + 2 * h) * 4;
         for (0..site) |i| at += window_rows * widths[i] * 4;
         return at;
     }
@@ -156,7 +171,6 @@ pub const Model = struct {
         const local_slots = attention.slotsFor(local, context);
         const global_slots = attention.slotsFor(global, context);
         const part_slots = @max(rows * c.local.q * local_slots, rows * c.global.q * global_slots);
-        const hist_values = @as(usize, w.p.n_visits) * (2 * kv + 2 * h) * window_rows;
         const expert_scratch = switch (w.layers[0].experts) {
             .modelopt => try m.alloc(try modelopt.scratchBytes(rows, c.topk, h, c.expert_inter)),
             .exl3 => |e| try m.alloc(try exl3_experts.scratchBytes(e.layer, rows, c.topk)),
@@ -165,9 +179,8 @@ pub const Model = struct {
             .ids = try m.alloc(rows * 4),
             .pos = try m.alloc(rows * 4),
             .seg_of = try m.alloc(rows * 4),
-            .segs = try m.alloc(@sizeOf(attention.Seg)),
-            .tiles = try m.alloc(tile_bytes),
-            .global_tiles = try m.alloc(tile_bytes),
+            .segs = try m.alloc(max_slots * @sizeOf(attention.Seg)),
+            .tiles = try m.alloc(round.tile_storage * @sizeOf(attention.Tile)),
             .partial_a = try m.alloc(rows * h * 2),
             .partial_b = try m.alloc(rows * h * 2),
             .prelude = try m.alloc(rows * h * 2),
@@ -205,9 +218,7 @@ pub const Model = struct {
                 .exl3 => |e| try cuda.exl3_experts.scratch(expert_scratch, e.layer, rows, c.topk),
             },
             .hidden = try m.alloc(rows * h * 2),
-            .logits = try m.alloc(window_rows * c.unpadded_vocab * 4),
-            .backup = try m.alloc(layout.bytes - layout.at(0).conv_offset),
-            .hist = try m.alloc(hist_values * 4),
+            .logits = try m.alloc(round_rows * c.unpadded_vocab * 4),
         };
         for (0..ops.max_blocks) |i| m.s.blocks[i] = try m.alloc(rows * h * 2);
         try m.addSlots(s, 1);
@@ -221,21 +232,22 @@ pub const Model = struct {
 
     pub fn deinit(m: *Model) void {
         m.deinitBuffers();
-        for (m.slots[0..m.n_slots]) |*slot| for ([2]*cuda.DeviceBuffer{ &slot.sites, &slot.cache }) |b| b.free();
+        for (m.slots[0..m.n_slots]) |*slot| slot.deinit();
         m.* = undefined;
     }
 
-    pub fn reset(m: *const Model, s: cuda.Stream) !void {
+    pub fn reset(m: *Model, s: cuda.Stream) !void {
+        m.slots[m.slot].recorded = 0;
         try m.zeros(s, m.slotBase() + m.layout.at(0).conv_offset, m.layout.bytes - m.layout.at(0).conv_offset);
     }
 
     pub fn rewind(m: *const Model, k: *const Kernels, s: cuda.Stream, kept: usize) !void {
-        if (kept > window_rows) return error.WindowTooWide;
-        if (m.recorded != m.slot) return error.RewindOfAnotherSlot;
-        try ops.rewind(&k.glue, s, m.slots[m.slot].sites.ptr, m.w.p.n_visits * 4, m.w.c.text.hidden, m.s.backup, m.s.hist, 0, 0, kept);
+        const slot = &m.slots[m.slot];
+        if (slot.recorded == 0 or kept > slot.recorded) return error.BadRewind;
+        try ops.rewind(&k.glue, s, slot.sites.ptr, m.w.p.n_visits * 4, m.w.c.text.hidden, slot.backup.ptr, slot.hist.ptr, 0, 0, kept);
     }
 
-    fn arBlocks(m: *const Model, blocks: []const u64, partial: u64, query: u64, out: u64, nq: usize, partial_bf16: bool, rows: usize) loop_math.ArArgs {
+    pub fn arBlocks(m: *const Model, blocks: []const u64, partial: u64, query: u64, out: u64, nq: usize, partial_bf16: bool, rows: usize) loop_math.ArArgs {
         var a: loop_math.ArArgs = .{
             .partial = partial,
             .query = query,
@@ -251,7 +263,7 @@ pub const Model = struct {
         return a;
     }
 
-    fn mixArgs(m: *const Model, blocks: []const u64, partial: u64, query: u64, norms: [3]u64, out: u64, nq: usize, partial_bf16: bool, rows: usize) ops.MixArgs {
+    pub fn mixArgs(m: *const Model, blocks: []const u64, partial: u64, query: u64, norms: [3]u64, out: u64, nq: usize, partial_bf16: bool, rows: usize) ops.MixArgs {
         var a: ops.MixArgs = .{
             .partial = partial,
             .query = query,
@@ -268,230 +280,9 @@ pub const Model = struct {
         return a;
     }
 
-    pub const Shape = struct { rows: usize, head0: usize, heads: usize, record: bool, tiles: [2]u32, taps: bool };
-
     pub fn forward(m: *Model, k: *Kernels, s: cuda.Stream, tokens: []const u32, p0: usize, head0: usize, heads: usize, record: bool) !void {
-        try m.execute(k, s, try m.prepare(s, tokens, p0, head0, heads, record));
-    }
-
-    /// Upload request data before capture or replay. The kernel grid depends on shape and context capacity.
-    pub fn prepare(m: *Model, s: cuda.Stream, tokens: []const u32, p0: usize, head0: usize, heads: usize, record: bool) !Shape {
-        const rows = tokens.len;
-        if (rows == 0 or rows > prompt_rows or p0 + rows > m.context or heads > window_rows or head0 + heads > rows)
-            return error.BadLoopRows;
-        if (record and rows > window_rows) return error.WindowTooWide;
-        var ids: [prompt_rows]i32 = undefined;
-        var pos: [prompt_rows]i32 = undefined;
-        const seg_of: [prompt_rows]i32 = @splat(0);
-        for (tokens, 0..) |token, i| {
-            ids[i] = @intCast(token);
-            pos[i] = @intCast(p0 + i);
-        }
-        try m.upload(s, m.s.ids, std.mem.sliceAsBytes(ids[0..rows]));
-        try m.upload(s, m.s.pos, std.mem.sliceAsBytes(pos[0..rows]));
-        try m.upload(s, m.s.seg_of, std.mem.sliceAsBytes(seg_of[0..rows]));
-        const seg: attention.Seg = .{ .row0 = 0, .n = @intCast(rows), .p0 = @intCast(p0), .off = 0 };
-        try m.upload(s, m.s.segs, std.mem.asBytes(&seg));
-        const c = m.w.c.text;
-        var shape: Shape = .{ .rows = rows, .head0 = head0, .heads = heads, .record = record, .tiles = undefined, .taps = m.capture_taps };
-        for ([_]config.Heads{ c.local, c.global }, [_]u64{ m.s.tiles, m.s.global_tiles }, &shape.tiles) |head, dst, *n| {
-            var tiles: [max_tiles]attention.Tile = undefined;
-            const count = try attention.tiles(&.{seg}, head.q / head.kv, &tiles);
-            n.* = @intCast(count);
-            try m.upload(s, dst, std.mem.sliceAsBytes(tiles[0..count]));
-        }
-        m.recorded = if (record) m.slot else null;
-        return shape;
-    }
-
-    /// Capturable device work. All backing buffers are allocated before the first launch.
-    pub fn execute(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape) !void {
-        const c = m.w.c.text;
-        const h: usize = c.hidden;
-        const rows = shape.rows;
-        const record = shape.record;
-        if (record) try m.copy(s, m.s.backup, m.slotBase() + m.layout.at(0).conv_offset, m.layout.bytes - m.layout.at(0).conv_offset);
-
-        try ops.embed(&k.glue, s, m.s.ids, rows, m.w.embed, m.w.embed_norm, m.s.partial_a, h, c.eps);
-        var partial = m.s.partial_a;
-        var next = m.s.partial_b;
-        var n_blocks: usize = 0;
-        const lp = c.loop.?;
-        const taps = if (shape.taps) m.taps else null;
-
-        for (m.w.p.visits[0..m.w.p.n_visits]) |visit| {
-            if (taps) |t| {
-                const channel: ?usize = switch (visit.cache_slot) {
-                    5 => 0,
-                    23 => 1,
-                    41 => 2,
-                    else => null,
-                };
-                if (channel) |ch| try @import("dspark_ops.zig").tap(t.function, s, partial, t.buffer, rows, h, ch);
-            }
-            const layer = m.w.p.at(visit.layer);
-            const lw = &m.w.layers[visit.layer];
-            if (visit.pass >= 2 and visit.layer == lp.core_start) {
-                try m.copy(s, partial, m.s.prelude, rows * h * 2);
-                n_blocks = 1; // block zero is the embedding; later passes never inherit completed blocks
-            }
-            const messages = visit.hasMessages();
-            if (messages) {
-                const core_j = visit.layer - lp.core_start;
-                try loop_math.messages(&k.loop, s, m.s.bank0, m.s.bank1, m.w.cross_qm + 2 * core_j * h * 4, m.w.cross_kv + 2 * core_j * h * 4, m.s.messages, rows, 1, h, c.eps);
-            }
-            const nq: usize = if (layer.kind == .global) 3 else 1;
-            const query = m.w.attn_queries[visit.layer];
-            const blocks = m.s.blocks[0..n_blocks];
-            const raw_stride = rows * h * 4;
-            const norm_stride = rows * h * 2;
-            if (messages) {
-                if (nq == 3) {
-                    try loop_math.ar(&k.loop, s, m.arBlocks(blocks, partial, query, m.s.raw, 3, true, rows));
-                } else {
-                    // A sliding layer stores one query; each gated role gets its own AR result from that query.
-                    for (0..3) |role| try loop_math.ar(&k.loop, s, m.arBlocks(blocks, partial, query, m.s.raw + role * raw_stride, 1, true, rows));
-                }
-                for (0..3) |role| {
-                    const ctl = lw.controllers[role];
-                    try loop_math.gate(&k.loop, s, m.s.raw + role * raw_stride, m.s.messages + role * raw_stride, ctl.down, ctl.forget, ctl.gain, m.s.zeta, m.s.raw + role * raw_stride, rows, h, c.eps);
-                    const norms = [3]u64{ lw.attn.norms[role], lw.attn.norms[role], lw.attn.norms[role] };
-                    try ops.mix(&k.glue, s, m.mixArgs(&.{}, m.s.raw + role * raw_stride, 0, norms, m.s.normalized + role * norm_stride, 1, false, rows));
-                }
-            } else {
-                try ops.mix(&k.glue, s, m.mixArgs(blocks, partial, query, lw.attn.norms, m.s.normalized, nq, true, rows));
-            }
-            const u_q = m.s.normalized;
-            const u_k = if (layer.kind == .global or messages) m.s.normalized + norm_stride else u_q;
-            const u_v = if (layer.kind == .global or messages) m.s.normalized + 2 * norm_stride else u_q;
-            const q_width: usize = @as(usize, layer.heads.q) * layer.heads.dim;
-            const kv_width: usize = @as(usize, layer.heads.kv) * layer.heads.dim;
-            if (lw.attn.exl3) |a| {
-                const d = &k.dense.?;
-                if (rows <= window_rows and u_q == u_k and u_q == u_v) {
-                    try d.decodeGroup(s, &.{ a.q, a.k, a.v }, u_q, .bf16, rows, &.{ m.s.q_raw, m.s.k_raw, m.s.v_raw }, .bf16);
-                } else {
-                    try Kernels.project(d, s, a.q, u_q, rows, m.s.q_raw);
-                    try Kernels.project(d, s, a.k, u_k, rows, m.s.k_raw);
-                    try Kernels.project(d, s, a.v, u_v, rows, m.s.v_raw);
-                }
-                try Kernels.project(d, s, a.gate, u_q, rows, m.s.gate);
-            } else {
-                try loop_math.projectQkv(&k.loop, s, u_q, u_k, u_v, lw.attn.wq, lw.attn.wk, lw.attn.wv, m.s.q_raw, m.s.k_raw, m.s.v_raw, rows, h, q_width, kv_width);
-                try ops.rowdot(&k.glue, s, u_q, lw.attn.gate, m.s.gate, rows, q_width, h, true, false);
-            }
-            try ops.rowdot(&k.glue, s, u_q, lw.attn.wr, m.s.rel_raw, rows, layer.heads.q * c.d_rel, h, true, false);
-            try ops.rowdot(&k.glue, s, u_q, lw.attn.sink, m.s.sink, rows, layer.heads.q, h, true, false);
-
-            const geometry = m.layerGeometry(visit.layer);
-            const cache = m.cacheOf(visit.cache_slot);
-            const dynamic = layer.kind == .global;
-            for (0..2) |kind| {
-                const input = if (kind == 0) u_k else u_v;
-                const dyn_out = if (kind == 0) m.s.k_dynamic else m.s.v_dynamic;
-                if (dynamic) {
-                    try ops.rowdot(&k.glue, s, input, if (kind == 0) lw.attn.k_dynamic else lw.attn.v_dynamic, dyn_out, rows, layer.heads.kv * config.conv_taps, h, false, false);
-                    try loop_math.roundBf16(&k.loop, s, dyn_out, dyn_out, rows * layer.heads.kv * config.conv_taps);
-                }
-                try ops.conv(&k.glue, s, .{
-                    .x = if (kind == 0) m.s.k_raw else m.s.v_raw,
-                    .state = m.convOf(visit.cache_slot, kind),
-                    .w = if (kind == 0) lw.attn.k_conv else lw.attn.v_conv,
-                    .dyn = if (dynamic) dyn_out else 0,
-                    .out = if (kind == 0) m.s.k_conv else m.s.v_conv,
-                    .hist = if (record) m.histOf(visit.cache_slot, kind) else 0,
-                    .x_bf16 = 1,
-                    .heads = @intCast(layer.heads.kv),
-                    .c = @intCast(kv_width),
-                    .rows = @intCast(rows),
-                    .mode = 0,
-                }, 1);
-            }
-            const stride = attention.slotsFor(geometry, m.context);
-            const part_capacity = prompt_rows * layer.heads.q * stride;
-            const r: attention.Rows = .{
-                .rows = @intCast(rows),
-                .heads = layer.heads.q,
-                .kv_heads = layer.heads.kv,
-                .pos = m.s.pos,
-                .seg_of = m.s.seg_of,
-                .segs = m.s.segs,
-                .tiles = if (dynamic) m.s.global_tiles else m.s.tiles,
-                .n_tiles = shape.tiles[@intFromBool(dynamic)],
-                .last_pos = @intCast(m.context - 1),
-            };
-            const prep: attention.Prep = .{ .qk_clip = c.qk_clip, .rel_clip = c.rel_clip, .floor = @floatFromInt(c.log_floor), .alpha = c.log_alpha, .eps = c.eps };
-            try attention.prep(&k.attn, s, r, geometry, prep, .{ m.s.q_raw, m.s.k_conv, m.s.v_conv, m.s.rel_raw }, .{ lw.attn.q_scale, lw.attn.rel_scale }, m.s.q_prepared, m.s.rel_prepared, cache);
-            try attention.relTable(&k.attn, s, r, m.s.rel_prepared, lw.attn.rel_proj, m.s.rel_table);
-            try attention.attend(&k.attn, s, r, geometry, stride, part_capacity, m.s.q_prepared, cache, m.s.rel_table, m.s.part_o, m.s.part_ml, m.s.sink, m.s.gate, m.s.attn_heads);
-            if (lw.attn.exl3) |a|
-                try Kernels.project(&k.dense.?, s, a.o, m.s.attn_heads, rows, m.s.attn_out)
-            else
-                try ops.rowdot(&k.glue, s, m.s.attn_heads, lw.attn.wo, m.s.attn_out, rows, h, q_width, true, false);
-
-            if (layer.boundary) {
-                try m.copy(s, m.s.blocks[n_blocks], partial, rows * h * 2);
-                n_blocks += 1;
-            }
-            try ops.conv(&k.glue, s, .{
-                .x = m.s.attn_out,
-                .state = m.convOf(visit.cache_slot, 2),
-                .w = lw.attn_conv,
-                .base = if (layer.boundary) 0 else partial,
-                .resid = m.s.t,
-                .hist = if (record) m.histOf(visit.cache_slot, 2) else 0,
-                .x_bf16 = 1,
-                .c = @intCast(h),
-                .rows = @intCast(rows),
-                .mode = 1,
-            }, 1);
-
-            const mlp_query = m.w.mlp_queries[visit.layer];
-            const mlp_blocks = m.s.blocks[0..n_blocks];
-            if (messages) {
-                try loop_math.ar(&k.loop, s, m.arBlocks(mlp_blocks, m.s.t, mlp_query, m.s.raw, 1, false, rows));
-                const ctl = lw.controllers[3];
-                try loop_math.gate(&k.loop, s, m.s.raw, m.s.messages + 3 * raw_stride, ctl.down, ctl.forget, ctl.gain, m.s.zeta, m.s.raw, rows, h, c.eps);
-                try ops.mix(&k.glue, s, m.mixArgs(&.{}, m.s.raw, 0, .{ lw.mlp_norm, lw.mlp_norm, lw.mlp_norm }, m.s.normalized, 1, false, rows));
-            } else {
-                try ops.mix(&k.glue, s, m.mixArgs(mlp_blocks, m.s.t, mlp_query, .{ lw.mlp_norm, lw.mlp_norm, lw.mlp_norm }, m.s.normalized, 1, false, rows));
-            }
-            try ops.rowdot(&k.glue, s, m.s.normalized, lw.router, m.s.route_scores, rows, c.experts, h, false, true);
-            try ops.topk(&k.glue, s, m.s.route_scores, lw.router_bias, m.s.route_pick, m.s.route_weights, rows, c.experts, c.topk, c.route_scale);
-            switch (lw.experts) {
-                .modelopt => |e| try modelopt.run(&k.moe.modelopt, s, e, .{ .gate = c.gate_cap, .up = c.up_cap }, m.s.normalized, h, m.s.route_pick, m.s.route_weights, rows, c.topk, m.s.moe_out, m.s.moe_scratch),
-                .exl3 => |e| try exl3_experts.run(&k.moe.exl3, s, e.layer, .{ .gate = c.gate_cap, .up = c.up_cap }, e.bits, m.s.normalized, h, .bf16, m.s.route_pick, m.s.route_weights, rows, m.s.moe_out, m.s.exl3_scratch.?),
-            }
-            try ops.conv(&k.glue, s, .{
-                .x = m.s.moe_out,
-                .state = m.convOf(visit.cache_slot, 3),
-                .w = lw.mlp_conv,
-                .resid = m.s.t,
-                .out = next,
-                .hist = if (record) m.histOf(visit.cache_slot, 3) else 0,
-                .x_bf16 = @intFromBool(!m.w.c.exl3),
-                .round_in = @intFromBool(m.w.c.exl3),
-                .c = @intCast(h),
-                .rows = @intCast(rows),
-                .mode = 2,
-            }, 1);
-            std.mem.swap(u64, &partial, &next);
-
-            if (visit.layer + 1 == lp.core_start) try m.copy(s, m.s.prelude, partial, rows * h * 2);
-            if (visit.pass > 0 and visit.pass < lp.passes and visit.layer + 1 == lp.core_end) {
-                try m.copy(s, m.s.bank0, m.s.blocks[n_blocks - 1], rows * h * 2);
-                try m.copy(s, m.s.bank1, partial, rows * h * 2);
-            }
-        }
-
-        const heads = shape.heads;
-        if (heads == 0 and taps == null) return;
-        try ops.mix(&k.glue, s, m.mixArgs(m.s.blocks[0..n_blocks], partial, m.w.output_query, .{ m.w.norm, m.w.norm, m.w.norm }, m.s.hidden, 1, true, rows));
-        if (taps) |t| try @import("dspark_ops.zig").tap(t.function, s, m.s.hidden, t.buffer, rows, h, 3);
-        if (heads == 0) return;
-        try ops.rowdot(&k.glue, s, m.s.hidden + shape.head0 * h * 2, m.w.unembed, m.s.logits, heads, c.unpadded_vocab, h, false, false);
-        try loop_math.roundBf16(&k.loop, s, m.s.logits, m.s.logits, heads * c.unpadded_vocab);
-        try ops.softcap(&k.glue, s, m.s.logits, heads * c.unpadded_vocab, c.logit_cap);
+        const chain: round.Chain = .{ .slot = m.slot, .position = p0, .tokens = tokens, .record = record };
+        try round.execute(m, k, s, try round.prepare(m, s, &.{chain}, head0, heads, m.capture_taps));
     }
 
     pub const Saved = struct {

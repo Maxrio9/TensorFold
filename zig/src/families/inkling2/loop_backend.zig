@@ -10,6 +10,7 @@ const Model = engine.Model;
 const Kernels = engine.Kernels;
 const prompt_rows = engine.prompt_rows;
 const window_rows = engine.window_rows;
+const round = engine.round;
 const token_ring = 1024;
 
 const Lane = struct {
@@ -31,7 +32,7 @@ pub fn laneAllocs(vocab: u32) [2]usize {
 pub fn streamBytes(m: *const Model) u64 {
     const slot = engine.slotAllocs(&m.layout, m.w.p.n_visits);
     const lane = laneAllocs(m.w.c.text.unpadded_vocab);
-    return slot[0] + slot[1] + lane[0] + lane[1];
+    return slot[0] + slot[1] + slot[2] + slot[3] + lane[0] + lane[1];
 }
 
 pub const Backend = struct {
@@ -52,6 +53,8 @@ pub const Backend = struct {
     graphs: ?@import("loop_graphs.zig").Graphs = null,
     drafter: ?dspark.Drafter = null,
     costs: [dspark.depth + 1]lanes.config.Cost = undefined,
+    shared_costs: [dspark.depth + 1]lanes.config.Cost = undefined,
+    propose_ms: f64 = 0,
     priced_width: usize = 0,
 
     const be = lanes.backend;
@@ -83,17 +86,20 @@ pub const Backend = struct {
             const verify_ms = elapsed(io, t0);
             var propose_ms: f64 = 0;
             if (width > 1) {
-                d.reset();
-                try d.absorb(&b.k.glue, b.s, 0, width, b.m.w.c.text.eps);
+                const session = &d.sessions[0];
+                session.reset();
+                try d.absorb(session, &b.k.glue, b.s, d.scratch.taps, 0, width, b.m.w.c.text.eps);
                 try b.s.synchronize();
                 const t1 = std.Io.Clock.awake.now(io);
-                try d.propose(b.m, b.k, b.s, 0, width - 1, null);
+                try d.propose(session, b.m, b.k, b.s, 0, width - 1, null);
                 propose_ms = elapsed(io, t1);
             }
             b.costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms + propose_ms };
+            b.shared_costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms };
+            if (width == 2) b.propose_ms = propose_ms;
         }
         b.priced_width = max;
-        d.reset();
+        d.sessions[0].reset();
         try b.m.reset(b.s);
         try b.s.synchronize();
     }
@@ -103,13 +109,18 @@ pub const Backend = struct {
     }
 
     pub fn decode(b: *Backend, tokens: []const u32, position: usize, record: bool) !void {
-        if (b.graphs) |*g| return g.forward(b.m, b.k, b.s, tokens, position, record);
-        return b.m.forward(b.k, b.s, tokens, position, 0, tokens.len, record);
+        const chain: round.Chain = .{ .slot = b.m.slot, .position = position, .tokens = tokens, .record = record };
+        try b.decodeRound(&.{chain}, tokens.len, b.m.capture_taps);
+    }
+
+    pub fn decodeRound(b: *Backend, chains: []const round.Chain, rows: usize, taps: bool) !void {
+        if (b.graphs) |*g| return g.forward(b.m, b.k, b.s, chains, rows, taps);
+        try round.execute(b.m, b.k, b.s, try round.prepare(b.m, b.s, chains, 0, rows, taps));
     }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, m: *Model, k: *Kernels, s: cuda.Stream) !Backend {
         const v = m.w.c.text.unpadded_vocab;
-        var tokens = try cuda.DeviceBuffer.alloc(d, (token_ring + window_rows) * 4);
+        var tokens = try cuda.DeviceBuffer.alloc(d, (token_ring + engine.round_rows) * 4);
         errdefer tokens.free();
         var logits16 = try cuda.DeviceBuffer.alloc(d, window_rows * v * 2);
         errdefer logits16.free();
@@ -134,10 +145,14 @@ pub const Backend = struct {
 
     /// The server's stream count: one model slot and its buffers per stream.
     pub fn reserve(b: *Backend, streams: u32) !void {
-        if (b.drafter != null and streams > 1) return error.Inkling2DraftOneStream;
         if (streams > engine.max_slots) return error.Inkling2TooManyStreams;
         try b.m.addSlots(b.s, streams);
+        if (b.drafter) |*d| try d.reserve(streams);
         try b.slotBuffers(streams);
+    }
+
+    pub fn streamBytesWithDraft(b: *const Backend) u64 {
+        return streamBytes(b.m) + if (b.drafter != null) dspark.Session.bytes(b.m.context) else 0;
     }
 
     pub fn deinit(b: *Backend) void {
@@ -166,10 +181,15 @@ pub const Backend = struct {
             .drafts = if (drafting) @intCast(b.priced_width -| 1) else 0,
             .plain_guard = drafting,
             .window_costs = b.costs[0..b.priced_width],
+            .window_costs_lone = drafting,
+            .shared_costs = b.shared_costs[0..b.priced_width],
+            .shared_step_ms = if (drafting) b.propose_ms else null,
+            .learn_row_costs = drafting,
             .copy_drafts = !drafting,
             .hidden_rows = true,
-            .batch_rows = prompt_rows,
-            .max_streams = 1,
+            .plain_share = true,
+            .batch_rows = engine.round_rows,
+            .max_streams = engine.max_slots,
             .streams_exact = true,
         };
     }
@@ -244,7 +264,7 @@ pub const Backend = struct {
         l.len = 0;
         try b.m.reset(b.s);
         const at = if (b.m.capture_taps) blk: {
-            b.drafter.?.reset();
+            b.drafter.?.sessions[b.m.slot].reset();
             if (s.reuse.saved != null) s.reuse_failed = true; // rebuild the drafter's context along with the target
             break :blk 0;
         } else b.resumeSaved(s);
@@ -264,7 +284,10 @@ pub const Backend = struct {
         }
         const done = end == prompt.len;
         try b.m.forward(b.k, b.s, prompt[at..end], at, end - at - 1, @intFromBool(done), false);
-        if (b.m.capture_taps) try b.drafter.?.absorb(&b.k.glue, b.s, at, end - at, b.m.w.c.text.eps);
+        if (b.m.capture_taps) {
+            const d = &b.drafter.?;
+            try d.absorb(&d.sessions[b.m.slot], &b.k.glue, b.s, d.scratch.taps, at, end - at, b.m.w.c.text.eps);
+        }
         if (done) try b.d.check(b.d.api.cuMemcpyDtoDAsync_v2(l.last, b.m.s.logits, b.m.w.c.text.unpadded_vocab * 4, b.s.handle), "cuMemcpyDtoDAsync");
         l.len = end;
         l.fill = if (done) null else end;
@@ -361,64 +384,96 @@ pub const Backend = struct {
 
     fn verify(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
         const b = self(ptr);
-        if (windows.len != 1 or out.len != 1) return error.OneStreamOnly;
-        const w = windows[0];
-        if (w.parents != null) return error.ChainsOnly;
-        if (w.masks.len != 0) return error.StructuresUnsupported;
-        const l = try b.laneOf(w.stream);
-        const n = w.rows();
-        if (n == 0 or n > window_rows) return error.WindowTooWide;
-        l.base = l.len;
-        l.rows.clearRetainingCapacity();
-        try l.rows.append(b.gpa, w.pending);
-        if (w.held > 0) {
-            const d = if (b.drafter) |*d| d else return error.NoDraftHead;
-            if (w.held > d.held_len or !b.m.capture_taps) return error.NoHeldDrafts;
-            try l.rows.appendSlice(b.gpa, d.held[0..w.held]);
+        if (windows.len == 0 or windows.len > engine.max_slots or out.len != windows.len) return error.BadWindows;
+        var chains: [engine.max_slots]round.Chain = undefined;
+        var rows: usize = 0;
+        var taps = false;
+        for (windows, chains[0..windows.len]) |w, *chain| {
+            if (w.parents != null) return error.ChainsOnly;
+            if (w.masks.len != 0) return error.StructuresUnsupported;
+            const l = try b.laneOf(w.stream);
+            const n = w.rows();
+            if (n == 0 or n > window_rows) return error.WindowTooWide;
+            l.base = l.len;
+            l.rows.clearRetainingCapacity();
+            try l.rows.append(b.gpa, w.pending);
+            if (w.held > 0) {
+                if (!b.m.capture_taps) return error.NoDraftHead;
+                const session = &b.drafter.?.sessions[b.m.slot];
+                if (w.held > session.held_len) return error.NoHeldDrafts;
+                try l.rows.appendSlice(b.gpa, session.held[0..w.held]);
+            }
+            try l.rows.appendSlice(b.gpa, w.tokens);
+            for (w.positions, 0..) |position, i| if (position != l.base + i + 1) return error.PositionMismatch;
+            chain.* = .{ .slot = b.m.slot, .position = l.base, .tokens = l.rows.items, .record = n > 1 };
+            rows += n;
+            taps = taps or b.m.capture_taps;
         }
-        try l.rows.appendSlice(b.gpa, w.tokens);
-        for (w.positions, 0..) |position, i| if (position != l.base + i + 1) return error.PositionMismatch;
-        try b.decode(l.rows.items, l.base, n > 1);
-        try b.drawRows(l, b.m.s.logits, n, w.positions[0], token_ring);
-        var got: [window_rows]u32 = undefined;
+        try b.decodeRound(chains[0..windows.len], rows, taps);
+        const v: usize = b.m.w.c.text.unpadded_vocab;
+        var row0: usize = 0;
+        for (windows, chains[0..windows.len]) |w, chain| {
+            const l = &b.lanes_[chain.slot].?;
+            const n = chain.tokens.len;
+            if (w.stream.drafts and b.drafter != null) {
+                const d = &b.drafter.?;
+                const from = d.scratch.taps + row0 * dspark.tap_stride;
+                try b.m.copy(b.s, d.sessions[chain.slot].taps, from, n * dspark.tap_stride);
+            }
+            try b.drawRows(l, b.m.s.logits + row0 * v * 4, n, w.positions[0], token_ring + row0);
+            row0 += n;
+        }
+        var got: [engine.round_rows]u32 = undefined;
         try b.s.synchronize();
-        try b.tokens.download(token_ring * 4, std.mem.sliceAsBytes(got[0..n]));
-        @memcpy(out[0].sampled[0..n], got[0..n]);
-        @memcpy(out[0].drafts[0 .. n - 1], l.rows.items[1..n]);
-        l.len = l.base + n;
+        try b.tokens.download(token_ring * 4, std.mem.sliceAsBytes(got[0..rows]));
+        row0 = 0;
+        for (chains[0..windows.len], out) |chain, o| {
+            const l = &b.lanes_[chain.slot].?;
+            const n = chain.tokens.len;
+            @memcpy(o.sampled[0..n], got[row0..][0..n]);
+            @memcpy(o.drafts[0 .. n - 1], chain.tokens[1..]);
+            l.len = l.base + n;
+            row0 += n;
+        }
     }
 
     fn keep(ptr: *anyopaque, windows: []const be.Window, paths: []const []const u32) anyerror!void {
         const b = self(ptr);
-        if (windows.len != 1 or paths.len != 1) return error.OneStreamOnly;
-        const l = try b.laneOf(windows[0].stream);
-        const path = paths[0];
-        if (path.len == 0 or path.len > l.rows.items.len) return error.EmptyPath;
-        for (path, 0..) |row, i| if (row != i) return error.ChainsOnly;
-        if (path.len < l.rows.items.len) try b.m.rewind(b.k, b.s, path.len);
-        l.len = l.base + path.len;
+        if (windows.len != paths.len) return error.BadWindows;
+        for (windows, paths) |w, path| {
+            const l = try b.laneOf(w.stream);
+            if (path.len == 0 or path.len > l.rows.items.len) return error.EmptyPath;
+            for (path, 0..) |row, i| if (row != i) return error.ChainsOnly;
+            if (path.len < l.rows.items.len) try b.m.rewind(b.k, b.s, path.len);
+            l.len = l.base + path.len;
+        }
     }
 
     fn draft(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const b = self(ptr);
-        if (requests.len == 0) return;
-        if (requests.len != 1) return error.OneStreamOnly;
-        const r = requests[0];
+        for (requests) |r| try b.draftOne(r);
+    }
+
+    fn draftOne(b: *Backend, r: be.DraftRequest) !void {
         if (r.lanes != null) return error.ChainsOnly;
         const l = try b.laneOf(r.stream);
         const d = if (b.m.capture_taps) &b.drafter.? else {
             if (r.depth != 0) return error.NoDraftHead;
             return;
         };
-        if (r.position != l.len + 1) return error.PositionMismatch;
+        const session = &d.sessions[b.m.slot];
         const pending = if (r.rows) |rows| blk: {
-            if (r.start != l.base or rows.len == 0 or rows.len != l.len - l.base or rows.len > r.follow.len)
+            if (r.start != l.base or rows.len == 0 or rows.len > l.len - l.base or rows.len > r.follow.len or r.position != r.start + rows.len + 1)
                 return error.PositionMismatch;
             for (rows, 0..) |row, i| if (row != i) return error.ChainsOnly;
-            try d.absorb(&b.k.glue, b.s, l.base, rows.len, b.m.w.c.text.eps);
+            try d.absorb(session, &b.k.glue, b.s, session.taps, l.base, rows.len, b.m.w.c.text.eps);
             break :blk r.follow[rows.len - 1];
-        } else if (r.depth != 0) try b.feed(r.first orelse return error.NoFirstToken) else return;
-        if (r.depth != 0) try d.propose(b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
+        } else blk: {
+            if (r.position != l.len + 1) return error.PositionMismatch;
+            if (r.depth == 0) return;
+            break :blk try b.feed(r.first orelse return error.NoFirstToken);
+        };
+        if (r.depth != 0) try d.propose(session, b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
     }
 
     pub fn saveState(b: *Backend, owner: ?*anyopaque, at: u32) !*Model.Saved {

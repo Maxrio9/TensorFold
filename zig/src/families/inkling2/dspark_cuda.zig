@@ -21,10 +21,7 @@ pub const tap_stride = 4 * h * 2;
 
 const Scratch = struct {
     taps: u64,
-    k: [3]u64,
-    v: [3]u64,
     mixed: u64,
-    newest: u64,
     matrix_rows: u64,
     residual: u64,
     x: u64,
@@ -47,7 +44,6 @@ const Scratch = struct {
         const sizes = .{
             .taps = engine.prompt_rows * tap_stride,
             .mixed = absorb_rows * h * b,
-            .newest = h * b,
             .matrix_rows = @max(absorb_rows * 2 * kv, block * 2 * inter) * b,
             .residual = block * h * b,
             .x = block * h * b,
@@ -69,13 +65,43 @@ const Scratch = struct {
             @field(out, field) = base + total.*;
             total.* += std.mem.alignForward(usize, @field(sizes, field), 256);
         }
-        for ([_]usize{ local_ring, context + block, local_ring }, &out.k, &out.v) |ring, *k, *v| {
-            k.* = base + total.*;
-            total.* += ring * kv * b;
-            v.* = base + total.*;
-            total.* += ring * kv * b;
-        }
         return out;
+    }
+};
+
+/// KV, the last fusion vector, and the target taps waiting to be committed belong to a request.
+pub const Session = struct {
+    memory: cuda.DeviceBuffer,
+    k: [3]u64,
+    v: [3]u64,
+    newest: u64,
+    taps: u64,
+    end: usize = 0,
+    held: [depth]u32 = undefined,
+    held_len: usize = 0,
+
+    pub fn bytes(context: usize) usize {
+        return (2 * local_ring + context + block) * 2 * kv * 2 + h * 2 + engine.window_rows * tap_stride;
+    }
+
+    fn init(d: *const cuda.Driver, context: usize) !Session {
+        const memory = try cuda.DeviceBuffer.alloc(d, bytes(context));
+        var session: Session = .{ .memory = memory, .k = undefined, .v = undefined, .newest = undefined, .taps = undefined };
+        var at = memory.ptr;
+        for ([_]usize{ local_ring, context + block, local_ring }, &session.k, &session.v) |ring, *key, *value| {
+            key.* = at;
+            at += ring * kv * 2;
+            value.* = at;
+            at += ring * kv * 2;
+        }
+        session.newest = at;
+        session.taps = at + h * 2;
+        return session;
+    }
+
+    pub fn reset(session: *Session) void {
+        session.end = 0;
+        session.held_len = 0;
     }
 };
 
@@ -86,9 +112,8 @@ pub const Drafter = struct {
     memory: cuda.DeviceBuffer,
     scratch: Scratch,
     rings: [3]usize,
-    end: usize = 0,
-    held: [depth]u32 = undefined,
-    held_len: usize = 0,
+    sessions: [engine.max_slots]Session = undefined,
+    count: usize = 0,
 
     /// Takes ownership of the weights only on success.
     pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize) !Drafter {
@@ -101,7 +126,7 @@ pub const Drafter = struct {
         var memory = try cuda.DeviceBuffer.alloc(d, bytes);
         errdefer memory.free();
         bytes = 0;
-        return .{
+        var out: Drafter = .{
             .w = w,
             .k = kernels,
             .dense = dense,
@@ -109,18 +134,23 @@ pub const Drafter = struct {
             .scratch = Scratch.layout(memory.ptr, context, &bytes),
             .rings = .{ local_ring, context + block, local_ring },
         };
+        try out.reserve(1);
+        return out;
+    }
+
+    pub fn reserve(d: *Drafter, count: usize) !void {
+        while (d.count < count) {
+            d.sessions[d.count] = try Session.init(d.memory.d, d.rings[1] - block);
+            d.count += 1;
+        }
     }
 
     pub fn deinit(d: *Drafter) void {
+        for (d.sessions[0..d.count]) |*session| session.memory.free();
         d.memory.free();
         d.dense.unload();
         d.k.unload();
         d.w.deinit();
-    }
-
-    pub fn reset(d: *Drafter) void {
-        d.end = 0;
-        d.held_len = 0;
     }
 
     fn copy(d: *const Drafter, s: cuda.Stream, to: u64, from: u64, bytes: usize) !void {
@@ -134,13 +164,13 @@ pub const Drafter = struct {
         try ops.tobf(k, s, f, rows, n, n, to, n, 0, n);
     }
 
-    pub fn absorb(d: *Drafter, glue: *const ops.Kernels, s: cuda.Stream, pos: usize, rows: usize, eps: f32) !void {
-        if (pos != d.end) return error.DraftContextGap;
+    pub fn absorb(d: *Drafter, session: *Session, glue: *const ops.Kernels, s: cuda.Stream, from: u64, pos: usize, rows: usize, eps: f32) !void {
+        if (pos != session.end) return error.DraftContextGap;
         const a = d.scratch;
         var offset: usize = 0;
         while (offset < rows) {
             const n = @min(rows - offset, absorb_rows);
-            const taps = a.taps + offset * tap_stride;
+            const taps = from + offset * tap_stride;
             for (d.w.layers, 0..) |l, i| {
                 try dsp.mix(&d.k, s, taps, d.w.alpha + i * 16, l.dflare, a.mixed, n, w_.taps.len, h, eps);
                 try d.project(glue, s, a.mixed, l.ctx_kv, a.matrix_rows, n, 2 * kv, h);
@@ -149,8 +179,8 @@ pub const Drafter = struct {
                     .qw = 0,
                     .kw = l.ctx_norm,
                     .q = 0,
-                    .kc = a.k[i],
-                    .vc = a.v[i],
+                    .kc = session.k[i],
+                    .vc = session.v[i],
                     .ld = 2 * kv,
                     .hq = 0,
                     .hk = 8,
@@ -162,9 +192,9 @@ pub const Drafter = struct {
             }
             offset += n;
         }
-        if (rows > 0) try dsp.mix(&d.k, s, a.taps + (rows - 1) * tap_stride, d.w.alpha + 3 * 16, d.w.markov_norm, a.newest, 1, w_.taps.len, h, eps);
-        d.end += rows;
-        d.held_len = 0;
+        if (rows > 0) try dsp.mix(&d.k, s, from + (rows - 1) * tap_stride, d.w.alpha + 3 * 16, d.w.markov_norm, session.newest, 1, w_.taps.len, h, eps);
+        session.end += rows;
+        session.held_len = 0;
     }
 
     fn residual(d: *const Drafter, k: *const engine.Kernels, s: cuda.Stream, x: u64, weight: u64, matrix: u64, width: usize, eps: f32) !void {
@@ -174,7 +204,7 @@ pub const Drafter = struct {
         try dsp.addNorm(&d.k, s, a.residual, a.f32_rows, 1, block * h, weight, a.x, block, h, eps);
     }
 
-    fn encode(d: *const Drafter, m: *const engine.Model, k: *const engine.Kernels, s: cuda.Stream, n: usize) !void {
+    fn encode(d: *const Drafter, session: *const Session, m: *const engine.Model, k: *const engine.Kernels, s: cuda.Stream, n: usize) !void {
         const a = d.scratch;
         const c = m.w.c.text;
         try ops.embed(&k.glue, s, a.walk, 1, m.w.embed, m.w.embed_norm, a.residual, h, c.eps);
@@ -187,28 +217,28 @@ pub const Drafter = struct {
                 .qw = l.q_norm,
                 .kw = l.k_norm,
                 .q = a.query,
-                .kc = a.k[i],
-                .vc = a.v[i],
+                .kc = session.k[i],
+                .vc = session.v[i],
                 .ld = q + 2 * kv,
                 .hq = 24,
                 .hk = 8,
                 .ring = @intCast(d.rings[i]),
-                .pos0 = @intCast(d.end),
+                .pos0 = @intCast(session.end),
                 .eps = c.eps,
                 .theta = 1e6,
             }, block);
             try dsp.attend(&d.k, s, .{
                 .q = a.query,
-                .kc = a.k[i],
-                .vc = a.v[i],
+                .kc = session.k[i],
+                .vc = session.v[i],
                 .po = a.partial,
                 .pml = a.maxima,
                 .T = block,
                 .hq = 24,
                 .hk = 8,
                 .ring = @intCast(d.rings[i]),
-                .lo = @intCast(if (i == 1) 0 else d.end -| local_window),
-                .hi = @intCast(d.end + block - 1),
+                .lo = @intCast(if (i == 1) 0 else session.end -| local_window),
+                .hi = @intCast(session.end + block - 1),
                 .c0 = 0,
                 .scale = 1.0 / @sqrt(@as(f32, dsp.head_dim)),
             }, a.out);
@@ -219,11 +249,11 @@ pub const Drafter = struct {
             try d.residual(k, s, a.act, next, l.down, inter, c.eps);
         }
         try d.project(&k.glue, s, a.x + h * 2, m.w.unembed, a.base, n, w_.vocab, h);
-        try dsp.ctx(&d.k, s, a.x + h * 2, a.newest, d.w.rnn, d.w.rnn_bias, a.kappa, n, h, rank);
+        try dsp.ctx(&d.k, s, a.x + h * 2, session.newest, d.w.rnn, d.w.rnn_bias, a.kappa, n, h, rank);
     }
 
-    pub fn propose(d: *Drafter, m: *const engine.Model, k: *const engine.Kernels, s: cuda.Stream, pending: u32, n: usize, rule: ?u64) !void {
-        if (n == 0 or n > depth or d.end == 0) return error.BadDraftDepth;
+    pub fn propose(d: *Drafter, session: *Session, m: *const engine.Model, k: *const engine.Kernels, s: cuda.Stream, pending: u32, n: usize, rule: ?u64) !void {
+        if (n == 0 or n > depth or session.end == 0) return error.BadDraftDepth;
         const c = m.w.c.text;
         const a = d.scratch;
         const drv = d.memory.d;
@@ -231,10 +261,10 @@ pub const Drafter = struct {
         try drv.check(drv.api.cuMemsetD8Async(a.state, 0, rank * 2, s.handle), "cuMemsetD8Async");
         if (rule != null) {
             var meta: [depth][4]i32 = @splat(@splat(0));
-            for (&meta, 0..) |*row, i| row[0] = @intCast(d.end + i);
+            for (&meta, 0..) |*row, i| row[0] = @intCast(session.end + i);
             try cuda.copy_source.enqueue(drv, a.draw, std.mem.sliceAsBytes(meta[0..n]), s);
         }
-        try d.encode(m, k, s, n);
+        try d.encode(session, m, k, s, n);
         for (0..n) |j| {
             const token = a.walk + (j + 1) * 4;
             try dsp.rnn(&d.k, s, a.kappa + j * 3 * rank * 4, d.w.rnn, d.w.markov_w1, a.walk, j, a.state, a.latent, rank, h);
@@ -247,8 +277,8 @@ pub const Drafter = struct {
             }
         }
         try s.synchronize();
-        try d.memory.download(@intCast(a.walk - d.memory.ptr + 4), std.mem.sliceAsBytes(d.held[0..n]));
-        for (d.held[0..n]) |t| if (t >= c.unpadded_vocab) return error.DraftNonfinite;
-        d.held_len = n;
+        try d.memory.download(@intCast(a.walk - d.memory.ptr + 4), std.mem.sliceAsBytes(session.held[0..n]));
+        for (session.held[0..n]) |t| if (t >= c.unpadded_vocab) return error.DraftNonfinite;
+        session.held_len = n;
     }
 };
