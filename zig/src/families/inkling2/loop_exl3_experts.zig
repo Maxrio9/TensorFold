@@ -11,13 +11,16 @@ pub const Caps = struct { gate: f32, up: f32 };
 /// The least and most half-bit widths (k2) among a layer's expert tensors, as the loader read them.
 pub const Bits = struct { lo: u32, hi: u32 };
 
-/// Calls of at least this many rows take 32-member items on core's wide kernel (64 columns a block).
+/// The baseline prompt path takes 32-member items at this width.
 pub const wide_from = 512;
+/// Large prompt chunks have enough pairs to share decoded weights across four member warps.
+const prefill_from = 1024;
 
 /// Core's experts module and the plan kernels of the shared experts image.
 pub const Kernels = struct {
     main: ex.Experts,
     mod: cuda.Module,
+    batch: ?cuda.Module,
     router: grouped.Router,
 
     pub fn load(d: *const cuda.Driver) !Kernels {
@@ -25,10 +28,20 @@ pub const Kernels = struct {
         errdefer main.unload();
         var mod = try cuda.Module.load(d, cuda.kernels.experts);
         errdefer mod.unload();
-        return .{ .main = main, .mod = mod, .router = try grouped.Router.resolve(mod) };
+        var batch: ?cuda.Module = null;
+        errdefer if (batch) |*image| image.unload();
+        const sm = try d.currentCapability();
+        if ((sm == 120 or sm == 121) and cuda.kernels.inkling2_exl3_batch.len != 0) {
+            batch = try cuda.Module.load(d, cuda.kernels.inkling2_exl3_batch);
+            // The desktop decode and Spark prefill variants are selected independently.
+            if (sm == 120) main.short = try batch.?.function("tf_exl3_grouped_short_2");
+            if (sm == 121) main.prefill = try batch.?.function("tf_exl3_grouped_prefill_2");
+        }
+        return .{ .main = main, .mod = mod, .batch = batch, .router = try grouped.Router.resolve(mod) };
     }
 
     pub fn unload(k: *Kernels) void {
+        if (k.batch) |*batch| batch.unload();
         k.mod.unload();
         k.main.unload();
     }
@@ -42,7 +55,8 @@ fn align256(n: usize) usize {
 fn planSizes(l: ex.Layer, rows: usize, slots: usize) [5]usize {
     const p = rows * slots;
     const hist = if (p > grouped.small) (p + grouped.small - 1) / grouped.small * (l.experts + 1) else 1;
-    return .{ p * 4, grouped.maxItems(p, l.experts + 1, 16) * 12, 8, p * 4, hist * 4 };
+    const items = @max(grouped.maxItems(p, l.experts + 1, 16), grouped.maxItems(@min(rows, 8) * slots, l.experts + 1, 8));
+    return .{ p * 4, items * 12, 8, p * 4, hist * 4 };
 }
 
 /// Core's scratch, then the item plan.
@@ -71,7 +85,15 @@ pub fn run(e: *const Kernels, s: cuda.Stream, l: ex.Layer, caps: Caps, bits: Bit
     var c = l;
     c.act_mode = 3;
     c.caps = .{ caps.gate, caps.up };
-    const it: ex.Items = .{ .router = &e.router, .plan = planAt(l, sc), .tile = if (rows >= wide_from) 32 else 16 };
+    const tile: usize = if (rows >= prefill_from and e.main.prefill != null)
+        64
+    else if (rows >= wide_from)
+        32
+    else if (rows > 1 and rows <= 8 and e.main.short != null)
+        8
+    else
+        16;
+    const it: ex.Items = .{ .router = &e.router, .plan = planAt(l, sc), .tile = tile };
     try e.main.runWith(s, c, x, x_stride, x_dtype, pick, wts, rows, out, sc, 0, it);
 }
 

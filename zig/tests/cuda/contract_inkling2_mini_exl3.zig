@@ -81,7 +81,7 @@ pub fn run(gpu: check.Gpu) !void {
         .caps = .{ caps.gate, caps.up },
     };
 
-    for ([_]usize{ 1, 17, 512 }) |rows| {
+    for ([_]usize{ 1, 4, 8, 17, 512, 1025 }) |rows| {
         try compare(gpu, s, &k, l, caps, random, rows);
     }
 }
