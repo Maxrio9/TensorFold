@@ -47,7 +47,7 @@ fn regressions(gpu: check.Gpu) !void {
     std.debug.print("MINI REGRESSIONS {d}/{d} kernels, {d}/{d} controls\n", .{
         tally.passed, tally.kernels, tally.caught, tally.controls,
     });
-    try check.expect(tally.kernels == 3 and tally.controls == 3 and tally.problems() == 0, "Mini regression contract", .{});
+    try check.expect(tally.kernels == 4 and tally.controls == 3 and tally.problems() == 0, "Mini regression contract", .{});
 }
 
 fn dsparkContract(gpu: check.Gpu) !void {

@@ -225,6 +225,37 @@ __device__ void gate(const float* __restrict__ h, const float* __restrict__ m,
     }
 }
 
+// Match the down half's 256-thread chains and two-level reduction tree.
+__device__ __forceinline__ float2 gateNorms(const float* h, const float* m, int c, float eps, float* sh) {
+    __shared__ float2 inv;
+    float ss[2] = {0.0f, 0.0f};
+    for (int i = threadIdx.x; i < c; i += blockDim.x) {
+        ss[0] = __fmaf_rn(h[i], h[i], ss[0]);
+        ss[1] = __fmaf_rn(m[i], m[i], ss[1]);
+    }
+    blockSums<2>(ss, sh);
+    if (threadIdx.x == 0) {
+        inv.x = rsqrtf(__fadd_rn(__fdiv_rn(ss[0], static_cast<float>(c)), eps));
+        inv.y = rsqrtf(__fadd_rn(__fdiv_rn(ss[1], static_cast<float>(c)), eps));
+    }
+    __syncthreads();
+    return inv;
+}
+
+__device__ void gatePrepare(const float* __restrict__ h, const float* __restrict__ m,
+                            uint16_t* __restrict__ prepared, int c, float eps) {
+    __shared__ float sh[2 * 32];
+    const size_t row = blockIdx.x;
+    const float* hr = h + row * c;
+    const float* mr = m + row * c;
+    const float2 inv = gateNorms(hr, mr, c, eps, sh);
+    uint16_t* dst = prepared + row * (2 * c);
+    for (int i = threadIdx.x; i < c; i += blockDim.x) {
+        dst[i] = tobf(__fmul_rn(hr[i], inv.x));
+        dst[c + i] = tobf(__fmul_rn(mr[i], inv.y));
+    }
+}
+
 // A gate's down half, a block a row and rank pair: the one-block kernel's 256-thread chains and tree, so zeta is equal.
 __device__ void gateDown(const float* __restrict__ h, const float* __restrict__ m, const uint16_t* __restrict__ down,
                          uint16_t* __restrict__ zeta, int c, float eps) {
@@ -252,6 +283,28 @@ __device__ void gateDown(const float* __restrict__ h, const float* __restrict__ 
         const bool message = i >= c;
         const float x = message ? mr[i - c] : hr[i];
         const float n = bfr(__fmul_rn(x, message ? inv_m : inv_h));
+        acc[0] = __fmaf_rn(bf(d0[i]), n, acc[0]);
+        acc[1] = __fmaf_rn(bf(d1[i]), n, acc[1]);
+    }
+    blockSums<2>(acc, sh);
+    if (threadIdx.x == 0) {
+        zeta[row * kRank + r] = tobf(acc[0]);
+        zeta[row * kRank + r + 1] = tobf(acc[1]);
+    }
+}
+
+// Reuse the prepared BF16 row, retaining the original gateDown dot and reduction order.
+__device__ void gateDownPrepared(const uint16_t* __restrict__ prepared, const uint16_t* __restrict__ down,
+                                 uint16_t* __restrict__ zeta, int c) {
+    __shared__ float sh[2 * 32];
+    const size_t row = blockIdx.x;
+    const int r = 2 * static_cast<int>(blockIdx.y);
+    const uint16_t* src = prepared + row * (2 * c);
+    const uint16_t* d0 = down + static_cast<size_t>(r) * (2 * c);
+    const uint16_t* d1 = d0 + 2 * c;
+    float acc[2] = {0.0f, 0.0f};
+    for (int i = threadIdx.x; i < 2 * c; i += blockDim.x) {
+        const float n = bf(src[i]);
         acc[0] = __fmaf_rn(bf(d0[i]), n, acc[0]);
         acc[1] = __fmaf_rn(bf(d1[i]), n, acc[1]);
     }
@@ -317,6 +370,18 @@ extern "C" __global__ void __launch_bounds__(256)
     tf_ink2_loop_gate_down(const float* __restrict__ h, const float* __restrict__ m, const uint16_t* __restrict__ down,
                            uint16_t* __restrict__ zeta, int c, float eps) {
     ink2l::gateDown(h, m, down, zeta, c, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+    tf_ink2_loop_gate_prepare(const float* __restrict__ h, const float* __restrict__ m,
+                             uint16_t* __restrict__ prepared, int c, float eps) {
+    ink2l::gatePrepare(h, m, prepared, c, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+    tf_ink2_loop_gate_down_prepared(const uint16_t* __restrict__ prepared, const uint16_t* __restrict__ down,
+                                  uint16_t* __restrict__ zeta, int c) {
+    ink2l::gateDownPrepared(prepared, down, zeta, c);
 }
 
 extern "C" __global__ void __launch_bounds__(64)
