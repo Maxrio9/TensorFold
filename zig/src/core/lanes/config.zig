@@ -29,6 +29,7 @@ pub const Model = struct {
     draft_prior: []const f64 = &.{}, // the head's acceptance by depth until a stream has its own
     depth_rate: f64 = 0, // the newest round's weight in a depth's acceptance estimate (0: the core's)
     plain_guard: bool = false, // plain rounds compete with drafted depths
+    protect_shared_streams: bool = false, // every shared stream must pay for the round against plain decode
     copy_guard: bool = false, // a lone stream's copies compete with its own plain rounds (a family opts in)
     draft_confidence: ?f64 = null,
     floor_rates: bool = false, // Constants.floor_rates: a head whose steps cost more than the floor's cut saves
@@ -78,6 +79,7 @@ pub const Config = struct {
     speculate_early: bool,
     pipelined: bool,
     plain_guard: bool,
+    protect_shared_streams: bool = false,
     copy_guard: bool = false, // Model.copy_guard: off unless the family sets it (lanes/lone_copy.zig)
     most_drafts: u32,
     draft_confidence: ?f64 = null,
@@ -168,6 +170,7 @@ pub const Config = struct {
             .speculate_early = m.speculate_early and !(m.root_copies and m.copy_drafts),
             .pipelined = m.gpu_tokens,
             .plain_guard = m.plain_guard,
+            .protect_shared_streams = m.protect_shared_streams,
             .copy_guard = m.copy_guard,
             .most_drafts = @min(m.drafts, @min(width - 1, max_draft)),
             .draft_confidence = m.draft_confidence,

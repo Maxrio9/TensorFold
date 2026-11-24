@@ -45,6 +45,7 @@ pub const Engine = struct {
     drafted: u64 = 0,
     accepted: u64 = 0,
     shared_rounds: u64 = 0,
+    shared_guard: @import("shared_guard.zig").Guard = .{},
     late: @import("late_draft.zig").State = .{},
     alone: bool = true, // this step has one live stream: its copies may take their ramp
     lone_kept: [2][lone_costs.bands]?lone_costs.Kept = @splat(@splat(null)), // the newest lone calibrations, greedy then sampled, a band each
@@ -84,6 +85,7 @@ pub const Engine = struct {
     }
 
     pub fn deinit(e: *Engine) void {
+        e.shared_guard.deinit(e.gpa);
         e.grammar_workers.deinit(e.gpa);
         e.live.deinit(e.gpa);
         e.unread.deinit(e.gpa);
@@ -200,6 +202,7 @@ pub const Engine = struct {
 
     /// One stream's round: verify pending and drafted tokens together, keep drafts to the first mismatch.
     fn familyRound(e: *Engine, s: *Stream, copied: ?win.Copy) !Result {
+        s.shared_draft_count = 0;
         e.clock.start();
         try e.late.flush(e, Engine.askDrafts);
         const priced = s.priced;

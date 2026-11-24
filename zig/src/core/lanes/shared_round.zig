@@ -11,6 +11,7 @@ const depth = @import("depth.zig");
 const ev = @import("events.zig");
 const trail = @import("trail.zig");
 const price_log = @import("price_log.zig");
+const shared_guard = @import("shared_guard.zig");
 const f = ev.f;
 const str = trail.str;
 const int = trail.int;
@@ -26,6 +27,7 @@ fn runPriced(e: *Engine, entries: []*Stream, comptime independent: bool, comptim
         sampled_before = sampled_before or s.sampling != null;
     };
     const measured = independent and e.rule.sharedPrice(entries.len, sampled_before) != null;
+    const guarded = shared_guard.enabled(e);
     if (!measured) e.clock.start();
     try e.late.flush(e, ask);
     // An unmeasured plain price retains the original clock boundary.
@@ -34,8 +36,12 @@ fn runPriced(e: *Engine, entries: []*Stream, comptime independent: bool, comptim
     const plans = try a.alloc(Plan, entries.len);
     for (entries, plans) |s, *p| p.* = try win.plan(e, s, null);
     const sampled = win.anySampled(plans);
-    const calibration = independent and try @import("shared_price.zig").calibrate(e, plans);
-    if (calibration) {
+    const calibration = independent and !guarded and try @import("shared_price.zig").calibrate(e, plans);
+    if (guarded) {
+        for (plans) |*p| if (p.kind == .head and p.stream.shared_draft_count != plans.len) {
+            try @import("window_cut.zig").prefix(a, p, 0);
+        };
+    } else if (calibration) {
         for (plans) |*p| try @import("window_cut.zig").prefix(a, p, 0);
     } else try win.allocate(e, plans);
     try @import("grammar_parallel.zig").constrain(e, plans);
@@ -61,17 +67,24 @@ fn runPriced(e: *Engine, entries: []*Stream, comptime independent: bool, comptim
     for (plans, 0..) |p, i| {
         if (e.cfg.family_mtp and p.stream.drafts) try heads.append(a, i);
     }
-    const whos = try a.alloc(depth.Who, heads.items.len);
-    for (whos, heads.items) |*w, i| w.* = win.who(plans[i].stream);
     const budgets = try a.alloc(i64, heads.items.len);
-    if (calibration)
+    var verify_ms: f64 = 0;
+    if (guarded) {
+        try e.backend.keep(windows, paths);
+        verify_ms = e.clock.elapsedMs(.overhead);
+        try shared_guard.budgets(e, plans, heads.items, budgets, total, verify_ms);
+    } else if (calibration)
         @memset(budgets, 0)
     else if (e.cfg.allocate_shared_drafts)
         try @import("shared_drafts.zig").budgets(e, plans, heads.items, budgets)
-    else if (independent)
-        try e.rule.budgetsFor(whos, win.probe(e), sampled, budgets, plans.len)
-    else
-        try e.rule.budgets(whos, win.probe(e), sampled, budgets);
+    else {
+        const whos = try a.alloc(depth.Who, heads.items.len);
+        for (whos, heads.items) |*w, i| w.* = win.who(plans[i].stream);
+        if (independent)
+            try e.rule.budgetsFor(whos, win.probe(e), sampled, budgets, plans.len)
+        else
+            try e.rule.budgets(whos, win.probe(e), sampled, budgets);
+    }
     const ids = try a.alloc(ev.Value, heads.items.len);
     for (ids, heads.items) |*id, i| id.* = str(plans[i].stream.id);
     try trail.event(e, &.{ f("ev", str("budgets")), f("streams", .{ .list = ids }), f("depths", .{ .i64s = budgets }) });
@@ -91,22 +104,25 @@ fn runPriced(e: *Engine, entries: []*Stream, comptime independent: bool, comptim
             d.* = 0;
         };
     };
-    try e.backend.keep(windows, paths);
+    if (!guarded) try e.backend.keep(windows, paths);
     if (e.cfg.timed) {
         // the drafts budgets priced past each stream's first are no part of the round's overhead
         var steps: i64 = 0;
         for (budgets) |d| steps = if (e.cfg.draft_streams and depth.pricedBatched()) @max(steps, d - 1) else steps + @max(0, d - 1);
         const ms = e.clock.elapsedMs(.overhead) - e.cfg.draft_step_ms * @as(f64, @floatFromInt(steps));
         try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
-        // the log covers both grant paths; only the plain guard's price observes them
-        const head_ms = e.rule.pricedHeadMs(budgets);
+        const head_ms = if (guarded) ms - verify_ms else e.rule.pricedHeadMs(budgets);
         if (try price_log.enabled(e)) try price_log.round(e, plans, windows, .{ .trial = calibration, .sampled = sampled, .ms = ms, .head_ms = head_ms, .heads = heads.items, .depths = budgets });
-        if (independent) {
-            var plain = total == plans.len;
-            for (budgets) |d| plain = plain and d == 0;
-            try e.rule.observeSharedPrice(@intCast(plans.len), total, ms, sampled, head_ms, plain, calibration);
+        if (guarded) {
+            e.shared_guard.observeHeads(plans.len, sampled, budgets, head_ms);
+        } else {
+            if (independent) {
+                var plain = total == plans.len;
+                for (budgets) |d| plain = plain and d == 0;
+                try e.rule.observeSharedPrice(@intCast(plans.len), total, ms, sampled, head_ms, plain, calibration);
+            }
+            try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, e.rule.headMs(budgets));
         }
-        try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, e.rule.headMs(budgets));
     }
     if (e.backend.round_observer != null) e.backend.observed(paths);
 }

@@ -28,7 +28,6 @@ pub const Mode = enum { pipe, drain, verify, exit };
 pub const loop_max_period: usize = 8;
 pub const loop_min_run: usize = 256;
 pub const loop_warm_in: usize = 64;
-
 /// Return the shortest exact cycle at the end of a combined token prefix.
 fn cycleAt(head: []const u32, tail: []const u32, n: usize) ?u32 {
     if (n < loop_min_run + 1) return null;
@@ -211,6 +210,7 @@ pub const Stream = struct {
     cost_probes: [129]@import("lone_costs.zig").Cooldown = @splat(.{}), // per-width losing-trial retry deadlines
     cost_probe_trial: ?@import("lone_costs.zig").Trial = null, // priced selection, consumed only by its completed width
     shared_round: bool = false, // a round beside another stream: its times are not this stream's alone
+    shared_draft_count: usize = 0, // active streams when the current held proposal was priced
     settle_step: bool = false, // the lane host bills this prompt step's time to decoders: end it on the device
     prices_seeded: bool = false, // its own prices started from the engine's kept calibration
     copy_landed: [2]f64 = .{ -1, -1 }, // a lone context copy's rows that landed, decayed, by short and long match (-1: unprimed)

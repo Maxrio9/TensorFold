@@ -180,6 +180,7 @@ pub const Backend = struct {
             .speculate_early = false,
             .drafts = if (drafting) @intCast(b.priced_width -| 1) else 0,
             .plain_guard = drafting,
+            .protect_shared_streams = drafting,
             .window_costs = b.costs[0..b.priced_width],
             .window_costs_lone = drafting,
             .shared_costs = b.shared_costs[0..b.priced_width],
@@ -418,7 +419,8 @@ pub const Backend = struct {
             if (w.stream.drafts and b.drafter != null) {
                 const d = &b.drafter.?;
                 const from = d.scratch.taps + row0 * dspark.tap_stride;
-                try b.m.copy(b.s, d.sessions[chain.slot].taps, from, n * dspark.tap_stride);
+                const session = &d.sessions[chain.slot];
+                try b.m.copy(b.s, session.taps + session.pending * dspark.tap_stride, from, n * dspark.tap_stride);
             }
             try b.drawRows(l, b.m.s.logits + row0 * v * 4, n, w.positions[0], token_ring + row0);
             row0 += n;
@@ -466,7 +468,13 @@ pub const Backend = struct {
             if (r.start != l.base or rows.len == 0 or rows.len > l.len - l.base or rows.len > r.follow.len or r.position != r.start + rows.len + 1)
                 return error.PositionMismatch;
             for (rows, 0..) |row, i| if (row != i) return error.ChainsOnly;
-            try d.absorb(session, &b.k.glue, b.s, session.taps, l.base, rows.len, b.m.w.c.text.eps);
+            if (session.end + session.pending != l.base) return error.DraftContextGap;
+            session.pending += rows.len;
+            session.held_len = 0;
+            if (r.depth != 0 or session.pending >= window_rows or !r.stream.shared_round) {
+                try d.absorb(session, &b.k.glue, b.s, session.taps, session.end, session.pending, b.m.w.c.text.eps);
+                session.pending = 0;
+            }
             break :blk r.follow[rows.len - 1];
         } else blk: {
             if (r.position != l.len + 1) return error.PositionMismatch;

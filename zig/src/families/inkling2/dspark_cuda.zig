@@ -77,11 +77,12 @@ pub const Session = struct {
     newest: u64,
     taps: u64,
     end: usize = 0,
+    pending: usize = 0,
     held: [depth]u32 = undefined,
     held_len: usize = 0,
 
     pub fn bytes(context: usize) usize {
-        return (2 * local_ring + context + block) * 2 * kv * 2 + h * 2 + engine.window_rows * tap_stride;
+        return (2 * local_ring + context + block) * 2 * kv * 2 + h * 2 + 2 * engine.window_rows * tap_stride;
     }
 
     fn init(d: *const cuda.Driver, context: usize) !Session {
@@ -101,6 +102,7 @@ pub const Session = struct {
 
     pub fn reset(session: *Session) void {
         session.end = 0;
+        session.pending = 0;
         session.held_len = 0;
     }
 };
