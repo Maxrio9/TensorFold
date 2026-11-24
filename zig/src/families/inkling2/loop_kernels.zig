@@ -5,6 +5,7 @@ const attention = @import("kernels.zig");
 const modelopt = @import("modelopt.zig");
 const loop_math = @import("loop_math_cuda.zig");
 const exl3_experts = @import("loop_exl3_experts.zig");
+const pack = @import("pack_weights.zig");
 const weights = @import("loop_weights.zig");
 
 pub const Kernels = struct {
@@ -48,11 +49,7 @@ pub const Kernels = struct {
 
     pub fn reserveDense(k: *Kernels, s: cuda.Stream, layers: []const weights.Layer) !void {
         const dense = if (k.dense) |*d| d else return;
-        for (layers) |layer| {
-            const a = layer.attn.exl3.?;
-            for ([_]cuda.exl3.Weight{ a.q, a.k, a.v, a.o, a.gate }) |w| try dense.reserve(s, w);
-            try dense.reserveGroup(s, &.{ a.q, a.k, a.v });
-        }
+        for (layers) |layer| try reserveProjections(dense, s, layer.attn.exl3.?);
     }
 
     pub fn project(d: *cuda.exl3.Dense, s: cuda.Stream, w: cuda.exl3.Weight, x: u64, rows: usize, out: u64) !void {
@@ -72,3 +69,9 @@ pub const Kernels = struct {
         k.* = undefined;
     }
 };
+
+/// The loaded and planned dense scratch visit the same projections in the same order.
+pub fn reserveProjections(dense: anytype, s: cuda.Stream, p: pack.Projections) !void {
+    for ([_]cuda.exl3.Weight{ p.q, p.k, p.v, p.o, p.gate }) |w| try dense.reserve(s, w);
+    try dense.reserveGroup(s, &.{ p.q, p.k, p.v });
+}

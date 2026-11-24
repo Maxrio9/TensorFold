@@ -115,6 +115,10 @@ pub fn checkpointBytes(ck: *const core.Checkpoint, exl3: bool) !usize {
     return total;
 }
 
+pub fn arenaBytes(checkpoint_bytes: usize) usize {
+    return @max(checkpoint_bytes, 256);
+}
+
 fn controllers(l: *Loader, ck: *core.Checkpoint, c: *const config.Text, i: u32, rank: u32, out: *[4]Controller) !void {
     const h: usize = c.hidden;
     const names = [4][]const u8{ "attn", "k", "v", "mlp" };
@@ -143,7 +147,7 @@ pub fn load(gpa: std.mem.Allocator, d: *const cuda.Driver, ck: *core.Checkpoint,
         };
     }
     const total = try checkpointBytes(ck, bits != null);
-    var arena = try cuda.DeviceBuffer.alloc(d, @max(total, 256));
+    var arena = try cuda.DeviceBuffer.alloc(d, arenaBytes(total));
     var w: Weights = .{ .gpa = gpa, .c = c.*, .p = p };
     errdefer w.deinit();
     w.buffers.append(gpa, arena) catch |err| {

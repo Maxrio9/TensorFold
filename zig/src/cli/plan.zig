@@ -1,11 +1,13 @@
 //! The `plan` command: the serve startup's memory arithmetic without loading weights, per RAM class.
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const device = @import("plan_device.zig");
 const hub = @import("hub.zig");
 const engines = @import("native_engines");
 /// The CUDA admission budget: only CUDA engine sets carry it; elsewhere `plan` says so instead of answering.
 pub const supported = @hasDecl(engines, "budget");
 const budget = engines.budget;
+const fallback = "CUDA context planning is available for Inkling 2 Mini. Showing the weights-only report.";
 
 pub const GiB: u64 = 1 << 30;
 const gib: f64 = @floatFromInt(GiB);
@@ -15,10 +17,10 @@ fn gibf(bytes: u64) f64 {
 }
 
 /// The flags `plan` takes: an explicit budget (as TENSORFOLD_CUDA_MEMORY_LIMIT_GB would set it) and RAM classes.
-pub const Options = struct { mem_gb: ?f64 = null, ram: []const u64 = &.{} };
+pub const Options = struct { mem_gb: ?f64 = null, ram: []const u64 = &.{}, device: ?device.Options = null };
 
 /// MODEL plus the parsed flags, or null when the argv shape is wrong.
-pub const Parsed = struct { model: []const u8, mem_gb: ?f64, ram: []const u64 };
+pub const Parsed = struct { model: []const u8, mem_gb: ?f64, ram: []const u64, device: ?device.Options = null };
 
 /// `tensorfold plan MODEL [--memory-gb GIB] [--ram GB]...`: the model first, then the repeatable flags.
 pub fn parseArgs(a: Allocator, args: []const []const u8) ?Parsed {
@@ -36,6 +38,8 @@ pub fn parseArgs(a: Allocator, args: []const []const u8) ?Parsed {
             if (i >= args.len) return null;
             const class = std.fmt.parseInt(u64, args[i], 10) catch return null;
             ram.append(a, class) catch return null;
+        } else if (i == 1) {
+            return .{ .model = args[0], .mem_gb = null, .ram = &.{}, .device = device.parse(args[1..]) orelse return null };
         } else return null;
     }
     return .{ .model = args[0], .mem_gb = mem_gb, .ram = ram.items };
@@ -122,6 +126,18 @@ fn hint(out: *std.Io.Writer, in: Inputs, mem: budget.MemInfo, reserve: u64, limi
     }
 }
 
+fn refuse(a: Allocator, out: *std.Io.Writer, model: []const u8, o: Options, comptime fmt: []const u8, args: anytype) !u8 {
+    if (o.device != null and o.device.?.json) {
+        const reason = try std.fmt.allocPrint(a, fmt, args);
+        defer a.free(reason);
+        try std.json.Stringify.value(.{ .model = model, .error_message = reason }, .{}, out);
+        try out.writeByte('\n');
+    } else {
+        try out.print(fmt ++ "\n", args);
+    }
+    return 1;
+}
+
 /// The `plan` command: the admission's own weights and reserve, before weights load; returns the exit code.
 pub fn run(a: Allocator, io: std.Io, out: *std.Io.Writer, env: ?*const std.process.Environ.Map, model: []const u8, o: Options) !u8 {
     const dir: []const u8 = blk: {
@@ -129,31 +145,31 @@ pub fn run(a: Allocator, io: std.Io, out: *std.Io.Writer, env: ?*const std.proce
         if (hub.isRepoIdLike(model)) {
             const root = try hub.cacheDir(a, env, null);
             if (try hub.cachedSnapshot(a, io, root, model)) |snapshot| break :blk snapshot;
-            try out.print("{s} is not in the Hugging Face cache; run: tensorfold pull {s}\n", .{ model, model });
-            return 1;
+            return refuse(a, out, model, o, "{s} is not in the Hugging Face cache; run: tensorfold pull {s}", .{ model, model });
         }
-        try out.print("{s} is neither a directory nor a Hugging Face repo id (owner/name)\n", .{model});
-        return 1;
+        return refuse(a, out, model, o, "{s} is neither a directory nor a Hugging Face repo id (owner/name)", .{model});
     };
     var problem: []const u8 = "";
     const bytes = @import("checkpoint_config").read(a, io, dir, &problem) catch |e| {
         if (e == error.OutOfMemory) return e;
-        try out.print("{s}: {s}\n", .{ model, problem });
-        return 1;
+        return refuse(a, out, model, o, "{s}: {s}", .{ model, problem });
     };
     if (bytes) |read| a.free(read);
     const model_type = hub.modelType(a, io, dir);
     const family = hub.family(model_type) orelse {
-        try out.print("{s}: no registered Zig family serves model_type {s}; the 0.6 line may: tensorfold@0.6\n", .{ model, model_type });
-        return 1;
+        return refuse(a, out, model, o, "{s}: no registered Zig family serves model_type {s}; the 0.6 line may: tensorfold@0.6", .{ model, model_type });
     };
+    if (comptime @hasDecl(engines, "mini_capacity")) {
+        if (o.device) |options| {
+            if (std.mem.eql(u8, model_type, engines.mini_capacity.model_type)) return device.run(a, io, out, model, dir, options);
+            if (!options.json) try out.writeAll(fallback ++ "\n");
+        }
+    }
     const weights = budget.weightBytes(a, io, dir) catch |e| {
-        try out.print("{s}: cannot count the checkpoint's weight files ({s}); refusing to plan\n", .{ model, @errorName(e) });
-        return 1;
+        return refuse(a, out, model, o, "{s}: cannot count the checkpoint's weight files ({s}); refusing to plan", .{ model, @errorName(e) });
     };
     if (weights == 0) {
-        try out.print("{s}: no safetensors under {s} to plan from\n", .{ model, dir });
-        return 1;
+        return refuse(a, out, model, o, "{s}: no safetensors under {s} to plan from", .{ model, dir });
     }
     const text = budget.procText(a, io, "/proc/meminfo");
     defer if (text) |read| a.free(read);
@@ -163,7 +179,7 @@ pub fn run(a: Allocator, io: std.Io, out: *std.Io.Writer, env: ?*const std.proce
             return if (e) |m| m.get(name) else null;
         }
     }.f;
-    return report(a, out, .{
+    const in: Inputs = .{
         .title = family.title,
         .model = model,
         .weights = weights,
@@ -172,7 +188,16 @@ pub fn run(a: Allocator, io: std.Io, out: *std.Io.Writer, env: ?*const std.proce
         .limit_text = get(env, "TENSORFOLD_CUDA_MEMORY_LIMIT_GB"),
         .mem_gb = o.mem_gb,
         .ram = o.ram,
-    });
+    };
+    if (o.device) |options| if (options.json) {
+        var legacy: std.Io.Writer.Allocating = .init(a);
+        defer legacy.deinit();
+        const status = try report(a, &legacy.writer, in);
+        try std.json.Stringify.value(.{ .model = model, .message = fallback, .weights_only = legacy.written() }, .{}, out);
+        try out.writeByte('\n');
+        return status;
+    };
+    return report(a, out, in);
 }
 
 fn inputs(weights: u64, total: u64, available: u64) Inputs {
@@ -304,4 +329,63 @@ test "plan: parseArgs takes the model first and the repeatable flags after it" {
     try std.testing.expect(parseArgs(a, &.{}) == null);
     try std.testing.expect(parseArgs(a, &.{ "Org/Test", "--ram" }) == null);
     try std.testing.expect(parseArgs(a, &.{ "Org/Test", "--wat" }) == null);
+}
+
+test "plan device arguments accept explicit counts, overrides, and the model window" {
+    if (comptime !@hasDecl(engines, "mini_capacity")) return error.SkipZigTest;
+    const argv = &.{
+        "Org/Test",              "--unified", "--device-mib",  "124608",    "--free-mib",  "119280", "--driver-mib", "0",
+        "--desktop-reserve-gib", "0.5",       "--reserve-gib", "2.5",       "--limit-gib", "100",    "--parallel",   "8",
+        "--kv-cache",            "bf16",      "--no-drafts",   "--context", "0",           "--json",
+    };
+    const parsed = parseArgs(std.testing.allocator, argv).?;
+    const o = parsed.device.?;
+    try std.testing.expectEqualStrings("Org/Test", parsed.model);
+    try std.testing.expectEqual(124608, o.device_mib);
+    try std.testing.expectEqual(119280, o.free_mib.?);
+    try std.testing.expectEqual(0, o.driver_mib.?);
+    try std.testing.expectEqual(0.5, o.desktop_reserve_gib);
+    try std.testing.expectEqualStrings("2.5", o.reserve_gib.?);
+    try std.testing.expectEqualStrings("100", o.limit_gib.?);
+    try std.testing.expectEqual(8, o.parallel);
+    try std.testing.expectEqual(0, o.context.?);
+    try std.testing.expect(o.unified and o.bf16 and o.no_drafts and o.json);
+}
+
+test "plan device arguments reject incomplete and out-of-range values" {
+    if (comptime !@hasDecl(engines, "mini_capacity")) return error.SkipZigTest;
+    const invalid: []const []const []const u8 = &.{
+        &.{ "Org/Test", "--device-mib", "16303" },
+        &.{ "Org/Test", "--parallel", "4" },
+        &.{ "Org/Test", "--device-mib", "0", "--parallel", "1" },
+        &.{ "Org/Test", "--device-mib", "17592186044416", "--parallel", "1" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "0" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "17" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "auto" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--free-mib", "16304" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--driver-mib", "-1" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--desktop-reserve-gib", "nan" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--desktop-reserve-gib", "inf" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--reserve-gib", "0.25" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--reserve-gib", "16" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--reserve-gib", "1", "--unified" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--limit-gib", "0" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--kv-cache", "fp16" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--context", "-1" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--context" },
+    };
+    for (invalid) |args| try std.testing.expectEqual(null, parseArgs(std.testing.allocator, args));
+}
+
+test "plan without device flags preserves the full weights-only output" {
+    if (comptime !supported) return error.SkipZigTest;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    try std.testing.expectEqualStrings(
+        "plan for Test family (Org/Test) on this machine\n" ++
+            "memory 48 GiB, 48 GiB available, 4.8 GiB reserved for everything else\n" ++
+            "weights 6.0 GiB\n" ++
+            "this machine's default: 43.2 GiB budget — fits; about 37.2 GiB for prompts, streams and caches beside the weights\n",
+        try written(arena.allocator(), inputs(6 * GiB, 48 * GiB, 48 * GiB)),
+    );
 }

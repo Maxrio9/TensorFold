@@ -18,6 +18,17 @@ const local_ring = local_window + block;
 const absorb_rows = 64;
 pub const depth = block - 1;
 pub const tap_stride = 4 * h * 2;
+pub const shared_tap_bytes = engine.prompt_rows * tap_stride;
+
+fn partialSizes(context: usize) [2]usize {
+    const chunks = (context + block + dsp.chunk - 1) / dsp.chunk;
+    return .{ chunks * block * q * 4, chunks * block * 24 * 8 };
+}
+
+pub fn partialBytes(context: usize) usize {
+    const sizes = partialSizes(context);
+    return std.mem.alignForward(usize, sizes[0], 256) + std.mem.alignForward(usize, sizes[1], 256);
+}
 
 const Scratch = struct {
     taps: u64,
@@ -39,10 +50,10 @@ const Scratch = struct {
     draw: u64,
 
     fn layout(base: u64, context: usize, total: *usize) Scratch {
-        const chunks = (context + block + dsp.chunk - 1) / dsp.chunk;
+        const partials = partialSizes(context);
         const b = 2;
         const sizes = .{
-            .taps = engine.prompt_rows * tap_stride,
+            .taps = shared_tap_bytes,
             .mixed = absorb_rows * h * b,
             .matrix_rows = @max(absorb_rows * 2 * kv, block * 2 * inter) * b,
             .residual = block * h * b,
@@ -51,8 +62,8 @@ const Scratch = struct {
             .out = block * q * b,
             .act = block * inter * b,
             .f32_rows = depth * w_.vocab * 4,
-            .partial = chunks * block * q * 4,
-            .maxima = chunks * block * 24 * 8,
+            .partial = partials[0],
+            .maxima = partials[1],
             .base = depth * w_.vocab * b,
             .kappa = depth * 3 * rank * 4,
             .state = rank * b,
@@ -81,22 +92,34 @@ pub const Session = struct {
     held: [depth]u32 = undefined,
     held_len: usize = 0,
 
-    pub fn bytes(context: usize) usize {
-        return (2 * local_ring + context + block) * 2 * kv * 2 + h * 2 + 2 * engine.window_rows * tap_stride;
+    pub const newest_bytes = h * 2;
+    pub const tap_bytes = 2 * engine.window_rows * tap_stride;
+
+    fn kvRings(context: usize) [3]usize {
+        return .{ local_ring, context + block, local_ring };
     }
 
-    fn init(d: *const cuda.Driver, context: usize) !Session {
+    pub fn kvBytes(context: usize) usize {
+        const rings = kvRings(context);
+        return (rings[0] + rings[1] + rings[2]) * 2 * kv * 2;
+    }
+
+    pub fn bytes(context: usize) usize {
+        return kvBytes(context) + newest_bytes + tap_bytes;
+    }
+
+    pub fn init(d: *const cuda.Driver, context: usize) !Session {
         const memory = try cuda.DeviceBuffer.alloc(d, bytes(context));
         var session: Session = .{ .memory = memory, .k = undefined, .v = undefined, .newest = undefined, .taps = undefined };
         var at = memory.ptr;
-        for ([_]usize{ local_ring, context + block, local_ring }, &session.k, &session.v) |ring, *key, *value| {
+        for (kvRings(context), &session.k, &session.v) |ring, *key, *value| {
             key.* = at;
             at += ring * kv * 2;
             value.* = at;
             at += ring * kv * 2;
         }
         session.newest = at;
-        session.taps = at + h * 2;
+        session.taps = at + newest_bytes;
         return session;
     }
 
@@ -117,24 +140,32 @@ pub const Drafter = struct {
     sessions: [engine.max_slots]Session = undefined,
     count: usize = 0,
 
+    pub fn scratchBytes(context: usize) usize {
+        var bytes: usize = 0;
+        _ = Scratch.layout(0, context, &bytes);
+        return bytes;
+    }
+
+    pub fn allocScratch(d: *const cuda.Driver, context: usize) !cuda.DeviceBuffer {
+        return cuda.DeviceBuffer.alloc(d, scratchBytes(context));
+    }
+
     /// Takes ownership of the weights only on success.
     pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize) !Drafter {
         var kernels = try dsp.Kernels.load(d);
         errdefer kernels.unload();
         var dense = try cuda.dense_rows.DenseRows.load(d);
         errdefer dense.unload();
-        var bytes: usize = 0;
-        _ = Scratch.layout(0, context, &bytes);
-        var memory = try cuda.DeviceBuffer.alloc(d, bytes);
+        var memory = try allocScratch(d, context);
         errdefer memory.free();
-        bytes = 0;
+        var bytes: usize = 0;
         var out: Drafter = .{
             .w = w,
             .k = kernels,
             .dense = dense,
             .memory = memory,
             .scratch = Scratch.layout(memory.ptr, context, &bytes),
-            .rings = .{ local_ring, context + block, local_ring },
+            .rings = Session.kvRings(context),
         };
         try out.reserve(1);
         return out;

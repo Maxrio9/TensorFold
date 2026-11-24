@@ -253,6 +253,25 @@ zone at 94 C or more for most of the prompt (97.7 C at the top); `TF_HEAT_HIGH=9
 at 93.0 C or under, and the first token came 10% later.
 Archives whose names contain `host-only` are CPU verification artifacts and cannot serve CUDA inference.
 
+### Plan Inkling 2 Mini CUDA capacity
+
+```sh
+tensorfold-native plan /path/to/model --device-mib 24564 --parallel 2 --json
+tensorfold-native plan /path/to/model --unified --device-mib 124608 --free-mib 119280 --parallel 8
+```
+
+The planner reads local checkpoint metadata and reports the largest context per request for the requested stream
+count, both exactly and rounded down to a multiple of 1024. Use `--context C` to check a specific window or
+`--context 0` for the model's window. The default uses FP8 KV and a bundled drafter when present.
+Use `--kv-cache bf16` or `--no-drafts` to match other serving settings.
+
+Without `--free-mib`, the planner subtracts `--driver-mib` and `--desktop-reserve-gib` from total memory. The default
+driver allowance is 335 MiB, the rounded-up difference between warm process VRAM and tracked device bytes on an
+RTX PRO 4500. For unified memory, pass the available host memory in MiB with `--free-mib` when known. An explicit free
+reading includes these allowances. Pass `--reserve-gib` and `--limit-gib` to match the server's memory settings.
+The result uses fixed pool readings for the requested settings. Live memory use and CUDA driver allocations can
+change the available room during startup.
+
 ### Build a server for one GPU
 
 `zig build -Dgpu=<gpu>` builds only `tensorfold-native`, with kernel code for that one GPU architecture and every model family, stripped by default:

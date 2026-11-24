@@ -94,8 +94,12 @@ pub const Model = struct {
         return .{ .cache = cache, .sites = sites, .backup = backup, .hist = try cuda.DeviceBuffer.alloc(m.d, sizes[3]) };
     }
 
+    fn scratchAllocation(bytes: usize) usize {
+        return @max(bytes, 256);
+    }
+
     fn alloc(m: *Model, bytes: usize) !u64 {
-        var b = try cuda.DeviceBuffer.alloc(m.d, @max(bytes, 256));
+        var b = try cuda.DeviceBuffer.alloc(m.d, scratchAllocation(bytes));
         errdefer b.free();
         try m.buffers.append(m.gpa, b);
         return b.ptr;
@@ -160,7 +164,33 @@ pub const Model = struct {
             .layout = layout,
         };
         errdefer m.deinitBuffers();
-        const c = w.c.text;
+        try m.initScratch();
+        try m.addSlots(s, 1);
+        return m;
+    }
+
+    pub fn initScratch(m: *Model) !void {
+        const expert = switch (m.w.layers[0].experts) {
+            .modelopt => null,
+            .exl3 => |e| e.layer,
+        };
+        m.s = try scratchAlloc(m, m.w.c.text, m.context, expert);
+    }
+
+    pub fn planScratch(c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer) !usize {
+        const Counter = struct {
+            bytes: usize = 0,
+            fn alloc(self: *@This(), bytes: usize) !u64 {
+                self.bytes += scratchAllocation(bytes);
+                return 0;
+            }
+        };
+        var counter: Counter = .{};
+        _ = try scratchAlloc(&counter, c, context, expert);
+        return counter.bytes;
+    }
+
+    fn scratchAlloc(buffers: anytype, c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer) !Scratch {
         const h: usize = c.hidden;
         const q: usize = @as(usize, c.global.q) * c.global.dim;
         const kv: usize = @as(usize, c.local.kv) * c.local.dim;
@@ -171,58 +201,54 @@ pub const Model = struct {
         const local_slots = attention.slotsFor(local, context);
         const global_slots = attention.slotsFor(global, context);
         const part_slots = @max(rows * c.local.q * local_slots, rows * c.global.q * global_slots);
-        const expert_scratch = switch (w.layers[0].experts) {
-            .modelopt => try m.alloc(try modelopt.scratchBytes(rows, c.topk, h, c.expert_inter)),
-            .exl3 => |e| try m.alloc(try exl3_experts.scratchBytes(e.layer, rows, c.topk)),
-        };
-        m.s = .{
-            .ids = try m.alloc(rows * 4),
-            .pos = try m.alloc(rows * 4),
-            .seg_of = try m.alloc(rows * 4),
-            .segs = try m.alloc(max_slots * @sizeOf(attention.Seg)),
-            .tiles = try m.alloc(round.tile_storage * @sizeOf(attention.Tile)),
-            .partial_a = try m.alloc(rows * h * 2),
-            .partial_b = try m.alloc(rows * h * 2),
-            .prelude = try m.alloc(rows * h * 2),
-            .bank0 = try m.alloc(rows * h * 2),
-            .bank1 = try m.alloc(rows * h * 2),
-            .raw = try m.alloc(3 * rows * h * 4),
-            .zeta = try m.alloc(rows * loop_math.rank * 2),
-            .messages = try m.alloc(4 * rows * h * 4),
-            .normalized = try m.alloc(3 * rows * h * 2),
-            .t = try m.alloc(rows * h * 4),
-            .q_raw = try m.alloc(rows * q * 2),
-            .rel_raw = try m.alloc(rows * c.global.q * c.d_rel * 2),
-            .sink = try m.alloc(rows * c.global.q * 2),
-            .gate = try m.alloc(rows * q * 2),
-            .k_raw = try m.alloc(rows * kv * 2),
-            .v_raw = try m.alloc(rows * kv * 2),
-            .k_conv = try m.alloc(rows * kv * 2),
-            .v_conv = try m.alloc(rows * kv * 2),
-            .k_dynamic = try m.alloc(rows * c.global.kv * config.conv_taps * 4),
-            .v_dynamic = try m.alloc(rows * c.global.kv * config.conv_taps * 4),
-            .q_prepared = try m.alloc(rows * q * 2),
-            .rel_prepared = try m.alloc(rows * c.global.q * c.d_rel * 2),
-            .rel_table = try m.alloc(rel_rows * 2),
-            .part_o = try m.alloc(part_slots * attention.head_dim * 4),
-            .part_ml = try m.alloc(part_slots * 8),
-            .attn_heads = try m.alloc(rows * q * 2),
-            .attn_out = try m.alloc(rows * h * 2),
-            .route_scores = try m.alloc(rows * c.experts * 4),
-            .route_pick = try m.alloc(rows * c.experts * 4),
-            .route_weights = try m.alloc(rows * c.experts * 4),
-            .moe_out = try m.alloc(rows * h * (if (w.c.exl3) @as(usize, 4) else 2)),
+        const expert_scratch = try buffers.alloc(if (expert) |e|
+            try exl3_experts.scratchBytes(e, rows, c.topk)
+        else
+            try modelopt.scratchBytes(rows, c.topk, h, c.expert_inter));
+        var scratch: Scratch = .{
+            .ids = try buffers.alloc(rows * 4),
+            .pos = try buffers.alloc(rows * 4),
+            .seg_of = try buffers.alloc(rows * 4),
+            .segs = try buffers.alloc(max_slots * @sizeOf(attention.Seg)),
+            .tiles = try buffers.alloc(round.tile_storage * @sizeOf(attention.Tile)),
+            .partial_a = try buffers.alloc(rows * h * 2),
+            .partial_b = try buffers.alloc(rows * h * 2),
+            .prelude = try buffers.alloc(rows * h * 2),
+            .bank0 = try buffers.alloc(rows * h * 2),
+            .bank1 = try buffers.alloc(rows * h * 2),
+            .raw = try buffers.alloc(3 * rows * h * 4),
+            .zeta = try buffers.alloc(rows * loop_math.rank * 2),
+            .messages = try buffers.alloc(4 * rows * h * 4),
+            .normalized = try buffers.alloc(3 * rows * h * 2),
+            .t = try buffers.alloc(rows * h * 4),
+            .q_raw = try buffers.alloc(rows * q * 2),
+            .rel_raw = try buffers.alloc(rows * c.global.q * c.d_rel * 2),
+            .sink = try buffers.alloc(rows * c.global.q * 2),
+            .gate = try buffers.alloc(rows * q * 2),
+            .k_raw = try buffers.alloc(rows * kv * 2),
+            .v_raw = try buffers.alloc(rows * kv * 2),
+            .k_conv = try buffers.alloc(rows * kv * 2),
+            .v_conv = try buffers.alloc(rows * kv * 2),
+            .k_dynamic = try buffers.alloc(rows * c.global.kv * config.conv_taps * 4),
+            .v_dynamic = try buffers.alloc(rows * c.global.kv * config.conv_taps * 4),
+            .q_prepared = try buffers.alloc(rows * q * 2),
+            .rel_prepared = try buffers.alloc(rows * c.global.q * c.d_rel * 2),
+            .rel_table = try buffers.alloc(rel_rows * 2),
+            .part_o = try buffers.alloc(part_slots * attention.head_dim * 4),
+            .part_ml = try buffers.alloc(part_slots * 8),
+            .attn_heads = try buffers.alloc(rows * q * 2),
+            .attn_out = try buffers.alloc(rows * h * 2),
+            .route_scores = try buffers.alloc(rows * c.experts * 4),
+            .route_pick = try buffers.alloc(rows * c.experts * 4),
+            .route_weights = try buffers.alloc(rows * c.experts * 4),
+            .moe_out = try buffers.alloc(rows * h * (if (expert != null) @as(usize, 4) else 2)),
             .moe_scratch = expert_scratch,
-            .exl3_scratch = switch (w.layers[0].experts) {
-                .modelopt => null,
-                .exl3 => |e| try cuda.exl3_experts.scratch(expert_scratch, e.layer, rows, c.topk),
-            },
-            .hidden = try m.alloc(rows * h * 2),
-            .logits = try m.alloc(round_rows * c.unpadded_vocab * 4),
+            .exl3_scratch = if (expert) |e| try cuda.exl3_experts.scratch(expert_scratch, e, rows, c.topk) else null,
+            .hidden = try buffers.alloc(rows * h * 2),
+            .logits = try buffers.alloc(round_rows * c.unpadded_vocab * 4),
         };
-        for (0..ops.max_blocks) |i| m.s.blocks[i] = try m.alloc(rows * h * 2);
-        try m.addSlots(s, 1);
-        return m;
+        for (0..ops.max_blocks) |i| scratch.blocks[i] = try buffers.alloc(rows * h * 2);
+        return scratch;
     }
 
     fn deinitBuffers(m: *Model) void {

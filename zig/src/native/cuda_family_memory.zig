@@ -54,6 +54,11 @@ pub fn poolForCached(comptime windows: bool, comptime Host: type, a: Allocator, 
     return .{ .free = free, .total = total, .reserve = reserve, .limit = limit, .unified = unified, .parked = free -| measured.available };
 }
 
+pub fn weightRefusal(a: Allocator, weights_bytes: u64, before: budget.Pool, held: u64) !?[]const u8 {
+    if (weights_bytes <= before.room(held)) return null;
+    return try std.fmt.allocPrint(a, "the checkpoint's {d:.1} GiB of weights do not fit the {d:.1} GiB the CUDA memory budget grants ({d:.1} GiB free less a {d:.1} GiB reserve{s}); free device memory or adjust TENSORFOLD_MEMORY_RESERVE_GIB / TENSORFOLD_CUDA_MEMORY_LIMIT_GB", .{ toGib(weights_bytes), toGib(before.room(held)), toGib(before.free), toGib(before.reserve), if (before.limit != null) ", under TENSORFOLD_CUDA_MEMORY_LIMIT_GB" else "" });
+}
+
 /// `F`'s weight bytes on this rank: tensors or files, a split's share, a tower beside; null if tensors are unreadable.
 pub fn weights(comptime F: type, a: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?u64 {
     // a family that counts some formats by tensor (`textWeightBytes`, null for the rest) before the files

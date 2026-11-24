@@ -31,6 +31,10 @@ pub fn pastCeiling(a: Allocator, requested: i64, ceiling: i64, switch_name: []co
     return std.fmt.allocPrint(a, "--context {d} exceeds the {d}-token window {s} sets", .{ requested, ceiling, switch_name });
 }
 
+pub fn pastModel(a: Allocator, requested: i64, ceiling: i64) ![]const u8 {
+    return std.fmt.allocPrint(a, "--context {d} exceeds this model's {d}-token window", .{ requested, ceiling });
+}
+
 /// The startup line of a window past the checkpoint's trained one, which only the family's switch serves.
 pub fn pastTrained(a: Allocator, window: i64, trained: i64, switch_name: []const u8) ![]const u8 {
     const words = "{s}: a {d}-token window, past the checkpoint's trained {d} tokens; past them the quality is the operator's to check";

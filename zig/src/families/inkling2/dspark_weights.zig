@@ -13,6 +13,7 @@ pub const kv = 1024;
 pub const q = 3072;
 pub const inter = 9216;
 pub const block = 8;
+pub const prepared_head_bytes = vocab * (rank + 1) * 2;
 pub const taps = [_]u32{ 5, 23, 41, 48 };
 
 const Layer = struct {
@@ -111,6 +112,40 @@ fn coefficients(t: core.safetensors.Tensor) [16]f32 {
     return a;
 }
 
+pub fn checkpointBytes(gpa: std.mem.Allocator, io: std.Io, c: *const config.Config, dir: []const u8) !usize {
+    try admit(c);
+    var source = try openSource(gpa, io, dir);
+    defer source.close(io);
+    return arenaBytes(gpa, c, source.names);
+}
+
+fn openSource(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !core.safetensors.File {
+    const file = if (std.mem.endsWith(u8, dir, ".safetensors")) dir else try std.fs.path.join(gpa, &.{ dir, "model-mtp.safetensors" });
+    defer if (file.ptr != dir.ptr) gpa.free(file);
+    return core.safetensors.File.open(gpa, io, file) catch |err| blk: {
+        if (err != error.FileNotFound or file.ptr == dir.ptr) return err;
+        const legacy = try std.fs.path.join(gpa, &.{ dir, "mtp.safetensors" });
+        defer gpa.free(legacy);
+        break :blk try core.safetensors.File.open(gpa, io, legacy);
+    };
+}
+
+fn arenaBytes(gpa: std.mem.Allocator, c: *const config.Config, header: core.safetensors.Header) !usize {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const validation = try names.check(arena.allocator(), c, header, .mtp);
+    if (!validation.clean()) {
+        std.log.err("Mini DSpark: missing {any}, wrong shape/dtype {any}, extra {any}", .{
+            validation.missing.items, validation.wrong.items, validation.unknown.items,
+        });
+        return error.Inkling2DraftTensors;
+    }
+
+    var stored: usize = 0;
+    for (header.values()) |entry| stored += entry.end - entry.begin;
+    return stored + validation.expected * 16 + prepared_head_bytes;
+}
+
 pub fn load(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -120,28 +155,9 @@ pub fn load(
     unembed: core.safetensors.Tensor,
 ) !Weights {
     try admit(c);
-    const file = if (std.mem.endsWith(u8, dir, ".safetensors")) dir else try std.fs.path.join(gpa, &.{ dir, "model-mtp.safetensors" });
-    defer if (file.ptr != dir.ptr) gpa.free(file);
-    var source = core.safetensors.File.open(gpa, io, file) catch |err| blk: {
-        if (err != error.FileNotFound or file.ptr == dir.ptr) return err;
-        const legacy = try std.fs.path.join(gpa, &.{ dir, "mtp.safetensors" });
-        defer gpa.free(legacy);
-        break :blk try core.safetensors.File.open(gpa, io, legacy);
-    };
+    var source = try openSource(gpa, io, dir);
     defer source.close(io);
-    var arena = std.heap.ArenaAllocator.init(gpa);
-    defer arena.deinit();
-    const validation = try names.check(arena.allocator(), c, source.names, .mtp);
-    if (!validation.clean()) {
-        std.log.err("Mini DSpark: missing {any}, wrong shape/dtype {any}, extra {any}", .{
-            validation.missing.items, validation.wrong.items, validation.unknown.items,
-        });
-        return error.Inkling2DraftTensors;
-    }
-
-    var stored: usize = 0;
-    for (source.names.values()) |entry| stored += entry.end - entry.begin;
-    var memory = try cuda.DeviceBuffer.alloc(d, stored + validation.expected * 16 + vocab * (rank + 1) * 2);
+    var memory = try cuda.DeviceBuffer.alloc(d, try arenaBytes(gpa, c, source.names));
     errdefer memory.free();
     var u: Upload = .{ .file = &source, .memory = memory };
     var layers: [3]Layer = undefined;

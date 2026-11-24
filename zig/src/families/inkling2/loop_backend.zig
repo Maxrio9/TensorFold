@@ -28,6 +28,11 @@ pub fn laneAllocs(vocab: u32) [2]usize {
     return .{ @as(usize, vocab) * 4, @sizeOf(cuda.sample.Rule) };
 }
 
+/// Shared CUDA token input, BF16 logits and metadata.
+pub fn sharedAllocs(vocab: u32) [3]usize {
+    return .{ (token_ring + engine.round_rows) * 4, window_rows * vocab * 2, 16 };
+}
+
 /// The device bytes each served stream holds: its model slot (engine.slotAllocs) and its lane buffers.
 pub fn streamBytes(m: *const Model) u64 {
     const slot = engine.slotAllocs(&m.layout, m.w.p.n_visits);
@@ -119,12 +124,12 @@ pub const Backend = struct {
     }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, m: *Model, k: *Kernels, s: cuda.Stream) !Backend {
-        const v = m.w.c.text.unpadded_vocab;
-        var tokens = try cuda.DeviceBuffer.alloc(d, (token_ring + engine.round_rows) * 4);
+        const sizes = sharedAllocs(m.w.c.text.unpadded_vocab);
+        var tokens = try cuda.DeviceBuffer.alloc(d, sizes[0]);
         errdefer tokens.free();
-        var logits16 = try cuda.DeviceBuffer.alloc(d, window_rows * v * 2);
+        var logits16 = try cuda.DeviceBuffer.alloc(d, sizes[1]);
         errdefer logits16.free();
-        var meta = try cuda.DeviceBuffer.alloc(d, 16);
+        var meta = try cuda.DeviceBuffer.alloc(d, sizes[2]);
         errdefer meta.free();
         var b: Backend = .{ .gpa = gpa, .d = d, .m = m, .k = k, .s = s, .tokens = tokens, .logits16 = logits16, .meta = meta };
         try b.slotBuffers(m.n_slots);

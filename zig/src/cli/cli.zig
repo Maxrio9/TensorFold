@@ -19,6 +19,9 @@ const usage =
     \\       tensorfold pull REPO[@REVISION] --exlr8 PROFILE --node R/N --dir DIR
     \\                (a gated or private REPO: set HF_TOKEN, or log in with `hf auth login`)
     \\       tensorfold plan MODEL [--memory-gb GIB] [--ram GB]...
+    \\       tensorfold plan MODEL --device-mib N --parallel 1..16 [--unified] [--free-mib F]
+    \\                [--driver-mib D] [--desktop-reserve-gib G] [--reserve-gib R] [--limit-gib L]
+    \\                [--kv-cache fp8|bf16] [--no-drafts] [--context C] [--json]
     \\       tensorfold merge MODEL ADAPTER OUT
     \\       tensorfold merge DENSE ADAPTER OUT --quantize SHIPPED
     \\       tensorfold log [list|show ID|follow] [PATH] [--json]   (the request journal, read-only)
@@ -97,7 +100,7 @@ pub fn main(init: std.process.Init, argv: []const [:0]const u8) !u8 {
             try err.interface.writeAll("tensorfold plan: this build has no CUDA engines, and plan answers for the CUDA admission budget\n");
             return 2;
         }
-        return plan.run(a, init.io, &out.interface, env, parsed.model, .{ .mem_gb = parsed.mem_gb, .ram = parsed.ram });
+        return plan.run(a, init.io, &out.interface, env, parsed.model, .{ .mem_gb = parsed.mem_gb, .ram = parsed.ram, .device = parsed.device });
     }
     if (std.mem.eql(u8, args[0], "merge")) {
         const m = lora_merge.parseArgs(args[1..]) orelse {

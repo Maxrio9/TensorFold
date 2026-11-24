@@ -375,11 +375,18 @@ pub const Dense = struct {
         return slot.*.?.ptr;
     }
 
+    pub const ScratchBytes = struct { z: usize = 0, counters: usize = 0, xh: usize = 0 };
+
+    pub fn reserveBytes(w: Weight) ScratchBytes {
+        return .{ .z = Linear.zBytes(w, 128), .counters = Linear.counterBytes(w), .xh = 128 * w.k * 2 };
+    }
+
     /// Grow every scratch buffer to what 128 rows of `w` need on `s`, so a call in a graph capture allocates nothing.
     pub fn reserve(de: *Dense, s: Stream, w: Weight) !void {
-        if (planOf(w).sk > 1) _ = try de.scratch(&de.z, Linear.zBytes(w, 128));
-        _ = try de.grownCounters(s, Linear.counterBytes(w));
-        _ = try de.scratch(&de.xh, 128 * w.k * 2);
+        const bytes = reserveBytes(w);
+        if (bytes.z > 0) _ = try de.scratch(&de.z, bytes.z);
+        _ = try de.grownCounters(s, bytes.counters);
+        _ = try de.scratch(&de.xh, bytes.xh);
     }
 
     /// The counters, zeroed on `s` when they grow: each block's last arriving program resets its own.
@@ -397,17 +404,21 @@ pub const Dense = struct {
 
     /// A group's scratch at `rows`: its members' split partials, counters and rotated inputs side by side.
     pub fn groupScratch(de: *Dense, s: Stream, ws: []const Weight, rows: usize) !struct { z: u64, counters: u64, xh: u64 } {
-        var zb: usize = 0;
-        var cb: usize = 0;
-        for (ws) |w| {
-            zb += Linear.zBytes(w, 128);
-            cb += Linear.counterBytes(w);
-        }
+        const bytes = groupBytes(ws, rows);
         return .{
-            .z = if (zb > 0) try de.scratch(&de.z, zb) else 0,
-            .counters = try de.grownCounters(s, cb),
-            .xh = try de.scratch(&de.xh, ws.len * rows * ws[0].k * 2),
+            .z = if (bytes.z > 0) try de.scratch(&de.z, bytes.z) else 0,
+            .counters = try de.grownCounters(s, bytes.counters),
+            .xh = try de.scratch(&de.xh, bytes.xh),
         };
+    }
+
+    pub fn groupBytes(ws: []const Weight, rows: usize) ScratchBytes {
+        var bytes: ScratchBytes = .{ .xh = ws.len * rows * ws[0].k * 2 };
+        for (ws) |w| {
+            bytes.z += Linear.zBytes(w, 128);
+            bytes.counters += Linear.counterBytes(w);
+        }
+        return bytes;
     }
 
     /// Decode rows: one call (the kernel takes 1..128), any count above in 128-row blocks.

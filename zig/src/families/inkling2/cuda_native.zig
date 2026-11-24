@@ -17,6 +17,7 @@ pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
 pub const default_context: i64 = 1_048_576;
 pub const max_segments: u32 = 1;
+pub const startup_streams: u32 = 1;
 pub const prompt_rows: u32 = engine.prompt_rows;
 pub const window_rows: u32 = engine.window_rows;
 pub const explains_open = true;
@@ -55,7 +56,7 @@ pub const Loaded = struct {
     facts: lanes.Model,
     rows: u32,
     stream_bytes: usize,
-    free_streams: u32 = 1,
+    free_streams: u32 = startup_streams,
     auto_stream_limit: u32,
     ctx: *anyopaque,
     deinit: *const fn (*anyopaque) void,
@@ -90,7 +91,7 @@ pub fn fits(p: *anyopaque, prompt: u32, max_tokens: u32) bool {
     return o.admission.fits(prompt, max_tokens) and o.backend.admits(prompt, max_tokens);
 }
 
-fn readConfig(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, why: *config.Why) !config.Config {
+pub fn readConfig(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, why: *config.Why) !config.Config {
     const path = try std.fs.path.join(gpa, &.{ dir, "config.json" });
     defer gpa.free(path);
     const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 20));
@@ -108,7 +109,7 @@ pub fn textWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !?u6
     return try weights.checkpointBytes(&ck, true);
 }
 
-fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o: Options) !?[]const u8 {
+pub fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o: Options) !?[]const u8 {
     if (!o.drafts) return null;
     if (o.drafter) |path| {
         if (!exl3) return error.Inkling2DraftNeedsExl3;
@@ -124,6 +125,34 @@ fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o
     return dir;
 }
 
+pub fn openCheckpoint(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool) !core.Checkpoint {
+    var ck = if (exl3)
+        try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars)
+    else
+        try core.Checkpoint.openModel(gpa, io, dir);
+    errdefer ck.close();
+    try ck.skip("model.visual.");
+    return ck;
+}
+
+pub fn checkpointPlan(gpa: std.mem.Allocator, ck: *const core.Checkpoint, c: *const config.Config) !plan_.Plan {
+    var precisions: [config.max_layers]plan_.Precision = undefined;
+    @memset(&precisions, .nvfp4);
+    if (!c.exl3) {
+        var header_arena = std.heap.ArenaAllocator.init(gpa);
+        defer header_arena.deinit();
+        var merged: core.safetensors.Header = .empty;
+        const names = @import("names.zig");
+        for (ck.files.items) |file| try names.merge(header_arena.allocator(), &merged, file.names);
+        try names.precisions(merged, c.text.layers, &precisions);
+    }
+    return plan_.build(&c.text, precisions[0..c.text.layers]);
+}
+
+pub fn checkCacheRoom(state_bytes: u64, room: u64) error{Inkling2CacheRoom}!void {
+    if (state_bytes > room) return error.Inkling2CacheRoom;
+}
+
 pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
     if (kernels != null) return error.Inkling2CapturedKernels;
     if (o.segments != 1 or o.tp != 1 or o.rank != 0) return error.Inkling2LoopOneRankOnly;
@@ -137,23 +166,9 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
     const drafter_dir = try drafterDir(gpa, io, dir, c.exl3, o);
-    var ck = if (c.exl3)
-        try core.Checkpoint.openModelExcluding(gpa, io, dir, pack.sidecars)
-    else
-        try core.Checkpoint.openModel(gpa, io, dir);
+    var ck = try openCheckpoint(gpa, io, dir, c.exl3);
     defer ck.close();
-    try ck.skip("model.visual."); // The checkpoint carries Small's tower; text-only Mini never loads or executes it.
-    var precisions: [config.max_layers]plan_.Precision = undefined;
-    @memset(&precisions, .nvfp4);
-    if (!c.exl3) {
-        var header_arena = std.heap.ArenaAllocator.init(gpa);
-        defer header_arena.deinit();
-        var merged: core.safetensors.Header = .empty;
-        const names = @import("names.zig");
-        for (ck.files.items) |file| try names.merge(header_arena.allocator(), &merged, file.names);
-        try names.precisions(merged, c.text.layers, &precisions);
-    }
-    const p = try plan_.build(&c.text, precisions[0..c.text.layers]);
+    const p = try checkpointPlan(gpa, &ck, &c);
     var bits = if (c.exl3) try pack.readBits(gpa, io, dir) else null;
     defer if (bits) |*b| b.deinit();
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
@@ -186,9 +201,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         be.drafter = try dspark.Drafter.init(ctx.d, d, o.context);
         dw = null;
     }
-    if (state_room) |room| {
-        if (cuda.usage(false).device -| before_state > room) return error.Inkling2CacheRoom;
-    }
+    if (state_room) |room| try checkCacheRoom(cuda.usage(false).device -| before_state, room);
     const out = try gpa.create(Owned);
     errdefer gpa.destroy(out);
     out.* = .{ .gpa = gpa, .admission = .{ .context = @intCast(o.context) }, .kernels = k, .stream = stream, .weights = w, .model = m, .backend = be };

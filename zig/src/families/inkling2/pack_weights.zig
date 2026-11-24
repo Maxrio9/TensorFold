@@ -45,9 +45,10 @@ const Loader = struct {
     ck: *core.Checkpoint,
     sink: exl3.Sink,
     bits: std.json.ObjectMap,
+    read_marker: bool = true,
 
     fn group(l: Loader, base: []const u8, n: usize, k: usize) !exl3.Group {
-        const g = try exl3.group(l.ck, base, n, k);
+        const g = try exl3.group(l.ck, base, n, k, l.read_marker);
         if (g.halves != try halves(l.bits, base)) {
             std.log.err("Inkling 2 Mini EXL3: {s} bit width disagrees with its trellis", .{base});
             return error.BadExl3Bits;
@@ -70,8 +71,19 @@ pub fn validate(c: config.Text) !void {
         return error.Inkling2MiniExl3Shape;
 }
 
-pub fn attention(ck: *core.Checkpoint, sink: exl3.Sink, bits: std.json.ObjectMap, i: u32, h: usize, q: usize, kv: usize) !Projections {
-    const l: Loader = .{ .ck = ck, .sink = sink, .bits = bits };
+pub fn attention(ck: *core.Checkpoint, sink: ?exl3.Sink, bits: std.json.ObjectMap, i: u32, h: usize, q: usize, kv: usize) !Projections {
+    const Headers = struct {
+        fn put(_: *anyopaque, _: []const u8) !u64 {
+            return 0;
+        }
+    };
+    var unused: u8 = 0;
+    const l: Loader = .{
+        .ck = ck,
+        .sink = sink orelse .{ .ctx = &unused, .put = Headers.put },
+        .bits = bits,
+        .read_marker = sink != null,
+    };
     return .{
         .q = try l.linear(i, "q_proj.linear", q, h),
         .k = try l.linear(i, "k_proj.linear", kv, h),
@@ -137,24 +149,41 @@ pub fn experts(gpa: std.mem.Allocator, ck: *core.Checkpoint, sink: exl3.Sink, bi
     const g = try gate.upload(sink, null);
     const u = try up.upload(sink, g.suh);
     const d = try down.upload(sink, null);
-    return .{ .bits = range, .layer = .{
-        .gate = g.trellis,
-        .up = u.trellis,
-        .down = d.trellis,
-        .gate_k2 = g.halves,
-        .up_k2 = u.halves,
-        .down_k2 = d.halves,
-        .suh_g = g.suh,
-        .suh_u = u.suh,
-        .svh_g = g.svh,
-        .svh_u = u.svh,
-        .suh_d = d.suh,
-        .svh_d = d.svh,
+    var layer = expertGeometry(c);
+    layer.gate = g.trellis;
+    layer.up = u.trellis;
+    layer.down = d.trellis;
+    layer.gate_k2 = g.halves;
+    layer.up_k2 = u.halves;
+    layer.down_k2 = d.halves;
+    layer.suh_g = g.suh;
+    layer.suh_u = u.suh;
+    layer.svh_g = g.svh;
+    layer.svh_u = u.svh;
+    layer.suh_d = d.suh;
+    layer.svh_d = d.svh;
+    return .{ .bits = range, .layer = layer };
+}
+
+pub fn expertGeometry(c: config.Text) cuda.exl3_experts.Layer {
+    return .{
+        .gate = 0,
+        .up = 0,
+        .down = 0,
+        .gate_k2 = 0,
+        .up_k2 = 0,
+        .down_k2 = 0,
+        .suh_g = 0,
+        .suh_u = 0,
+        .svh_g = 0,
+        .svh_u = 0,
+        .suh_d = 0,
+        .svh_d = 0,
         .experts = c.experts,
-        .dims = h,
-        .width = inter,
+        .dims = c.hidden,
+        .width = c.expert_inter,
         .codebook = .mul1,
-    } };
+    };
 }
 
 test "Mini EXL3 bit table uses projection-specific halves" {

@@ -37,7 +37,7 @@ pub const Group = struct {
     }
 };
 
-pub fn group(ck: *core.Checkpoint, base: []const u8, n: usize, k: usize) !Group {
+pub fn group(ck: *core.Checkpoint, base: []const u8, n: usize, k: usize, read_marker: bool) !Group {
     var buf: [192]u8 = undefined;
     if (n == 0 or k == 0 or n % 128 != 0 or k % 128 != 0) return error.UnexpectedInkling2Tensor;
     const t = try ck.get(try std.fmt.bufPrint(&buf, "{s}.trellis", .{base}));
@@ -48,7 +48,7 @@ pub fn group(ck: *core.Checkpoint, base: []const u8, n: usize, k: usize) !Group 
     const halves = t.dim(2) / 8;
     if (halves < 2 or halves > 16) return error.UnsupportedExl3;
     const marker = try ck.get(try std.fmt.bufPrint(&buf, "{s}.mul1", .{base}));
-    if (marker.dtype != .i32 or marker.bytes.len != 4 or std.mem.readInt(u32, marker.bytes[0..4], .little) != mul1_magic) return error.UnsupportedExl3;
+    if (marker.dtype != .i32 or marker.bytes.len != 4 or (read_marker and std.mem.readInt(u32, marker.bytes[0..4], .little) != mul1_magic)) return error.UnsupportedExl3;
     const suh = try ck.get(try std.fmt.bufPrint(&buf, "{s}.suh", .{base}));
     const svh = try ck.get(try std.fmt.bufPrint(&buf, "{s}.svh", .{base}));
     if (!suh.is(.f16, &.{k}) or !svh.is(.f16, &.{n})) return error.UnexpectedInkling2Tensor;

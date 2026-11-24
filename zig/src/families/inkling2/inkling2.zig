@@ -12,6 +12,7 @@ pub const loop_exl3_experts = @import("loop_exl3_experts.zig");
 pub const loop_model = @import("loop_model.zig");
 pub const loop_math_cuda = @import("loop_math_cuda.zig");
 pub const native = @import("cuda_native.zig");
+pub const capacity = @import("cuda_capacity.zig");
 
 /// config.json's name in the release.
 pub const model_type = "inkling2";
@@ -24,6 +25,7 @@ test {
     _ = experts;
     _ = modelopt;
     _ = native;
+    _ = capacity;
     _ = dspark_ops;
     _ = loop;
     _ = loop_model;
