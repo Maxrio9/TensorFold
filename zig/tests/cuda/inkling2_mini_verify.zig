@@ -232,6 +232,137 @@ fn print(name: []const u8, width: usize, score: Score) void {
     });
 }
 
+pub const FidelityMode = enum { reference, candidate };
+const FidelityPosition = struct { id: []const u8, step: usize };
+
+/// Use the served prompt path with draft taps, then force the same continuation through the served decode graphs.
+pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, drafter: []const u8, fixture: []const u8, output: []const u8) !void {
+    const a = gpu.gpa;
+    const data = try std.Io.Dir.cwd().readFileAlloc(gpu.io, fixture, a, .limited(1 << 22));
+    defer a.free(data);
+    const fixtures = try std.json.parseFromSlice([]const Row, a, data, .{ .ignore_unknown_fields = true });
+    defer fixtures.deinit();
+    var context: usize = 0;
+    for (fixtures.value) |row| {
+        if (row.prompt_ids.len == 0 or row.generated_ids.len < 2) return error.BadTeacherFixture;
+        context = @max(context, row.prompt_ids.len + row.generated_ids.len);
+    }
+    if (context == 0) return error.BadTeacherFixture;
+    const candidate = mode == .candidate;
+    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, .{
+        .context = context,
+        .drafts = true,
+        .drafter = drafter,
+        .kv8 = candidate,
+    });
+    defer loaded.deinit(loaded.ctx);
+    const o = loaded.target;
+    const d = if (o.backend.drafter) |*active| active else return error.NoDrafter;
+    if (d.* != .dflash2) return error.ExpectedDFlash2;
+    if ((o.model.lazy_head != null) != candidate) return error.UnexpectedReleaseHead;
+    o.model.capture_taps = true;
+    const v = o.weights.c.text.unpadded_vocab;
+    const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = max_width * v * 4 };
+    const logits = try a.alloc(f32, max_width * v);
+    defer a.free(logits);
+    const compare = try a.alloc(f32, max_width * v);
+    defer a.free(compare);
+
+    const dir = std.Io.Dir.cwd();
+    const file = if (candidate) try dir.openFile(gpu.io, output, .{}) else try dir.createFile(gpu.io, output, .{});
+    defer file.close(gpu.io);
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(gpu.io, &buffer);
+    var writer = file.writer(gpu.io, &buffer);
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(data, &digest, .{});
+    if (candidate) {
+        if (try reader.interface.takeInt(u32, .little) != v) return error.ReferenceVocab;
+        if (!std.mem.eql(u8, try reader.interface.take(digest.len), &digest)) return error.ReferenceFixture;
+    } else {
+        try writer.interface.writeInt(u32, v, .little);
+        try writer.interface.writeAll(&digest);
+    }
+    for (fixtures.value) |row| {
+        const tokens = row.generated_ids;
+        const prompt = row.prompt_ids;
+        try o.model.reset(o.stream);
+        d.session(0).reset();
+        var at: usize = 0;
+        while (at < prompt.len) {
+            const end = @min(at + o.model.promptRows(), prompt.len);
+            try o.model.forward(&o.kernels, o.stream, prompt[at..end], at, end - at - 1, @intFromBool(end == prompt.len), false);
+            try d.prefill(0, &o.kernels.glue, o.stream, at, end - at, prompt.len, o.weights.c.text.eps);
+            at = end;
+        }
+        var score: Score = .{};
+        try fidelityRows(mode, o.stream, live, logits[0..v], compare[0..v], &reader.interface, &writer.interface, &score, .{
+            .id = row.id,
+            .step = 0,
+        });
+        var lazy_hits: usize = 0;
+        var i: usize = 0;
+        var width_next: usize = 1;
+        while (i + 1 < tokens.len) {
+            const width = @min(width_next, tokens.len - 1 - i);
+            const pos = prompt.len + i;
+            if (width > 1) try d.propose(0, &o.model, &o.kernels, o.stream, tokens[i], width - 1, null);
+            try o.backend.decode(tokens[i..][0..width], pos, width > 1);
+            try d.absorb(0, &o.kernels.glue, o.stream, o.model.taps.?.buffer, pos, width, o.weights.c.text.eps);
+            const dense = logits[0 .. width * v];
+            const other = compare[0 .. width * v];
+            try fidelityRows(mode, o.stream, live, dense, other, &reader.interface, &writer.interface, &score, .{
+                .id = row.id,
+                .step = i + 1,
+            });
+            if (o.model.lazy_head) |*head| {
+                // The greedy head only defines candidate scores. Compare its winner against the dense distribution.
+                try head.forward(o.stream, o.model.s.hidden, o.weights.unembed, width, live.ptr);
+                try o.stream.synchronize();
+                try live.download(0, std.mem.sliceAsBytes(other));
+                for (0..width) |j| {
+                    const from = j * v;
+                    const exact = dense[from..][0..v];
+                    const pi = std.mem.indexOfMax(f32, exact);
+                    const qi = std.mem.indexOfMax(f32, other[from..][0..v]);
+                    lazy_hits += @intFromBool(pi == qi);
+                    if (pi != qi) printFidelityMismatch("LAZY", .{ .id = row.id, .step = i + j + 1 }, exact, pi, qi);
+                }
+            }
+            i += width;
+            if (candidate) width_next = 1 + width_next % max_width;
+        }
+        if (candidate) {
+            print(row.id, 0, score);
+            std.debug.print("RELEASE LAZY {s} top1={d}/{d}\n", .{ row.id, lazy_hits, tokens.len - 1 });
+        } else std.debug.print("RELEASE REFERENCE {s} positions={d}\n", .{ row.id, tokens.len });
+    }
+    if (!candidate) try writer.interface.flush();
+}
+
+fn fidelityRows(mode: FidelityMode, stream: cuda.Stream, live: cuda.DeviceBuffer, logits: []f32, other: []f32, reader: *std.Io.Reader, writer: *std.Io.Writer, score: *Score, first: FidelityPosition) !void {
+    try stream.synchronize();
+    try live.download(0, std.mem.sliceAsBytes(logits));
+    if (mode == .reference) return writer.writeAll(std.mem.sliceAsBytes(logits));
+    try reader.readSliceAll(std.mem.sliceAsBytes(other));
+    const v = live.len / (max_width * @sizeOf(f32));
+    for (0..logits.len / v) |j| {
+        const offset = j * v;
+        const p = other[offset..][0..v];
+        const q = logits[offset..][0..v];
+        try score.add(p, q);
+        const pi = std.mem.indexOfMax(f32, p);
+        const qi = std.mem.indexOfMax(f32, q);
+        if (pi != qi) printFidelityMismatch("KV", .{ .id = first.id, .step = first.step + j }, p, pi, qi);
+    }
+}
+
+fn printFidelityMismatch(kind: []const u8, where: FidelityPosition, reference: []const f32, winner: usize, other: usize) void {
+    std.debug.print("RELEASE {s} MISMATCH {s} position={d} ref_token={d} candidate_token={d} ref_logit_gap={d:.6}\n", .{
+        kind, where.id, where.step, winner, other, reference[winner] - reference[other],
+    });
+}
+
 /// Compare one-token FP8 solo logits with four shared chains, including mixed widths and partial commits.
 pub fn concurrent(gpu: check.Gpu, model: []const u8, fixture: []const u8) !void {
     const a = gpu.gpa;

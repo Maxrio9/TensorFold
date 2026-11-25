@@ -51,6 +51,7 @@ pub const Model = struct {
     slot: usize = 0, // the slot forwards, snapshots and rewinds use; forwards share the scratch
     taps: ?struct { function: cuda.Function, buffer: u64 } = null,
     capture_taps: bool = false,
+    lazy_head: ?@import("loop_lazy_head.zig").Head = null,
     s: Scratch = undefined,
     buffers: std.ArrayList(cuda.DeviceBuffer) = .empty,
 
@@ -261,6 +262,7 @@ pub const Model = struct {
     }
 
     pub fn deinit(m: *Model) void {
+        if (m.lazy_head) |*head| head.deinit();
         m.deinitBuffers();
         for (m.slots[0..m.n_slots]) |*slot| slot.deinit();
         m.* = undefined;

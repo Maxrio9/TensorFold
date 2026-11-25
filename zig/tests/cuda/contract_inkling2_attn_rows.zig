@@ -29,9 +29,12 @@ const fp8_shapes = [_]c.Shape{
     .{ .rows = 65, .n = n_out, .k = 16385 },
 };
 const fp8_split_shapes = [_]c.Shape{ fp8_shapes[0], fp8_shapes[1], .{ .rows = 8, .n = n_out, .k = 16385 } };
+const prefetch_shapes = [_]c.Shape{ fp8_shapes[0], .{ .rows = 1, .n = n_out, .k = 1 }, fp8_shapes[1], fp8_split_shapes[2] };
+const fp8_sliding_name = "inkling2 attn FP8 sliding";
 const fp8_fold_name = "inkling2 attn FP8 global fold";
 pub const slide_prompt_name = "inkling2 attn sliding prompt";
 pub const slide_prompt_fp8_name = "inkling2 attn sliding prompt FP8";
+const fp8_split_name = "inkling2 attn FP8 global split";
 
 pub const fold_name = "inkling2 attn tf_ink2_attn_fold + tf_ink2_merge (global layers, 16,384-key chunks)";
 
@@ -101,6 +104,7 @@ pub const Attn = struct {
     path: Path,
     plant: Plant = .none,
     fp8: bool = false,
+    prefetch: bool = false,
     shape: c.Shape = undefined,
     fill: g.Fill = .random,
     layer: K.Layer = undefined,
@@ -148,10 +152,10 @@ pub const Attn = struct {
         };
         if (self.fp8) {
             s.name = switch (self.path) {
-                .sliding => "inkling2 attn FP8 sliding",
+                .sliding => fp8_sliding_name,
                 .sliding_prompt => slide_prompt_fp8_name,
                 .fold => fp8_fold_name,
-                .split => "inkling2 attn FP8 global split",
+                .split => fp8_split_name,
                 .prompt => "inkling2 attn FP8 global prompt",
             };
             s.replaces = if (self.path == .split or self.path == .prompt) fp8_fold_name else null;
@@ -161,6 +165,11 @@ pub const Attn = struct {
                 else => &fp8_shapes,
             };
             s.tiles = @splat(.{});
+        }
+        if (self.prefetch) {
+            s.name = if (self.path == .sliding) "inkling2 attn FP8 prefetch sliding" else "inkling2 attn FP8 prefetch global split";
+            s.replaces = if (self.path == .sliding) fp8_sliding_name else fp8_split_name;
+            s.served = &prefetch_shapes;
         }
         return .{ .spec = s, .ctx = self, .vt = &vt, .control = if (self.plant == .none) null else .shapes };
     }
@@ -232,7 +241,7 @@ pub const Attn = struct {
         d.po = try self.rig.scratch(parts * D * 4);
         d.pml = try self.rig.scratch(parts * 8);
         d.out = try self.rig.output(rows * n_out * 2);
-        if (self.path == .split or self.path == .prompt) d.base = try self.rig.scratch(rows * n_out * 2);
+        if (self.prefetch or self.path == .split or self.path == .prompt) d.base = try self.rig.scratch(rows * n_out * 2);
         return true;
     }
 
@@ -368,9 +377,10 @@ pub const Attn = struct {
     }
 
     /// kernels.attend as the forward calls it; `path` picks its branch through `streams` and the partial room.
-    fn launch(self: *Attn, path: Path, q: u64, tab: u64, sink: u64, out: u64) !void {
+    fn launch(self: *Attn, path: Path, q: u64, tab: u64, sink: u64, out: u64, prefetch: bool) !void {
         const d = self.dev;
         var r: K.Rows = .{ .rows = @intCast(self.shape.rows), .heads = heads, .kv_heads = kv, .pos = d.pos, .seg_of = d.seg_of, .segs = d.segs, .tiles = d.tiles, .n_tiles = self.n_tiles, .last_pos = @intCast(self.shape.k - 1), .streams = @intCast(self.streams) };
+        r.decode = prefetch;
         const stride = K.slotsFor(self.layer, self.shape.k);
         var slots: usize = 0; // no partial room for sub-chunks: global calls take the fold or the prompt kernel
         switch (path) {
@@ -383,13 +393,14 @@ pub const Attn = struct {
     }
 
     pub fn run(self: *Attn) !void {
-        try self.launch(self.path, self.dev.q_run, self.dev.tab_run, self.dev.sink_run, self.dev.out);
+        try self.launch(self.path, self.dev.q_run, self.dev.tab_run, self.dev.sink_run, self.dev.out, self.prefetch);
         try self.rig.s.synchronize();
     }
 
-    /// The fold's bytes on the true inputs: the kernel the split and prompt launches must equal bit for bit.
+    /// The reference launch on the identical inputs: synchronous chunks for prefetch, fold for split and prompt.
     pub fn replaced(self: *Attn) ![]const u8 {
-        try self.launch(.fold, self.dev.q, self.dev.tab, self.dev.sink, self.dev.base);
+        const path = if (self.prefetch) self.path else .fold;
+        try self.launch(path, self.dev.q, self.dev.tab, self.dev.sink, self.dev.base, false);
         return self.rig.bytes(self.dev.base, self.count() * 2);
     }
 

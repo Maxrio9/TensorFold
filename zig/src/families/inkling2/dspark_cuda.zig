@@ -6,6 +6,7 @@ const dsp = @import("dspark_ops.zig");
 const engine = @import("loop_engine.zig");
 const loop_math = @import("loop_math_cuda.zig");
 const ops = @import("ops.zig");
+const fp8 = @import("draft_fp8.zig");
 
 const h = w_.hidden;
 const q = w_.q;
@@ -142,6 +143,8 @@ pub const Drafter = struct {
     w: w_.Weights,
     k: dsp.Kernels,
     dense: cuda.dense_rows.DenseRows,
+    lane: ?cuda.qmmf.Lane,
+    vocab8: ?cuda.Function,
     memory: cuda.DeviceBuffer,
     scratch: Scratch,
     rings: [3]usize,
@@ -164,6 +167,8 @@ pub const Drafter = struct {
         errdefer kernels.unload();
         var dense = try cuda.dense_rows.DenseRows.load(d);
         errdefer dense.unload();
+        var lane = try fp8.loadLane(d, w.fp8_layers or w.base != null);
+        errdefer if (lane) |*l| l.unload();
         var memory = try allocScratch(d, context, rows_per_pass);
         errdefer memory.free();
         var bytes: usize = 0;
@@ -171,6 +176,8 @@ pub const Drafter = struct {
             .w = w,
             .k = kernels,
             .dense = dense,
+            .lane = lane,
+            .vocab8 = if (w.phi.scales != 0) try kernels.mod.function("tf_ink2_dsp_vocab8") else null,
             .memory = memory,
             .scratch = Scratch.layout(memory.ptr, context, rows_per_pass, &bytes),
             .rings = Session.kvRings(context),
@@ -189,6 +196,7 @@ pub const Drafter = struct {
     pub fn deinit(d: *Drafter) void {
         for (d.sessions[0..d.count]) |*session| session.memory.free();
         d.memory.free();
+        if (d.lane) |*l| l.unload();
         d.dense.unload();
         d.k.unload();
         d.w.deinit();
@@ -199,9 +207,10 @@ pub const Drafter = struct {
         try drv.check(drv.api.cuMemcpyDtoDAsync_v2(to, from, bytes, s.handle), "cuMemcpyDtoDAsync");
     }
 
-    fn project(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, w: u64, to: u64, rows: usize, n: usize, c: usize) !void {
+    fn project(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, w: fp8.Matrix, to: u64, rows: usize, n: usize, c: usize) !void {
+        if (w.scales != 0) return d.lane.?.matmul(s, x, c, rows, w.lane(n, c), to, 0);
         const f = d.scratch.f32_rows;
-        try d.dense.rows(s, x, c, w, f, n, rows, n, c);
+        try d.dense.rows(s, x, c, w.data, f, n, rows, n, c);
         try ops.tobf(k, s, f, rows, n, n, to, n, 0, n);
     }
 
@@ -238,9 +247,12 @@ pub const Drafter = struct {
         session.held_len = 0;
     }
 
-    fn residual(d: *const Drafter, k: *const engine.Kernels, s: cuda.Stream, x: u64, weight: u64, matrix: u64, width: usize, eps: f32) !void {
+    fn residual(d: *const Drafter, k: *const engine.Kernels, s: cuda.Stream, x: u64, weight: u64, matrix: fp8.Matrix, width: usize, eps: f32) !void {
         const a = d.scratch;
-        try d.dense.rows(s, x, width, matrix, a.f32_rows, h, block, h, width);
+        if (matrix.scales != 0)
+            try d.lane.?.matmulF32(s, x, width, block, matrix.lane(h, width), a.f32_rows, 0)
+        else
+            try d.dense.rows(s, x, width, matrix.data, a.f32_rows, h, block, h, width);
         try loop_math.roundBf16(&k.loop, s, a.f32_rows, a.f32_rows, block * h);
         try dsp.addNorm(&d.k, s, a.residual, a.f32_rows, 1, block * h, weight, a.x, block, h, eps);
     }
@@ -289,7 +301,10 @@ pub const Drafter = struct {
             const next = if (i + 1 < d.w.layers.len) d.w.layers[i + 1].input_norm else d.w.norm;
             try d.residual(k, s, a.act, next, l.down, inter, c.eps);
         }
-        try d.project(&k.glue, s, a.x + h * 2, m.w.unembed, a.base, n, w_.vocab, h);
+        if (d.w.base) |w|
+            try d.lane.?.matmul(s, a.x + h * 2, h, n, w, a.base, 0)
+        else
+            try d.project(&k.glue, s, a.x + h * 2, .{ .data = m.w.unembed }, a.base, n, w_.vocab, h);
         try dsp.ctx(&d.k, s, a.x + h * 2, session.newest, d.w.rnn, d.w.rnn_bias, a.kappa, n, h, rank);
     }
 
@@ -306,13 +321,18 @@ pub const Drafter = struct {
             try cuda.copy_source.enqueue(drv, a.draw, std.mem.sliceAsBytes(meta[0..n]), s);
         }
         try d.encode(session, m, k, s, n);
+        const stride = if (d.w.base) |w| w.n else w_.vocab;
         for (0..n) |j| {
             const token = a.walk + (j + 1) * 4;
+            const base = a.base + j * stride * 2;
             try dsp.rnn(&d.k, s, a.kappa + j * 3 * rank * 4, d.w.rnn, d.w.markov_w1, a.walk, j, a.state, a.latent, rank, h);
-            try dsp.vocab(&d.k, s, a.base + j * w_.vocab * 2, a.latent, d.w.phi, d.w.beta, c.logit_cap, c.unpadded_vocab, c.unpadded_vocab, a.f32_rows);
+            if (d.vocab8) |f|
+                try dsp.vocab8(f, s, base, a.latent, d.w.phi, d.w.beta, c.logit_cap, c.unpadded_vocab, c.unpadded_vocab, a.f32_rows)
+            else
+                try dsp.vocab(&d.k, s, base, a.latent, d.w.phi.data, d.w.beta, c.logit_cap, c.unpadded_vocab, c.unpadded_vocab, a.f32_rows);
             if (rule) |r| {
-                try ops.tobf(&k.glue, s, a.f32_rows, 1, c.unpadded_vocab, c.unpadded_vocab, a.base + j * w_.vocab * 2, c.unpadded_vocab, 0, c.unpadded_vocab);
-                try k.draws.draw(s, a.base + j * w_.vocab * 2, c.unpadded_vocab, r, a.draw + j * 16, 0, token, 1, null, null);
+                try ops.tobf(&k.glue, s, a.f32_rows, 1, c.unpadded_vocab, c.unpadded_vocab, base, c.unpadded_vocab, 0, c.unpadded_vocab);
+                try k.draws.draw(s, base, c.unpadded_vocab, r, a.draw + j * 16, 0, token, 1, null, null);
             } else {
                 try ops.top1(&k.glue, s, a.f32_rows, 1, c.unpadded_vocab, c.unpadded_vocab, 0, a.out, token);
             }

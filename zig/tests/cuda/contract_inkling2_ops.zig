@@ -9,6 +9,7 @@ const rows = @import("contract_inkling2_ops_rows.zig");
 const route = @import("contract_inkling2_ops_route.zig");
 const conv = @import("contract_inkling2_ops_conv.zig");
 const pick = @import("contract_inkling2_ops_pick.zig");
+const head = @import("contract_inkling2_lazy_head.zig");
 
 const G = ref.Gated;
 const K = ref.Checked;
@@ -22,6 +23,8 @@ pub const Set = struct {
     dots: [6]G(rows.Rowdot) = undefined,
     caps: [2]G(rows.Softcap) = undefined,
     topks: [2]K(route.Topk) = undefined,
+    topk_warp: route.TopkWarp = undefined,
+    lazy: K(head.Check) = undefined,
     gateups: [2]G(route.Gateup) = undefined,
     tails: [3]G(route.Tail) = undefined,
     convs: [8]G(conv.Conv) = undefined,
@@ -44,6 +47,8 @@ pub const Set = struct {
         for (&set.dots, dots, 0..) |*x, d, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .dot = d, .tiles = i == 3 or i == 4, .short = i == 5 } };
         for (&set.caps, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .wrong = i == 1 } };
         for (&set.topks, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .unbiased = i == 1 } };
+        set.topk_warp = .{ .fixture = .{ .rig = rig, .k = .{ .kern = k, .warp = true } } };
+        set.lazy = .{ .rig = rig, .k = .{ .kern = k } };
         for (&set.gateups, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .swapped = i == 1 } };
         for (&set.tails, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .f32_out = i == 1, .shifted = i == 2 } };
         const cf = [_]conv.Form{ .kv_static, .kv_dynamic, .attn, .attn_boundary, .mlp, .kv_static, .attn, .kv_static };
@@ -54,11 +59,17 @@ pub const Set = struct {
         for (&set.tobfs, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .unpadded = i == 1 } };
         for (&set.words, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .short = i == 1 } };
         inline for (groups) |f| for (&@field(set, f)) |*x| try list.append(a, x.kernel());
+        if (k.topk_warp != null) {
+            try list.append(a, set.topk_warp.kernel());
+            try list.append(a, set.lazy.kernel());
+        }
     }
 
     pub fn deinit(set: *Set) void {
         if (!set.loaded) return;
         inline for (groups) |f| for (&@field(set, f)) |*x| x.deinit();
+        set.topk_warp.deinit();
+        set.lazy.deinit();
         set.k.unload();
         set.loaded = false;
     }

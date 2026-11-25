@@ -38,9 +38,9 @@ test "inkling2 kernels: the loader type-checks in a build with kernels" {
 }
 
 const Fake = struct {
-    var grids: [8][3]u32 = undefined;
-    var blocks: [8]u32 = undefined;
-    var shared: [8]u32 = undefined;
+    var grids: [9][3]u32 = undefined;
+    var blocks: [9]u32 = undefined;
+    var shared: [9]u32 = undefined;
     var count: usize = 0;
     fn launch(f: cuda.abi.Function, gx: c_uint, gy: c_uint, gz: c_uint, bx: c_uint, _: c_uint, _: c_uint, sh: c_uint, _: cuda.abi.Stream, _: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) c_int {
         const i = @intFromPtr(f) - 1;
@@ -72,6 +72,7 @@ test "inkling2 kernels: one decode row at 1M splits 64 chunks into sub-chunks fo
         .attn_prompt = fun.of(&d, 3),
         .prep_fp8 = fun.of(&d, 5),
         .attn_fp8 = fun.of(&d, 6),
+        .attn_fp8_prefetch = fun.of(&d, 9),
         .attn_fold_fp8 = fun.of(&d, 7),
         .attn_prompt_fp8 = fun.of(&d, 8),
     };
@@ -117,6 +118,19 @@ test "inkling2 kernels: one decode row at 1M splits 64 chunks into sub-chunks fo
     try k.attend(&kern, s, prompt, l, 64, 2048 * 24 * 64, 0, fp8, 0, 0, 0, 0, 0, 0);
     try t.expectEqual([3]u32{ 96, 4, 64 }, Fake.grids[7]);
     try t.expectEqual(@as(u32, 32768), Fake.shared[7]);
+    var decode = r;
+    decode.decode = true;
+    try k.attend(&kern, s, decode, l, 64, all, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 1, 4, 64 * k.subs }, Fake.grids[8]);
+    try t.expectEqual(@as(u32, 128), Fake.blocks[8]);
+    try t.expectEqual(@as(u32, 51712), Fake.shared[8]);
+    try k.attend(&kern, s, decode, k.Layer.sliding(1024, 2048), 5, 0, 0, fp8, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual([3]u32{ 1, 4, 6 }, Fake.grids[8]);
+    const launches = Fake.count;
+    Fake.grids[8] = @splat(0);
+    try k.attend(&kern, s, decode, l, 64, all, 0, .{ .k = 0, .v = 0 }, 0, 0, 0, 0, 0, 0);
+    try t.expectEqual(launches + 2, Fake.count);
+    try t.expectEqual([3]u32{ 0, 0, 0 }, Fake.grids[8]);
     try t.expect(!k.split(.{ .rows = 65, .heads = 24, .kv_heads = 4, .pos = 0, .seg_of = 0, .segs = 0, .tiles = 0, .n_tiles = 7, .last_pos = 100 }, 1, 1 << 30));
 }
 

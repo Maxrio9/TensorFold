@@ -6,6 +6,7 @@ const dspark = @import("dspark_cuda.zig");
 const dsp = @import("dspark_ops.zig");
 const engine = @import("loop_engine.zig");
 const ops = @import("ops.zig");
+const fp8 = @import("draft_fp8.zig");
 
 const h = w_.hidden;
 const block = w_.block;
@@ -100,6 +101,7 @@ pub const Drafter = struct {
     w: w_.Weights,
     k: dsp.Kernels,
     dense: cuda.dense_rows.DenseRows,
+    lane: ?cuda.qmmf.Lane,
     qk: cuda.Function,
     attention: cuda.Function,
     convolve: cuda.Function,
@@ -118,6 +120,8 @@ pub const Drafter = struct {
         errdefer k.unload();
         var dense = try cuda.dense_rows.DenseRows.load(d);
         errdefer dense.unload();
+        var lane = try fp8.loadLane(d, w.fp8_layers or w.base != null);
+        errdefer if (lane) |*l| l.unload();
         var memory = try cuda.DeviceBuffer.alloc(d, scratchBytes(rows_per_pass));
         errdefer memory.free();
         var used: usize = 0;
@@ -125,10 +129,11 @@ pub const Drafter = struct {
             .w = w,
             .k = k,
             .dense = dense,
+            .lane = lane,
             .qk = try k.mod.function("tf_ink2_df_qk"),
             .attention = try k.mod.function("tf_ink2_df_attn"),
             .convolve = try k.mod.function("tf_ink2_df_conv"),
-            .select = try k.mod.function("tf_ink2_df_select"),
+            .select = try k.mod.function(if (w.predecessor.scales != 0) "tf_ink2_df_select8" else "tf_ink2_df_select"),
             .memory = memory,
             .scratch = Scratch.layout(memory.ptr, rows_per_pass, &used),
             .ring_size = ring(context),
@@ -155,14 +160,16 @@ pub const Drafter = struct {
         if (d.graphs) |*g| g.deinit();
         for (d.sessions[0..d.count]) |*session| session.memory.free();
         d.memory.free();
+        if (d.lane) |*l| l.unload();
         d.dense.unload();
         d.k.unload();
         d.w.deinit();
     }
 
-    fn project(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, w: u64, out: u64, rows: usize, n: usize, c: usize) !void {
+    fn project(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, w: fp8.Matrix, out: u64, rows: usize, n: usize, c: usize) !void {
+        if (w.scales != 0) return d.lane.?.matmul(s, x, c, rows, w.lane(n, c), out, 0);
         const a = d.scratch.accum;
-        try d.dense.rows(s, x, c, w, a, n, rows, n, c);
+        try d.dense.rows(s, x, c, w.data, a, n, rows, n, c);
         try ops.tobf(k, s, a, rows, n, n, out, n, 0, n);
     }
 
@@ -196,7 +203,7 @@ pub const Drafter = struct {
             // Keep the normalized fusion outside the projection output, which is reused by every layer.
             try d.memory.d.check(d.memory.d.api.cuMemcpyDtoDAsync_v2(a.mixed, a.matrix, n * h * 2, s.handle), "cuMemcpyDtoDAsync");
             for (d.w.layer, 0..) |l, i| {
-                const kv_weights = l.qkv + w_.q * h * 2;
+                const kv_weights = l.qkv.afterRows(w_.q, h);
                 try d.project(k, s, a.mixed, kv_weights, a.matrix, n, 2 * w_.kv, h);
                 try dsp.qk(&d.k, s, d.qkArgs(session, i, 0, pos + offset), n);
             }
@@ -243,10 +250,27 @@ pub const Drafter = struct {
         try launch(d.convolve, s, block, 1, 256, .{ a.normed, a.delta, cv.base, a.conv, @as(i32, h), @as(i32, 0) });
     }
 
-    fn convOutput(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, matrix: u64, width: usize, cv: w_.Conv) !void {
+    fn convOutput(d: *const Drafter, k: *const ops.Kernels, s: cuda.Stream, x: u64, matrix: fp8.Matrix, width: usize, cv: w_.Conv) !void {
         const a = d.scratch;
         try d.project(k, s, x, matrix, a.conv, block, h, width);
         try launch(d.convolve, s, block, 1, 256, .{ a.conv, a.delta, cv.base, a.residual, @as(i32, h), @as(i32, 1) });
+    }
+
+    fn selectStep(d: *const Drafter, s: cuda.Stream, i: usize, vocab: usize) !void {
+        const a = d.scratch;
+        const p = d.w.predecessor;
+        const q = d.w.successor;
+        var args: cuda.Args = .{};
+        for ([_]u64{ a.top, a.projected, p.data, q.data }) |ptr| args.add(ptr);
+        if (p.scales != 0) {
+            args.add(p.scales);
+            args.add(q.scales);
+        }
+        for ([_]u64{ a.walk, a.ids, a.scores }) |ptr| args.add(ptr);
+        args.add(@as(i32, @intCast(i)));
+        args.add(@as(i32, @intCast(vocab)));
+        args.add(@as(f32, w_.cap));
+        try cuda.launch.launch(d.select, .{ .grid = .{ .x = 1 }, .block = .{ .x = 512 } }, s, &args);
     }
 
     const Block = struct {
@@ -279,16 +303,16 @@ pub const Drafter = struct {
             const n = b.key.n;
             const v = target.unpadded_vocab;
             // The target's padding rows cannot be offered by the draft.
-            try d.dense.rows(s, x, h, b.m.w.unembed, a.logits_f32, v, n, v, h);
-            try ops.tobf(k, s, a.logits_f32, n, v, v, a.logits, v, 0, v);
+            if (d.w.base) |w| {
+                try d.lane.?.matmul(s, x, h, n, w, a.logits, 0);
+            } else {
+                try d.dense.rows(s, x, h, b.m.w.unembed, a.logits_f32, v, n, v, h);
+                try ops.tobf(k, s, a.logits_f32, n, v, v, a.logits, v, 0, v);
+            }
             try b.k.draws.topkRows(s, a.logits, v, w_.top_k, a.top_parts, a.top, n);
             try d.project(k, s, x, d.w.project, a.projected, n, w_.rank, h);
             for (0..n) |i| {
-                const step: i32 = @intCast(i);
-                try launch(d.select, s, 1, 1, 512, .{
-                    a.top,                 d.scratch.projected, d.w.predecessor, d.w.successor, a.walk, a.ids, a.scores, step,
-                    @as(i32, @intCast(v)), @as(f32, w_.cap),
-                });
+                try d.selectStep(s, i, v);
                 if (b.key.rule != 0) {
                     try b.k.draws.draw(s, a.scores, w_.top_k, b.key.rule, a.position, i, a.walk + (i + 1) * 4, 1, a.ids, null);
                 }

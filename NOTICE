@@ -7,7 +7,7 @@ Releases up to 0.5.0 were MIT-licensed, and code written before 0.6.0 keeps its
 MIT notice in LICENSES/MIT.txt. Third-party code and its licenses are listed in
 THIRD_PARTY_NOTICES.md.
 
-Inkling 2 Mini structured output, OpenAI compatibility, CUDA vision and CUDA prompt passes
+Inkling 2 Mini structured output, OpenAI compatibility, CUDA vision, prefill and decode
 Copyright 2026 MiaAI-Lab
 https://github.com/MiaAI-Lab/Inkling-2-Mini-DGX-Spark-TensorFold
 Apache License, Version 2.0.

@@ -39,6 +39,8 @@ pub const Shape = struct {
     head0: usize,
     heads: usize,
     taps: bool,
+    decode: bool = false,
+    lazy: bool = false,
 };
 
 fn tileOffset(count: usize, i: usize, kind: usize) usize {
@@ -101,6 +103,14 @@ pub fn prepare(m: *Model, s: cuda.Stream, chains: []const Chain, head0: usize, h
     try m.upload(s, m.s.seg_of, std.mem.sliceAsBytes(seg_of[0..shape.rows]));
     try m.upload(s, m.s.segs, std.mem.sliceAsBytes(segs[0..chains.len]));
     for (shape.parts[0..shape.count]) |part| m.slots[part.slot].recorded = if (part.record) part.rows else 0;
+    return shape;
+}
+
+/// Stage a decode graph's inputs. Sparse head rows are available only to eligible greedy draws.
+pub fn prepareDecode(m: *Model, s: cuda.Stream, chains: []const Chain, heads: usize, taps: bool, lazy: bool) !Shape {
+    var shape = try prepare(m, s, chains, 0, heads, taps);
+    shape.decode = true;
+    shape.lazy = lazy and m.lazy_head != null and heads <= @import("loop_lazy_head.zig").max_rows;
     return shape;
 }
 
@@ -230,6 +240,7 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
                 .last_pos = @intCast(m.context - 1),
                 .sliding_prompt = lw.attn.exl3 != null and shape.count == 1 and !part.record and
                     part.rows >= attention.sliding_prompt_min_rows,
+                .decode = shape.decode and m.w.c.exl3,
             };
             const cache = m.cacheOf(visit.cache_slot);
             try attention.prep(&k.attn, s, r, geometry, prep, .{ m.s.q_raw + q_off, m.s.k_conv + kv_off, m.s.v_conv + kv_off, m.s.rel_raw + rel_off }, .{ lw.attn.q_scale, lw.attn.rel_scale }, m.s.q_prepared, m.s.rel_prepared, cache);
@@ -273,7 +284,7 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
             try ops.mix(&k.glue, s, m.mixArgs(mlp_blocks, m.s.t, mlp_query, .{ lw.mlp_norm, lw.mlp_norm, lw.mlp_norm }, m.s.normalized, 1, false, rows));
         }
         try ops.rowdot(&k.glue, s, m.s.normalized, lw.router, m.s.route_scores, rows, c.experts, h, false, true);
-        try ops.topk(&k.glue, s, m.s.route_scores, lw.router_bias, m.s.route_pick, m.s.route_weights, rows, c.experts, c.topk, c.route_scale);
+        try ops.topkWithWarp(&k.glue, s, m.s.route_scores, lw.router_bias, m.s.route_pick, m.s.route_weights, rows, c.experts, c.topk, c.route_scale, shape.decode and m.w.c.exl3 and k.glue.warp_router);
         switch (lw.experts) {
             .modelopt => |e| try modelopt.run(&k.moe.modelopt, s, e, .{ .gate = c.gate_cap, .up = c.up_cap }, m.s.normalized, h, m.s.route_pick, m.s.route_weights, rows, c.topk, m.s.moe_out, m.s.moe_scratch),
             .exl3 => |e| try exl3_experts.run(&k.moe.exl3, s, e.layer, .{ .gate = c.gate_cap, .up = c.up_cap }, e.bits, m.s.normalized, h, .bf16, m.s.route_pick, m.s.route_weights, rows, m.s.moe_out, m.s.exl3_scratch.?),
@@ -309,7 +320,9 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
     try ops.mix(&k.glue, s, m.mixArgs(m.s.blocks[0..n_blocks], partial, m.w.output_query, .{ m.w.norm, m.w.norm, m.w.norm }, m.s.hidden, 1, true, rows));
     if (taps) |t| try @import("dspark_ops.zig").tap(t.function, s, m.s.hidden, t.buffer, rows, h, 3);
     if (heads == 0) return;
-    try ops.rowdot(&k.glue, s, m.s.hidden + shape.head0 * h * 2, m.w.unembed, m.s.logits, heads, c.unpadded_vocab, h, false, false);
+    const hidden = m.s.hidden + shape.head0 * h * 2;
+    if (shape.lazy) return m.lazy_head.?.forward(s, hidden, m.w.unembed, heads, m.s.logits);
+    try ops.rowdot(&k.glue, s, hidden, m.w.unembed, m.s.logits, heads, c.unpadded_vocab, h, false, false);
     try loop_math.roundBf16(&k.loop, s, m.s.logits, m.s.logits, heads * c.unpadded_vocab);
     try ops.softcap(&k.glue, s, m.s.logits, heads * c.unpadded_vocab, c.logit_cap);
 }

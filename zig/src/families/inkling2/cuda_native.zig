@@ -13,6 +13,7 @@ const weights = @import("loop_weights.zig");
 const draft_runtime = @import("loop_drafter.zig");
 const dflash_weights = @import("dflash2_weights.zig");
 const vision = @import("mini_vision.zig");
+const lazy_head = @import("loop_lazy_head.zig");
 
 pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
@@ -30,7 +31,7 @@ pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
 pub const Options = struct {
     context: usize,
     drafts: bool,
-    kv8: bool = true,
+    kv8: bool = false,
     segments: usize = 1,
     slide: bool = false,
     vision: ?VisionOptions = null,
@@ -119,26 +120,57 @@ pub fn visionBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, _: u32, 
     return @import("vision.zig").weightBytes(gpa, io, dir);
 }
 
-pub fn drafterDir(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool, o: Options) !?[]const u8 {
-    if (!o.drafts) return null;
-    if (o.drafter) |path| {
-        if (!exl3) return error.Inkling2DraftNeedsExl3;
-        return path;
-    }
-    if (!exl3) return null;
-    const bundled = try std.fs.path.join(gpa, &.{ dir, "model-mtp.safetensors" });
-    defer gpa.free(bundled);
-    _ = std.Io.Dir.cwd().statFile(io, bundled, .{}) catch |err| switch (err) {
-        error.FileNotFound => return null,
+fn hasDraftFile(a: std.mem.Allocator, io: std.Io, dir: []const u8, name: []const u8) !bool {
+    const path = try std.fs.path.join(a, &.{ dir, name });
+    defer a.free(path);
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => return false,
         else => return err,
     };
-    return dir;
+    return stat.kind == .file;
+}
+
+fn bundledDSpark(a: std.mem.Allocator, io: std.Io, dir: []const u8) !?draft_runtime.Source {
+    if (!try hasDraftFile(a, io, dir, "model-mtp.safetensors")) return null;
+    return .{ .kind = .dspark, .path = dir };
+}
+
+fn availableDFlash2(a: std.mem.Allocator, io: std.Io, path: []const u8, c: *const config.Config) !bool {
+    return try hasDraftFile(a, io, path, "model.safetensors") and try dflash_weights.isDFlash2(a, io, path, c);
+}
+
+fn selectDrafter(a: std.mem.Allocator, io: std.Io, dir: []const u8, c: *const config.Config, o: Options, cache: ?[]const u8) !?draft_runtime.Source {
+    if (!o.drafts) return null;
+    if (o.drafter) |path| {
+        if (std.mem.eql(u8, path, "none")) return null;
+        if (!c.exl3) return error.Inkling2DraftNeedsExl3;
+        if (std.mem.eql(u8, path, "dspark")) {
+            return (try bundledDSpark(a, io, dir)) orelse error.MiniDSparkMissing;
+        }
+        const dflash = try dflash_weights.isDFlash2(a, io, path, c);
+        return .{ .kind = if (dflash) .dflash2 else .dspark, .path = path };
+    }
+    if (!c.exl3) return null;
+    const beside = std.fs.path.dirname(std.mem.trimEnd(u8, dir, std.fs.path.sep_str)) orelse ".";
+    for ([_][]const u8{ dir, beside }) |parent| {
+        const local = try std.fs.path.join(a, &.{ parent, "dflash2" });
+        const available = availableDFlash2(a, io, local, c) catch |err| {
+            a.free(local);
+            return err;
+        };
+        if (available) return .{ .kind = .dflash2, .path = local, .owns_path = true };
+        a.free(local);
+    }
+    if (cache) |path| {
+        if (path.len != 0 and try availableDFlash2(a, io, path, c)) return .{ .kind = .dflash2, .path = path };
+    }
+    return bundledDSpark(a, io, dir);
 }
 
 pub fn drafterSource(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, c: *const config.Config, o: Options) !?draft_runtime.Source {
-    const path = try drafterDir(gpa, io, dir, c.exl3, o) orelse return null;
-    const dflash = o.drafter != null and try dflash_weights.isDFlash2(gpa, io, path, c);
-    return .{ .kind = if (dflash) .dflash2 else .dspark, .path = path };
+    const sys = @import("sys");
+    const name = "TF_INKLING2_DFLASH2_DIR";
+    return selectDrafter(gpa, io, dir, c, o, try sys.environment.path(name, sys.environment.rawText(name)));
 }
 
 pub fn openCheckpoint(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, exl3: bool) !core.Checkpoint {
@@ -182,6 +214,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     if (o.context == 0 or o.context > c.text.max_context or o.context > std.math.maxInt(u32)) return error.BadLoopCache;
     if (c.exl3) try pack.validate(c.text);
     const drafter = try drafterSource(gpa, io, dir, &c, o);
+    defer if (drafter) |src| src.deinit(gpa);
     var ck = try openCheckpoint(gpa, io, dir, c.exl3);
     defer ck.close();
     const p = try checkpointPlan(gpa, &ck, &c);
@@ -191,7 +224,18 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
     errdefer if (!moved) w.deinit();
     if (ck.unused() != 0) return error.UnusedCheckpointTensor;
-    var dw = if (drafter) |src| try src.load(gpa, io, ctx.d, &c, &ck) else null;
+    var stream = try cuda.Stream.init(ctx.d, true);
+    errdefer if (!moved) stream.deinit();
+    const sm = try ctx.capability();
+    var lazy: ?lazy_head.Head = if (c.exl3 and sm >= 120 and lazy_head.enabled() and lazy_head.eligible(c.text.unpadded_vocab, c.text.hidden))
+        lazy_head.Head.init(gpa, ctx.d, stream, w.unembed, c.text.unpadded_vocab, c.text.hidden, c.text.logit_cap) catch |err| switch (err) {
+            error.Inkling2FP8HeadWeights => null,
+            else => return err,
+        }
+    else
+        null;
+    errdefer if (lazy) |*head| head.deinit();
+    var dw = if (drafter) |src| try src.load(gpa, io, ctx.d, &c, &ck, stream, w.unembed, if (lazy) |head| head.weight else null) else null;
     errdefer if (dw) |*d| d.deinit();
     ck.release();
     const target_weights = w.bytes;
@@ -200,11 +244,11 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     const state_room = if (o.room) |room| room.read(room.ctx) orelse return error.Inkling2CacheRoom else null;
     var k = try engine.Kernels.load(ctx, c.exl3);
     errdefer if (!moved) k.deinit();
-    var stream = try cuda.Stream.init(ctx.d, true);
-    errdefer if (!moved) stream.deinit();
     try k.reserveDense(stream, w.layers);
     var m = try engine.Model.init(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16);
     errdefer if (!moved) m.deinit();
+    m.lazy_head = lazy;
+    lazy = null;
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
     errdefer if (!moved) be.deinit();
     if (dw) |d| {
@@ -279,6 +323,7 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
         error.ImageGrid, error.ImagePlaceholders => "the image grid or placeholder rows do not match the input",
         error.Inkling2DraftNeedsExl3 => "Mini drafting on CUDA requires the EXL3 text checkpoint",
         error.UnsupportedMiniDFlash2Config => "Mini DFlash2 requires the BF16 Inkling 2 Mini drafter configuration",
+        error.MiniDSparkMissing => "the model does not include model-mtp.safetensors for --drafter dspark",
         error.MiniDFlash2Tensor => "Mini DFlash2 weights do not match the checkpoint configuration",
         error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
@@ -354,22 +399,66 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 25,
     try std.testing.expectEqual(conv + rows * 2 * 8 * 256, m.snapshotBytes(8192));
 }
 
-test "the bundled Mini drafter is picked for EXL3 unless drafts are disabled or a path is explicit" {
+test "Mini picks an explicit drafter, local DFlash2, cached DFlash2, then bundled DSpark" {
     const a = std.testing.allocator;
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmp.dir.realPathFileAlloc(io, ".", a);
     defer a.free(dir);
+    const cache = try std.fs.path.join(a, &.{ dir, "cache" });
+    defer a.free(cache);
+    const local = try std.fs.path.join(a, &.{ dir, "dflash2" });
+    defer a.free(local);
+    var why: config.Why = .{};
+    var c = try config.parse(a, @import("config_test.zig").mini, &why);
+    c.exl3 = true;
     var o: Options = .{ .context = 8192, .drafts = true };
-    try std.testing.expect(o.kv8);
-    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, true, o));
+    try std.testing.expectEqual(null, try selectDrafter(a, io, dir, &c, o, cache));
+    o.drafter = "dspark";
+    try std.testing.expectError(error.MiniDSparkMissing, selectDrafter(a, io, dir, &c, o, cache));
     try tmp.dir.writeFile(io, .{ .sub_path = "model-mtp.safetensors", .data = "fixture" });
-    try std.testing.expectEqualStrings(dir, (try drafterDir(a, io, dir, true, o)).?);
-    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, false, o));
-    o.drafter = "explicit";
-    try std.testing.expectEqualStrings("explicit", (try drafterDir(a, io, dir, true, o)).?);
-    try std.testing.expectError(error.Inkling2DraftNeedsExl3, drafterDir(a, io, dir, false, o));
+    o.drafter = null;
+    try std.testing.expectEqual(.dspark, (try selectDrafter(a, io, dir, &c, o, cache)).?.kind);
+    const fixture =
+        \\{"architectures":["DFlash2DraftModel"],"model_type":"qwen3","dtype":"bfloat16",
+        \\"hidden_size":2304,"intermediate_size":6912,"num_hidden_layers":5,"num_attention_heads":32,
+        \\"num_key_value_heads":8,"head_dim":128,"rms_norm_eps":0.000001,
+        \\"rope_parameters":{"rope_theta":10000,"rope_type":"default"},"vocab_size":201024,"sliding_window":2048,
+        \\"layer_types":["sliding_attention","sliding_attention","sliding_attention","sliding_attention","sliding_attention"],
+        \\"attention_bias":false,"hidden_act":"silu","is_causal":false,
+        \\"dflash_config":{"block_size":8,"conv_group_size":16,"conv_kernel_size":2,"final_logit_softcapping":30,
+        \\"mask_token_id":200056,"selector_rank":256,"selector_softcap_mode":"after_correction",
+        \\"selector_top_k":16,"target_layer_ids":[5,23,41,48]}}
+    ;
+    try tmp.dir.createDirPath(io, "cache");
+    try tmp.dir.writeFile(io, .{ .sub_path = "cache/config.json", .data = fixture });
+    try std.testing.expectEqual(.dspark, (try selectDrafter(a, io, dir, &c, o, cache)).?.kind);
+    try tmp.dir.writeFile(io, .{ .sub_path = "cache/model.safetensors", .data = "fixture" });
+    try std.testing.expectEqual(.dflash2, (try selectDrafter(a, io, dir, &c, o, cache)).?.kind);
+    try tmp.dir.createDirPath(io, "dflash2");
+    try tmp.dir.writeFile(io, .{ .sub_path = "dflash2/config.json", .data = fixture });
+    try tmp.dir.writeFile(io, .{ .sub_path = "dflash2/model.safetensors", .data = "fixture" });
+    const sibling = (try selectDrafter(a, io, dir, &c, o, cache)).?;
+    defer sibling.deinit(a);
+    try std.testing.expectEqual(.dflash2, sibling.kind);
+    try std.testing.expectEqualStrings(local, sibling.path);
+    try tmp.dir.createDirPath(io, "target");
+    const target = try std.fs.path.join(a, &.{ dir, "target" });
+    defer a.free(target);
+    const adjacent = (try selectDrafter(a, io, target, &c, o, cache)).?;
+    defer adjacent.deinit(a);
+    try std.testing.expectEqualStrings(local, adjacent.path);
+    o.drafter = cache;
+    try std.testing.expectEqualStrings(cache, (try selectDrafter(a, io, dir, &c, o, cache)).?.path);
+    o.drafter = "dspark";
+    try std.testing.expectEqual(.dspark, (try selectDrafter(a, io, dir, &c, o, cache)).?.kind);
+    c.exl3 = false;
+    try std.testing.expectError(error.Inkling2DraftNeedsExl3, selectDrafter(a, io, dir, &c, o, cache));
+    o.drafter = "none";
+    try std.testing.expectEqual(null, try selectDrafter(a, io, dir, &c, o, cache));
+    c.exl3 = true;
+    o.drafter = cache;
     o.drafts = false;
-    try std.testing.expectEqual(@as(?[]const u8, null), try drafterDir(a, io, dir, true, o));
+    try std.testing.expectEqual(null, try selectDrafter(a, io, dir, &c, o, cache));
 }

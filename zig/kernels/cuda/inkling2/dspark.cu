@@ -224,6 +224,7 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_dsp_attn(AttnArgs a) {
     ink2DraftAttn<false>(a, 0, 0);
 }
 
+#include "draft_fp8.cuh"
 #include "dflash2.cuh"
 
 // Each (row, head)'s chunks folded in order: out bf16 [T][hq][128].

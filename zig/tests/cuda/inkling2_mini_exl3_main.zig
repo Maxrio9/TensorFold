@@ -6,7 +6,7 @@ const gates = @import("core").contract.gates;
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 2 and args.len != 4 and args.len != 5) return error.BadArguments;
+    if (args.len != 2 and args.len != 4 and args.len != 5 and args.len != 7) return error.BadArguments;
     var driver = try cuda.Driver.open();
     defer driver.close();
     var ctx = try cuda.Context.init(&driver, 0);
@@ -22,8 +22,12 @@ pub fn main(init: std.process.Init) !void {
         return cacheContract(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-slide-contract"))
         return slideContract(gpu);
+    if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-head-contract"))
+        return headContract(gpu);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-exl3-teacher"))
         return @import("inkling2_mini_exl3_teacher.zig").run(gpu, args[2], args[3]);
+    if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-dflash2-export"))
+        return @import("inkling2_mini_dflash2_export.zig").run(gpu, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-kv-fidelity"))
         return @import("inkling2_mini_verify.zig").cacheFidelity(gpu, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-concurrent"))
@@ -32,6 +36,13 @@ pub fn main(init: std.process.Init) !void {
         return @import("inkling2_mini_verify.zig").prefillLogits(gpu, args[2], args[3], args[4]);
     if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-verify"))
         return @import("inkling2_mini_verify.zig").run(gpu, args[2], args[3], args[4]);
+    if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-draft-acceptance"))
+        return @import("inkling2_mini_draft_acceptance.zig").run(gpu, args[2], args[3], args[4]);
+    if (args.len == 7 and std.mem.eql(u8, args[1], "inkling2-mini-release-fidelity")) {
+        const mode = std.meta.stringToEnum(@import("inkling2_mini_verify.zig").FidelityMode, args[2]) orelse
+            return error.BadArguments;
+        return @import("inkling2_mini_verify.zig").releaseFidelity(gpu, mode, args[3], args[4], args[5], args[6]);
+    }
     return error.BadArguments;
 }
 
@@ -70,6 +81,21 @@ fn dsparkContract(gpu: check.Gpu) !void {
     try check.expect(tally.kernels != 0 and tally.problems() == 0, "Mini DSpark contract", .{});
 }
 
+fn headContract(gpu: check.Gpu) !void {
+    var stream = try cuda.Stream.init(gpu.d, false);
+    defer stream.deinit();
+    var kernels: std.ArrayList(gates.Kernel) = .empty;
+    defer kernels.deinit(gpu.gpa);
+    var set: @import("contract_inkling2_ops.zig").Set = .{};
+    try set.init(gpu, stream, gpu.gpa, &kernels);
+    defer set.deinit();
+    @import("contract_after.zig").keep(&kernels, &.{ "inkling2 Mini warp router", "inkling2 Mini certified greedy head" });
+    var tally: gates.Tally = .{};
+    try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
+    std.debug.print("MINI HEAD CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
+    try check.expect(tally.kernels == 2 and tally.problems() == 0, "Mini head and router contract", .{});
+}
+
 fn cacheContract(gpu: check.Gpu) !void {
     var stream = try cuda.Stream.init(gpu.d, false);
     defer stream.deinit();
@@ -85,7 +111,7 @@ fn cacheContract(gpu: check.Gpu) !void {
     var tally: gates.Tally = .{};
     try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
     std.debug.print("MINI FP8 KV CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
-    try check.expect(tally.kernels == 4 and tally.problems() == 0, "Mini FP8 KV contract", .{});
+    try check.expect(tally.kernels == 6 and tally.problems() == 0, "Mini FP8 KV contract", .{});
 }
 
 fn slideContract(gpu: check.Gpu) !void {

@@ -30,6 +30,7 @@ pub const Model = struct {
     depth_rate: f64 = 0, // the newest round's weight in a depth's acceptance estimate (0: the core's)
     plain_guard: bool = false, // plain rounds compete with drafted depths
     protect_shared_streams: bool = false, // every shared stream must pay for the round against plain decode
+    shared_block_streams: u32 = 0, // most streams whose fixed-block proposals use measured verification widths
     copy_guard: bool = false, // a lone stream's copies compete with its own plain rounds (a family opts in)
     draft_confidence: ?f64 = null,
     floor_rates: bool = false, // Constants.floor_rates: a head whose steps cost more than the floor's cut saves
@@ -80,6 +81,7 @@ pub const Config = struct {
     pipelined: bool,
     plain_guard: bool,
     protect_shared_streams: bool = false,
+    shared_block_streams: u32 = 0,
     copy_guard: bool = false, // Model.copy_guard: off unless the family sets it (lanes/lone_copy.zig)
     most_drafts: u32,
     draft_confidence: ?f64 = null,
@@ -171,6 +173,7 @@ pub const Config = struct {
             .pipelined = m.gpu_tokens,
             .plain_guard = m.plain_guard,
             .protect_shared_streams = m.protect_shared_streams,
+            .shared_block_streams = m.shared_block_streams,
             .copy_guard = m.copy_guard,
             .most_drafts = @min(m.drafts, @min(width - 1, max_draft)),
             .draft_confidence = m.draft_confidence,

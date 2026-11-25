@@ -64,14 +64,17 @@ pub const Backend = struct {
     shared_costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     propose_ms: f64 = 0,
     priced_width: usize = 0,
+    shared_block_streams: u32 = 0,
 
     const be = lanes.backend;
 
     pub fn warm(b: *Backend, io: std.Io) !void {
         if (!b.m.w.c.exl3) return;
+        const environment = @import("sys").environment;
+        const separate = try environment.read(bool, "TF_INKLING2_VERIFY_GRAPHS", true);
         b.graphs = @as(@TypeOf(b.graphs.?), undefined);
         const g = &b.graphs.?;
-        g.init(b.gpa, b.d);
+        g.init(b.gpa, b.d, separate);
         errdefer {
             b.s.synchronize() catch {};
             g.deinit();
@@ -79,6 +82,10 @@ pub const Backend = struct {
         }
         try g.warm(b.m, b.k, b.s, 1, false);
         const d = if (b.drafter) |*d| d else return;
+        if (d.* == .dflash2) {
+            const shared = if (try b.d.currentCapability() == 121) @as(u32, 4) else 2;
+            b.shared_block_streams = try environment.read(u32, "TF_INKLING2_DFLASH2_SHARED", shared);
+        }
         d.enableGraphs(b.gpa);
         b.m.taps = d.taps();
         b.m.capture_taps = true;
@@ -119,13 +126,21 @@ pub const Backend = struct {
     }
 
     pub fn decode(b: *Backend, tokens: []const u32, position: usize, record: bool) !void {
+        try b.decodeOne(tokens, position, record, false);
+    }
+
+    fn decodeOne(b: *Backend, tokens: []const u32, position: usize, record: bool, lazy: bool) !void {
         const chain: round.Chain = .{ .slot = b.m.slot, .position = position, .tokens = tokens, .record = record };
-        try b.decodeRound(&.{chain}, tokens.len, b.m.capture_taps);
+        try b.decodeRoundMode(&.{chain}, tokens.len, b.m.capture_taps, lazy);
     }
 
     pub fn decodeRound(b: *Backend, chains: []const round.Chain, rows: usize, taps: bool) !void {
-        if (b.graphs) |*g| return g.forward(b.m, b.k, b.s, chains, rows, taps);
-        try round.execute(b.m, b.k, b.s, try round.prepare(b.m, b.s, chains, 0, rows, taps));
+        try b.decodeRoundMode(chains, rows, taps, false);
+    }
+
+    fn decodeRoundMode(b: *Backend, chains: []const round.Chain, rows: usize, taps: bool, lazy: bool) !void {
+        if (b.graphs) |*g| return g.forward(b.m, b.k, b.s, chains, rows, taps, lazy);
+        try round.execute(b.m, b.k, b.s, try round.prepareDecode(b.m, b.s, chains, rows, taps, lazy));
     }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, m: *Model, k: *Kernels, s: cuda.Stream) !Backend {
@@ -197,6 +212,7 @@ pub const Backend = struct {
             .drafts = if (drafting) @intCast(b.priced_width -| 1) else 0,
             .plain_guard = drafting,
             .protect_shared_streams = drafting,
+            .shared_block_streams = b.shared_block_streams,
             .window_costs = b.costs[0..b.priced_width],
             .window_costs_lone = drafting,
             .shared_costs = b.shared_costs[0..b.priced_width],
@@ -417,7 +433,7 @@ pub const Backend = struct {
         const l = try b.laneOf(s);
         const token = try b.feed(value);
         if (position != l.len + 1) return error.PositionMismatch;
-        try b.decode(&.{token}, l.len, false);
+        try b.decodeOne(&.{token}, l.len, false, !l.sampled and s.logprobs == null and s.grammar == null);
         l.len += 1;
         const h = b.next;
         try b.drawRows(l, b.m.s.logits, 1, position, b.handle());
@@ -430,6 +446,7 @@ pub const Backend = struct {
         var chains: [engine.max_slots]round.Chain = undefined;
         var rows: usize = 0;
         var taps = false;
+        var lazy = true;
         for (windows, chains[0..windows.len]) |w, *chain| {
             if (w.parents != null) return error.ChainsOnly;
             const l = try b.laneOf(w.stream);
@@ -449,8 +466,9 @@ pub const Backend = struct {
             chain.* = .{ .slot = b.m.slot, .position = l.base, .tokens = l.rows.items, .record = n > 1 };
             rows += n;
             taps = taps or b.m.capture_taps;
+            lazy = lazy and !l.sampled and w.masks.len == 0 and w.stream.logprobs == null and w.stream.grammar == null;
         }
-        try b.decodeRound(chains[0..windows.len], rows, taps);
+        try b.decodeRoundMode(chains[0..windows.len], rows, taps, lazy);
         const v: usize = b.m.w.c.text.unpadded_vocab;
         var row0: usize = 0;
         for (windows, chains[0..windows.len]) |w, chain| {

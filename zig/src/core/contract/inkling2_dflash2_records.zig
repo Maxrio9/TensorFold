@@ -23,6 +23,7 @@ pub const cuda = [_]registry.CudaRecord{
     kernel("tf_ink2_df_attn", 256, .{ 70, 70, 70, 54, 54 }, 48192),
     kernel("tf_ink2_df_conv", 256, .{ 25, 24, 24, 32, 32 }, 0),
     kernel("tf_ink2_df_select", 512, .{ 32, 34, 34, 28, 28 }, 64),
+    kernel("tf_ink2_df_select8", 512, .{ 24, 25, 40, 32, 32 }, 64),
 };
 
 pub const nvcc_134 = [_]registry.Override{
@@ -30,4 +31,5 @@ pub const nvcc_134 = [_]registry.Override{
     .{ .name = prefix ++ "tf_ink2_df_attn", .usage = usage(.{ 70, 70, 70, 53, 53 }, 48192, 256) },
     .{ .name = prefix ++ "tf_ink2_df_conv", .usage = usage(.{ 25, 24, 24, 32, 32 }, 0, 256) },
     .{ .name = prefix ++ "tf_ink2_df_select", .usage = usage(.{ 32, 34, 34, 26, 26 }, 64, 512) },
+    .{ .name = prefix ++ "tf_ink2_df_select8", .usage = usage(.{ 24, 25, 40, 30, 30 }, 64, 512) },
 };

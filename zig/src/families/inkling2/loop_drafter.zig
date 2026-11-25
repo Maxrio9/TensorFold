@@ -9,6 +9,8 @@ const dspark_weights = @import("dspark_weights.zig");
 const dflash = @import("dflash2_cuda.zig");
 const dflash_weights = @import("dflash2_weights.zig");
 const core = @import("core");
+const fp8 = @import("draft_fp8.zig");
+const lazy_head = @import("loop_lazy_head.zig");
 
 pub const Kind = enum {
     dspark,
@@ -32,18 +34,40 @@ pub const Kind = enum {
 pub const Source = struct {
     kind: Kind,
     path: []const u8,
+    owns_path: bool = false,
+
+    pub fn deinit(src: Source, a: std.mem.Allocator) void {
+        if (src.owns_path) a.free(src.path);
+    }
+
+    fn options(src: Source, borrow_head: bool) fp8.Options {
+        return fp8.Options.fromEnv(borrow_head, src.kind == .dflash2);
+    }
 
     pub fn checkpointBytes(src: Source, a: std.mem.Allocator, io: std.Io, c: *const config.Config) !usize {
+        const opts = src.options(lazy_head.enabled());
         return switch (src.kind) {
-            .dspark => dspark_weights.checkpointBytes(a, io, c, src.path),
-            .dflash2 => dflash_weights.checkpointBytes(a, io, src.path),
+            .dspark => dspark_weights.checkpointBytes(a, io, c, src.path, opts),
+            .dflash2 => dflash_weights.checkpointBytes(a, io, src.path, c.text.unpadded_vocab, opts),
         };
     }
 
-    pub fn load(src: Source, a: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, c: *const config.Config, ck: *core.Checkpoint) !Weights {
+    pub fn preparedHeadBytes(src: Source, c: *const config.Config) usize {
+        const opts = src.options(lazy_head.enabled());
+        const folded = if (src.kind == .dspark) dspark_weights.preparedHeadBytes(opts.head) else 0;
+        return folded + opts.baseBytes(c.text.unpadded_vocab, c.text.hidden);
+    }
+
+    pub fn load(src: Source, a: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, c: *const config.Config, ck: *core.Checkpoint, s: cuda.Stream, unembed: u64, borrowed_head: ?cuda.qmmf.Weight) !Weights {
+        std.debug.assert(s.d == d);
+        const opts = if (try d.currentCapability() >= 120) src.options(borrowed_head != null) else fp8.Options{};
+        const base: fp8.BaseHead = .{ .stream = s, .source = unembed, .borrowed = borrowed_head };
         return switch (src.kind) {
-            .dspark => .{ .dspark = try dspark_weights.load(a, io, d, c, src.path, try ck.expect("model.llm.unembed.weight", .bf16, &.{ c.text.vocab, c.text.hidden })) },
-            .dflash2 => .{ .dflash2 = try dflash_weights.load(a, io, d, src.path) },
+            .dspark => blk: {
+                const tensor = try ck.expect("model.llm.unembed.weight", .bf16, &.{ c.text.vocab, c.text.hidden });
+                break :blk .{ .dspark = try dspark_weights.load(a, io, c, src.path, tensor, opts, base) };
+            },
+            .dflash2 => .{ .dflash2 = try dflash_weights.load(a, io, src.path, c.text.unpadded_vocab, opts, base) },
         };
     }
 };

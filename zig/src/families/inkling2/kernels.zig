@@ -22,6 +22,7 @@ pub const prompt_threads = 256;
 pub const prompt_shared_fp8 = 2 * tile_keys * head_dim * 2;
 pub const prompt_shared = 3 * prompt_shared_fp8;
 pub const sliding_prompt_min_rows = 64;
+pub const prefetch_shared_fp8 = 2 * tile_keys * ((head_dim + 8) * 2 + head_dim + @sizeOf(f32));
 
 /// One stream's rows in a call (attention.cu's Seg): rows row0.. at positions p0.., its caches `off` elements in.
 pub const Seg = extern struct { row0: i32, n: i32, p0: i32, pad: i32 = 0, off: i64 };
@@ -100,6 +101,7 @@ pub const Kernels = struct {
     rel_table: cuda.Function,
     attn: cuda.Function,
     attn_fp8: cuda.Function,
+    attn_fp8_prefetch: ?cuda.Function = null,
     attn_fold: cuda.Function,
     attn_fold_fp8: cuda.Function,
     merge: cuda.Function,
@@ -123,7 +125,7 @@ pub const Kernels = struct {
             try pmod.function("tf_ink2_attn_slide_fp8"),
         } else null;
         if (attn_slide) |slide| try slide[0].allowDynamicShared(prompt_shared);
-        return .{
+        var k: Kernels = .{
             .mod = mod,
             .pmod = pmod,
             .attn_prompt = attn_prompt,
@@ -138,6 +140,14 @@ pub const Kernels = struct {
             .attn_fold_fp8 = try mod.function("tf_ink2_attn_fold_fp8"),
             .merge = try mod.function("tf_ink2_merge"),
         };
+        if (try @import("sys").environment.read(bool, "TF_INKLING2_ATTN_FP8_PREFETCH", true)) try k.enableFp8Prefetch();
+        return k;
+    }
+
+    pub fn enableFp8Prefetch(k: *Kernels) !void {
+        const f = try k.mod.function("tf_ink2_attn_fp8_prefetch");
+        try f.allowDynamicShared(prefetch_shared_fp8);
+        k.attn_fp8_prefetch = f;
     }
 
     pub fn unload(k: *Kernels) void {
@@ -163,6 +173,7 @@ pub const Rows = struct {
     last_pos: u32, // the call's latest row position (a global layer's chunks run to it)
     streams: u32 = 1, // segments in `segs`: one stream's prompt rows take the prompt kernel
     sliding_prompt: bool = false,
+    decode: bool = false,
 };
 
 fn int(x: anytype) c_int {
@@ -175,6 +186,13 @@ fn go(f: cuda.Function, s: cuda.Stream, grid: cuda.Dim3, threads: u32, a: *cuda.
 
 fn goShared(f: cuda.Function, s: cuda.Stream, grid: cuda.Dim3, threads: u32, shared: u32, a: *cuda.Args) !void {
     try cuda.launch.launch(f, .{ .grid = grid, .block = .{ .x = threads }, .shared = shared }, s, a);
+}
+
+fn chunkAttention(k: *const Kernels, s: cuda.Stream, r: Rows, kv: Cache, z: u32, a: *cuda.Args) !void {
+    const grid: cuda.Dim3 = .{ .x = r.n_tiles, .y = r.kv_heads, .z = z };
+    const prefetch = if (r.decode and kv.format == .fp8) k.attn_fp8_prefetch else null;
+    if (prefetch) |f| return goShared(f, s, grid, 128, prefetch_shared_fp8, a);
+    try go(if (kv.format == .fp8) k.attn_fp8 else k.attn, s, grid, 128, a);
 }
 
 /// q, rel (per head) and k, v (per key head, written to the caches at pos % ring) from the projections' rows.
@@ -221,7 +239,7 @@ pub fn attend(k: *const Kernels, s: cuda.Stream, r: Rows, l: Layer, stride: u32,
         for ([_]u32{ r.heads, r.kv_heads, l.ring, l.window, l.chunk, 0, stride }) |v| a.add(int(v));
         a.add(scale);
         a.add(int(0));
-        try go(if (kv.format == .fp8) k.attn_fp8 else k.attn, s, .{ .x = r.n_tiles, .y = r.kv_heads, .z = tileChunks(r.heads / r.kv_heads, l) }, 128, &a);
+        try chunkAttention(k, s, r, kv, tileChunks(r.heads / r.kv_heads, l), &a);
     } else if (split(r, stride, slots)) {
         // every sub-chunk of `stride` chunks (past the rows return at once), so graphs replay by stride
         per = subs;
@@ -229,7 +247,7 @@ pub fn attend(k: *const Kernels, s: cuda.Stream, r: Rows, l: Layer, stride: u32,
         for ([_]u32{ r.heads, r.kv_heads, l.ring, 0, l.chunk, 0, slots_rh }) |v| a.add(int(v));
         a.add(scale);
         a.add(int(1));
-        try go(if (kv.format == .fp8) k.attn_fp8 else k.attn, s, .{ .x = r.n_tiles, .y = r.kv_heads, .z = slots_rh }, 128, &a);
+        try chunkAttention(k, s, r, kv, slots_rh, &a);
     } else if (r.streams == 1) { // one stream's rows: 128 pairs a block share each K/V tile, the fold's bits
         var p: cuda.Args = .{};
         for ([_]u64{ q, kv.k, kv.v, tab, r.segs, part_o, part_ml }) |v| p.add(v);

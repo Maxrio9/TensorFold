@@ -1,9 +1,10 @@
-//! The public Inkling 2 Mini DFlash2 BF16 checkpoint and its exact device layout.
+//! Mini DFlash2 checkpoints in upstream BF16 or TensorFold's packed FP8G64 layout.
 const std = @import("std");
 const cuda = @import("cuda");
 const tensors = @import("core").safetensors;
 const config = @import("config.zig");
 const dspark = @import("dspark_weights.zig");
+const fp8 = @import("draft_fp8.zig");
 
 pub const hidden = 2304;
 pub const heads = 32;
@@ -58,7 +59,7 @@ const Config = struct {
         const d = c.dflash_config;
         const eql = std.mem.eql;
         if (!target.exl3 or target.text.hidden != hidden or target.text.vocab != vocab or
-            target.text.unpadded_vocab <= mask or !eql(u8, c.architectures[0], "DFlash2DraftModel") or
+            target.text.unpadded_vocab <= mask or target.text.unpadded_vocab > vocab or !eql(u8, c.architectures[0], "DFlash2DraftModel") or
             !eql(u8, c.model_type, "qwen3") or !eql(u8, c.dtype, "bfloat16") or !eql(u8, c.hidden_act, "silu") or
             c.hidden_size != hidden or c.intermediate_size != inter or c.num_hidden_layers != layers or
             c.num_attention_heads != heads or c.num_key_value_heads != kv_heads or c.head_dim != dim or
@@ -95,13 +96,13 @@ pub fn isDFlash2(a: std.mem.Allocator, io: std.Io, dir: []const u8, target: *con
     return true;
 }
 
-pub const Conv = struct { base: u64, projection: u64 };
+pub const Conv = struct { base: u64, projection: fp8.Matrix };
 
 pub const Layer = struct {
-    qkv: u64,
-    out: u64,
-    gate_up: u64,
-    down: u64,
+    qkv: fp8.Matrix,
+    out: fp8.Matrix,
+    gate_up: fp8.Matrix,
+    down: fp8.Matrix,
     input_norm: u64,
     post_norm: u64,
     q_norm: u64,
@@ -113,12 +114,14 @@ pub const Layer = struct {
 pub const Weights = struct {
     memory: cuda.DeviceBuffer,
     layer: [layers]Layer,
-    fuse: u64,
+    fuse: fp8.Matrix,
     fuse_norm: u64,
     norm: u64,
-    project: u64,
-    predecessor: u64,
-    successor: u64,
+    project: fp8.Matrix,
+    predecessor: fp8.Table,
+    successor: fp8.Table,
+    base: ?cuda.qmmf.Weight,
+    fp8_layers: bool,
 
     pub fn deinit(w: *Weights) void {
         w.memory.free();
@@ -127,21 +130,25 @@ pub const Weights = struct {
 
 const Reader = struct {
     file: *const tensors.File,
-    memory: ?cuda.DeviceBuffer,
-    used: usize = 0,
+    arena: fp8.Arena = .{},
+    options: fp8.Options,
+    packed_layers: bool,
+    selector_rows: usize,
     count: usize = 0,
 
-    fn put(r: *Reader, name: []const u8, shape: []const usize) !u64 {
+    fn tensor(r: *Reader, name: []const u8, shape: []const usize) ![]const u8 {
+        return r.typedTensor(name, .bf16, shape);
+    }
+
+    fn typedTensor(r: *Reader, name: []const u8, dtype: tensors.DType, shape: []const usize) ![]const u8 {
         const t = r.file.get(name) orelse return bad(name);
-        if (t.dtype != .bf16 or !std.mem.eql(usize, t.shape[0..t.rank], shape)) return bad(name);
-        const start = r.used;
-        r.used += t.bytes.len;
+        if (t.dtype != dtype or !std.mem.eql(usize, t.shape[0..t.rank], shape)) return bad(name);
         r.count += 1;
-        if (r.memory) |mem| {
-            try mem.upload(start, t.bytes);
-            return mem.ptr + start;
-        }
-        return start;
+        return t.bytes;
+    }
+
+    fn put(r: *Reader, name: []const u8, shape: []const usize) !u64 {
+        return r.arena.put(&.{try r.tensor(name, shape)});
     }
 
     fn bad(name: []const u8) error{MiniDFlash2Tensor} {
@@ -157,23 +164,55 @@ const Reader = struct {
     fn conv(r: *Reader, layer: usize, comptime prefix: []const u8) !Conv {
         return .{
             .base = try r.at(layer, prefix ++ ".base_kernel", &.{ 2, 2, hidden }),
-            .projection = try r.at(layer, prefix ++ ".kernel_projection.weight", &.{ 4 * groups, hidden }),
+            .projection = try r.matrix(layer, &.{prefix ++ ".kernel_projection.weight"}, .{4 * groups}, hidden),
         };
     }
 
-    fn read(r: *Reader) !Weights {
+    fn layerMatrix(r: *Reader, comptime count: usize, names: [count][]const u8, ns: [count]usize, k: usize) !fp8.Matrix {
+        var parts: [count][]const u8 = undefined;
+        if (r.packed_layers) {
+            var scales: [count][]const u8 = undefined;
+            for (names, ns, &parts, &scales) |name, n, *data, *scale| {
+                const padded = cuda.modelopt.padded(n);
+                if (count > 1 and padded != n) return bad(name);
+                const column_groups = k / cuda.qmmf.group;
+                const tiles = padded / 64;
+                data.* = try r.typedTensor(name, .f8_e4m3, &.{ tiles, column_groups, 8, 32, 16 });
+                var key: [128]u8 = undefined;
+                const scale_name = try std.fmt.bufPrint(&key, "{s}.tf_fp8g64_scale", .{name});
+                scale.* = try r.typedTensor(scale_name, .f32, &.{ tiles, column_groups, 64 });
+            }
+            return r.arena.packedMatrix(&parts, &scales);
+        }
+        for (names, ns, &parts) |name, n, *part| part.* = try r.tensor(name, &.{ n, k });
+        return r.arena.matrix(&parts, @reduce(.Add, @as(@Vector(count, usize), ns)), k, r.options.layers);
+    }
+
+    fn matrix(r: *Reader, layer: usize, comptime suffixes: []const []const u8, ns: [suffixes.len]usize, k: usize) !fp8.Matrix {
+        var storage: [suffixes.len][96]u8 = undefined;
+        var names: [suffixes.len][]const u8 = undefined;
+        inline for (suffixes, &storage, &names) |suffix, *name, *part| {
+            part.* = try std.fmt.bufPrint(name, "layers.{d}." ++ suffix, .{layer});
+        }
+        return r.layerMatrix(suffixes.len, names, ns, k);
+    }
+
+    fn codebook(r: *Reader, name: []const u8) !fp8.Table {
+        const bytes = try r.tensor(name, &.{ vocab, rank });
+        // The selector already bounds both the predecessor and candidate IDs by the real vocabulary.
+        return r.arena.table(bytes[0 .. r.selector_rows * rank * @sizeOf(u16)], r.selector_rows, rank, r.options.head);
+    }
+
+    fn read(r: *Reader, n_vocab: usize, base: ?fp8.BaseHead) !Weights {
         var ls: [layers]Layer = undefined;
         for (&ls, 0..) |*l, i| {
-            const qkv = try r.at(i, "self_attn.q_proj.weight", &.{ q, hidden });
-            _ = try r.at(i, "self_attn.k_proj.weight", &.{ kv, hidden });
-            _ = try r.at(i, "self_attn.v_proj.weight", &.{ kv, hidden });
-            const gate_up = try r.at(i, "mlp.gate_proj.weight", &.{ inter, hidden });
-            _ = try r.at(i, "mlp.up_proj.weight", &.{ inter, hidden });
+            const qkv = try r.matrix(i, &.{ "self_attn.q_proj.weight", "self_attn.k_proj.weight", "self_attn.v_proj.weight" }, .{ q, kv, kv }, hidden);
+            const gate_up = try r.matrix(i, &.{ "mlp.gate_proj.weight", "mlp.up_proj.weight" }, .{ inter, inter }, hidden);
             l.* = .{
                 .qkv = qkv,
-                .out = try r.at(i, "self_attn.o_proj.weight", &.{ hidden, q }),
+                .out = try r.matrix(i, &.{"self_attn.o_proj.weight"}, .{hidden}, q),
                 .gate_up = gate_up,
-                .down = try r.at(i, "mlp.down_proj.weight", &.{ hidden, inter }),
+                .down = try r.matrix(i, &.{"mlp.down_proj.weight"}, .{hidden}, inter),
                 .input_norm = try r.at(i, "input_layernorm.weight", &.{hidden}),
                 .post_norm = try r.at(i, "post_attention_layernorm.weight", &.{hidden}),
                 .q_norm = try r.at(i, "self_attn.q_norm.weight", &.{dim}),
@@ -183,14 +222,16 @@ const Reader = struct {
             };
         }
         const out: Weights = .{
-            .memory = r.memory orelse undefined,
+            .memory = r.arena.memory orelse undefined,
             .layer = ls,
-            .fuse = try r.put("fc.weight", &.{ hidden, dspark.taps.len * hidden }),
+            .fuse = try r.layerMatrix(1, .{"fc.weight"}, .{hidden}, dspark.taps.len * hidden),
             .fuse_norm = try r.put("hidden_norm.weight", &.{hidden}),
             .norm = try r.put("norm.weight", &.{hidden}),
-            .project = try r.put("candidate_selector.hidden_projection.weight", &.{ rank, hidden }),
-            .predecessor = try r.put("candidate_selector.predecessor_codebook", &.{ vocab, rank }),
-            .successor = try r.put("candidate_selector.successor_codebook", &.{ vocab, rank }),
+            .project = try r.arena.matrix(&.{try r.tensor("candidate_selector.hidden_projection.weight", &.{ rank, hidden })}, rank, hidden, r.options.head),
+            .predecessor = try r.codebook("candidate_selector.predecessor_codebook"),
+            .successor = try r.codebook("candidate_selector.successor_codebook"),
+            .base = try r.arena.base(r.options, base, n_vocab, hidden),
+            .fp8_layers = r.packed_layers or r.options.layers,
         };
         if (r.file.names.count() != r.count) return error.MiniDFlash2Tensor;
         return out;
@@ -203,25 +244,46 @@ fn open(a: std.mem.Allocator, io: std.Io, dir: []const u8) !tensors.File {
     return tensors.File.open(a, io, path);
 }
 
-fn size(file: *const tensors.File) !usize {
-    var r: Reader = .{ .file = file, .memory = null };
-    _ = try r.read();
-    return r.used;
+fn selectorRows(n_vocab: usize) usize {
+    return if (@import("sys").environment.read(bool, "TF_INKLING2_DFLASH2_TRIM_SELECTOR", true) catch true) n_vocab else vocab;
 }
 
-pub fn checkpointBytes(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
-    var file = try open(a, io, dir);
-    defer file.close(io);
-    return size(&file);
+fn packedLayers(file: *const tensors.File) bool {
+    const t = file.get("fc.weight") orelse return false;
+    return t.dtype == .f8_e4m3;
 }
 
-pub fn load(a: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, dir: []const u8) !Weights {
+fn size(file: *const tensors.File, n_vocab: usize, options: fp8.Options, selector_rows: usize) !usize {
+    var r: Reader = .{ .file = file, .options = options, .packed_layers = packedLayers(file), .selector_rows = selector_rows };
+    _ = try r.read(n_vocab, null);
+    return r.arena.used;
+}
+
+pub fn checkpointBytes(a: std.mem.Allocator, io: std.Io, dir: []const u8, n_vocab: usize, options: fp8.Options) !usize {
     var file = try open(a, io, dir);
     defer file.close(io);
-    var mem = try cuda.DeviceBuffer.alloc(d, try size(&file));
+    return size(&file, n_vocab, options, selectorRows(n_vocab));
+}
+
+pub fn load(a: std.mem.Allocator, io: std.Io, dir: []const u8, n_vocab: usize, options: fp8.Options, base: fp8.BaseHead) !Weights {
+    var file = try open(a, io, dir);
+    defer file.close(io);
+    const d = base.stream.d;
+    const selector_rows = selectorRows(n_vocab);
+    const packed_layers = packedLayers(&file);
+    var mem = try cuda.DeviceBuffer.alloc(d, try size(&file, n_vocab, options, selector_rows));
     errdefer mem.free();
-    var r: Reader = .{ .file = &file, .memory = mem };
-    return r.read();
+    const stage = @max(if (options.layers and !packed_layers) @as(usize, 2 * 2 * inter * hidden) else 0, if (options.head) selector_rows * rank * 2 else 0);
+    var p = if (stage != 0) try fp8.Packer.init(d, base.stream, stage) else null;
+    defer if (p) |*packer| packer.deinit();
+    var r: Reader = .{
+        .file = &file,
+        .arena = .{ .memory = mem, .packer = if (p) |*packer| packer else null },
+        .options = options,
+        .packed_layers = packed_layers,
+        .selector_rows = selector_rows,
+    };
+    return r.read(n_vocab, base);
 }
 
 test "explicit draft directory releases its config on fallback and refusal" {

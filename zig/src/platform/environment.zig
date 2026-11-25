@@ -53,6 +53,15 @@ pub const rules = [_]Rule{
     .{ .name = "TF_QWEN35_ATTN_ALL_ROWS", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (default 0; 1 runs exact all-length BF16 rows for multi-row Qwen decode windows)" },
     .{ .name = "TF_STARTUP_RECEIPT", .scope = .common, .kind = .flag, .forms = "0 or 1 (opt-in startup and first completion receipts)" },
     .{ .name = "TF_SHARED_PRICE_LOG", .scope = .common, .kind = .flag, .forms = "0 or 1 (1 logs the shared plain price, a line a round)" },
+    .{ .name = "TF_INKLING2_TOPK_WARP", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 uses the Mini warp router)" },
+    .{ .name = "TF_INKLING2_LAZY_HEAD", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 prunes certified losers in Mini greedy decode)" },
+    .{ .name = "TF_INKLING2_ATTN_FP8_PREFETCH", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 prefetches Mini FP8 KV in decode)" },
+    .{ .name = "TF_INKLING2_VERIFY_GRAPHS", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 gives Mini shared verify its own graph cache)" },
+    .{ .name = "TF_INKLING2_DRAFT_FP8_LAYERS", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (FP8 Mini draft projections; default 1 for DFlash2 on Blackwell)" },
+    .{ .name = "TF_INKLING2_DRAFT_FP8_HEAD", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (FP8 Mini draft head weights; default 1 for DFlash2 on Blackwell)" },
+    .{ .name = "TF_INKLING2_DFLASH2_DIR", .scope = .cuda, .kind = .path, .forms = "a local Mini DFlash2 checkpoint directory" },
+    .{ .name = "TF_INKLING2_DFLASH2_TRIM_SELECTOR", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (default 1 stores only Mini's real tokenizer rows in both DFlash2 selector codebooks)" },
+    .{ .name = "TF_INKLING2_DFLASH2_SHARED", .scope = .cuda, .kind = .u32, .only = &.{ 0, 2, 4 }, .forms = "0, 2 or 4 (maximum active streams for Mini DFlash2 shared pricing; default 4 on GB10, 2 elsewhere)" },
     .{ .name = "TENSORFOLD_DEVICE_CHECK", .scope = .common, .kind = .flag, .forms = "0 or 1 (0 skips serve's device-profile check; default 1)" },
     .{ .name = "TENSORFOLD_VIDEO_TOKENS", .scope = .common, .kind = .u64, .forms = "a nonnegative whole video-token budget (default 16384; unsigned 64-bit count)" },
     .{ .name = "TENSORFOLD_MAX_PDF_PAGES", .scope = .common, .kind = .positive, .forms = "a whole number from 1 to 4294967295 (capped by --vision-max-images)" },
@@ -77,7 +86,6 @@ pub const rules = [_]Rule{
     .{ .name = "TF_QMMF_HALF_BELOW", .scope = .cuda, .kind = .size, .forms = "a whole nonnegative native-size block count (0 disables half tiles)" },
     .{ .name = "TF_QMMF_HALF_BN", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (1 adds FP4, FP8 and FP8G half tiles below two blocks an SM; default 0)" },
     .{ .name = "TF_HY4_MEM_FLOOR_GIB", .scope = .cuda, .kind = .size, .forms = "whole GiB of MemAvailable below which the Hy4-flash CUDA loader stops (default 10)" },
-    // Qwen 3.5 CUDA and HIP settings, read through this table:
     .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .scope = .cuda, .kind = .real, .forms = "a finite GiB amount (the HIP admission's floor and the memory's size still bound it)" },
     .{ .name = "TENSORFOLD_HIP_MEMORY_LIMIT_GB", .scope = .cuda, .kind = .real, .forms = "a finite GiB amount (the HIP admission still fits its byte count in a 64-bit size)" },
     .{ .name = "TF_QWEN_KEEP_LATE", .scope = .cuda, .kind = .flag, .forms = "0 or 1 (default 0)" },
@@ -441,7 +449,6 @@ pub fn rawText(name: [:0]const u8) ?[]const u8 {
     return sys.getenv(name);
 }
 
-/// A direct family/tool entry point gets the same refusal even when it has no server problem buffer.
 fn checked(name: [:0]const u8, raw: ?[]const u8) Error!?u64 {
     return parse(name, raw) catch {
         if (!@import("builtin").is_test) if (rule(name).kind == .path) std.log.err("{s}: expected {s}", .{ name, rule(name).forms }) else std.log.err("{s}=\"{f}\": expected {s}", .{ name, std.zig.fmtString(raw.?), rule(name).forms });

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cuda_bf16.h>
 
+#include "common/cp_async.cuh"
 #include "common/qmm_frag.cuh"
 #include "kv_fp8.cuh"
 
@@ -154,14 +155,49 @@ __device__ __forceinline__ float scaled(float o, float a, float p, float b) {
     return __fadd_rn(__fmul_rn(o, a), __fmul_rn(p, b));
 }
 
+// FP8 prefetch adapted from MiaAI-Lab's Mini patch 0011. Copyright 2026 MiaAI-Lab.
+struct alignas(16) Fp8Tile {
+    uint8_t k[kKeys * kDim], v[kKeys * kDim];
+    float k_scale[kKeys], v_scale[kKeys];
+};
+
+__device__ __forceinline__ void prefetchFp8(Fp8Tile& tile, const uint8_t* kc, const uint8_t* vc,
+                                          size_t head_base, size_t scales, size_t head_row,
+                                          int ring, int kt, int lo, int hi) {
+    // The ring is a multiple of kKeys, so the aligned tile never wraps within a copy.
+    const size_t slot0 = kt % ring;
+    const size_t src = head_base + slot0 * kDim;
+    for (int col = threadIdx.x * 16; col < kKeys * kDim; col += 128 * 16) {
+        const int pos = kt + col / kDim;
+        const bool live = pos >= lo && pos <= hi;
+        tf_common::cp16z(tile.k + col, kc + src + col, live);
+        tf_common::cp16z(tile.v + col, vc + src + col, live);
+    }
+    if (threadIdx.x < 2 * (kKeys / 4)) {
+        const bool is_key = threadIdx.x < kKeys / 4;
+        const int key = (threadIdx.x % (kKeys / 4)) * 4;
+        const float* scale = reinterpret_cast<const float*>((is_key ? kc : vc) + scales);
+        scale += head_row + slot0 + key;
+        float* dest = (is_key ? tile.k_scale : tile.v_scale) + key;
+        const int pos = kt + key;
+        if (pos >= lo && pos + 3 <= hi) {
+            tf_common::cp16(dest, scale);
+        } else {
+            for (int i = 0; i < 4; ++i) dest[i] = pos + i >= lo && pos + i <= hi ? scale[i] : 0.0f;
+        }
+    }
+    tf_common::cp_commit();
+}
+
 // 64 (row, head) pairs of a key head over a block's keys (FOLD: a global chunk, split: a sub-chunk, else a chunk).
-template <bool FOLD, typename Cache>
+template <bool FOLD, bool PREFETCH = false, typename Cache>
 __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const Cache* __restrict__ kc,
                                          const Cache* __restrict__ vc, const uint16_t* __restrict__ tab,
                                          const Seg* __restrict__ segs, const int2* __restrict__ tiles,
                                          float* __restrict__ part_o, float2* __restrict__ part_ml, int heads,
                                          int kv_heads, int ring, int window, int chunk, int c0, int chunks,
-                                         float scale, int split, uint16_t* ks, uint16_t* vs) {
+                                         float scale, int split, uint16_t* ks, uint16_t* vs, Fp8Tile* input = nullptr) {
+    static_assert(!PREFETCH || (!FOLD && sizeof(Cache) == 1));
     const int2 tile = tiles[blockIdx.x];
     const Seg s = segs[tile.x];
     const int group = heads / kv_heads;
@@ -209,7 +245,8 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
     float M[2] = {-INFINITY, -INFINITY}, L[2] = {0.0f, 0.0f};
     if (FOLD)
         for (int n = 0; n < 16; ++n) O[n][0] = O[n][1] = O[n][2] = O[n][3] = 0.0f;
-    const size_t head_base = s.off + static_cast<size_t>(kvh) * ring * kDim;
+    const size_t head_row = static_cast<size_t>(kvh) * ring;
+    const size_t head_base = s.off + head_row * kDim;
     const size_t scales = s.off + static_cast<size_t>(kv_heads) * ring * kDim;
     const int step = FOLD ? kSub : b_hi - b_lo + 1;
     for (int s_lo = b_lo; s_lo <= b_hi && s_lo <= tile_hi; s_lo += step) {
@@ -218,17 +255,23 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
         m[0] = m[1] = -INFINITY;
         l[0] = l[1] = 0.0f;
         const int k_lo = max(s_lo, tile_lo), k_hi = min(s_hi, tile_hi);
-        for (int kt = k_lo & ~(kKeys - 1); kt <= k_hi; kt += kKeys) {
+        const int first = k_lo & ~(kKeys - 1);
+        if constexpr (PREFETCH) prefetchFp8(*input, kc, vc, head_base, scales, head_row, ring, first, k_lo, k_hi);
+        for (int kt = first; kt <= k_hi; kt += kKeys) {
+            if constexpr (PREFETCH) tf_common::cp_wait<0>();
             __syncthreads();
             const size_t slot0 = static_cast<size_t>(kt % ring);
             for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += 128) {
                 const int key = e >> 4, col = (e & 15) * 8;
                 const int kp = kt + key;
                 uint4 kv = make_uint4(0, 0, 0, 0), vv = make_uint4(0, 0, 0, 0);
-                if (kp >= k_lo && kp <= k_hi) {
+                if constexpr (PREFETCH) {
+                    kv = tf_kv_fp8::bf16x8(input->k + key * kDim + col, input->k_scale[key]);
+                    vv = tf_kv_fp8::bf16x8(input->v + key * kDim + col, input->v_scale[key]);
+                } else if (kp >= k_lo && kp <= k_hi) {
                     const size_t at = head_base + (slot0 + key) * kDim + col;
                     if constexpr (sizeof(Cache) == 1) {
-                        const size_t row = static_cast<size_t>(kvh) * ring + slot0 + key;
+                        const size_t row = head_row + slot0 + key;
                         kv = tf_kv_fp8::bf16x8(kc + at, reinterpret_cast<const float*>(kc + scales)[row]);
                         vv = tf_kv_fp8::bf16x8(vc + at, reinterpret_cast<const float*>(vc + scales)[row]);
                     } else {
@@ -240,6 +283,11 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
                 *reinterpret_cast<uint4*>(vs + key * kPad + col) = vv;
             }
             __syncthreads();
+            if constexpr (PREFETCH) {
+                // The current FP8 tile is fully expanded. Reuse its staging bytes while the BF16 MMAs run.
+                if (kt + kKeys <= k_hi)
+                    prefetchFp8(*input, kc, vc, head_base, scales, head_row, ring, kt + kKeys, k_lo, k_hi);
+            }
             if (!busy) continue;
             float sc[8][4];
             for (int j = 0; j < 8; ++j) {
@@ -369,6 +417,21 @@ extern "C" __global__ void __launch_bounds__(128)
     __shared__ __align__(16) uint16_t vs[kKeys * kPad];
     attnTile<false>(q, kc, vc, tab, segs, tiles, part_o, part_ml, heads, kv_heads, ring, window, chunk, c0, chunks,
                     scale, split, ks, vs);
+}
+
+extern "C" __global__ void __launch_bounds__(128)
+    tf_ink2_attn_fp8_prefetch(const uint16_t* __restrict__ q, const uint8_t* __restrict__ kc,
+                            const uint8_t* __restrict__ vc, const uint16_t* __restrict__ tab,
+                            const Seg* __restrict__ segs, const int2* __restrict__ tiles, float* __restrict__ part_o,
+                            float2* __restrict__ part_ml, int heads, int kv_heads, int ring, int window,
+                            int chunk, int c0, int chunks, float scale, int split) {
+    using namespace ink2;
+    extern __shared__ __align__(16) uint16_t scratch[];
+    uint16_t* ks = scratch;
+    uint16_t* vs = ks + kKeys * kPad;
+    auto* stage = reinterpret_cast<Fp8Tile*>(vs + kKeys * kPad);
+    attnTile<false, true>(q, kc, vc, tab, segs, tiles, part_o, part_ml, heads, kv_heads, ring, window, chunk, c0,
+                         chunks, scale, split, ks, vs, stage);
 }
 
 extern "C" __global__ void __launch_bounds__(128)

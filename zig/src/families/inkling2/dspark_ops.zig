@@ -1,6 +1,7 @@
 //! The DSpark drafter's kernels (inkling2/dspark.cu): tap mix, norms, q/k prep, block attention, the Markov head.
 const std = @import("std");
 const cuda = @import("cuda");
+const fp8 = @import("draft_fp8.zig");
 
 /// Keys a block attention chunk covers (absolute positions, so a row's bits never depend on the call).
 pub const chunk = 1024;
@@ -218,6 +219,16 @@ pub fn vocab(k: *const Kernels, s: cuda.Stream, base: u64, latent: u64, fold: u6
     a.add(int(nv));
     a.add(out);
     try go(k.vocab, s, .{ .x = @intCast((nv + 7) / 8) }, 256, &a);
+}
+
+pub fn vocab8(f: cuda.Function, s: cuda.Stream, base: u64, latent: u64, fold: fp8.Table, fbias: u64, cap: f32, valid: usize, nv: usize, out: u64) !void {
+    var a: cuda.Args = .{};
+    for ([_]u64{ base, latent, fold.data, fold.scales, fbias }) |v| a.add(v);
+    a.add(cap);
+    a.add(int(valid));
+    a.add(int(nv));
+    a.add(out);
+    try go(f, s, .{ .x = @intCast((nv + 7) / 8) }, 256, &a);
 }
 
 /// Every rank's (value, id), 16 bytes a rank, into walk[j + 1]: one warp, as MiniMax M3 launches the shared merge.

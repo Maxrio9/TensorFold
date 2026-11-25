@@ -5,6 +5,7 @@ const core = @import("core");
 const config = @import("config.zig");
 const names = @import("names.zig");
 const fold = @import("metal/dspark_fold.zig");
+const fp8 = @import("draft_fp8.zig");
 
 pub const hidden = fold.hidden;
 pub const vocab = fold.vocabulary;
@@ -16,6 +17,10 @@ pub const block = 8;
 pub const prepared_head_bytes = vocab * (rank + 1) * 2;
 pub const taps = [_]u32{ 5, 23, 41, 48 };
 
+pub fn preparedHeadBytes(quantized: bool) usize {
+    return if (quantized) vocab * (rank + 4 + 2) else prepared_head_bytes;
+}
+
 const Layer = struct {
     dflare: u64,
     input_norm: u64,
@@ -23,11 +28,11 @@ const Layer = struct {
     q_norm: u64,
     k_norm: u64,
     ctx_norm: u64,
-    qkv: u64,
-    ctx_kv: u64,
-    out: u64,
-    gate_up: u64,
-    down: u64,
+    qkv: fp8.Matrix,
+    ctx_kv: fp8.Matrix,
+    out: fp8.Matrix,
+    gate_up: fp8.Matrix,
+    down: fp8.Matrix,
 };
 
 pub const Weights = struct {
@@ -40,8 +45,10 @@ pub const Weights = struct {
     markov_w1: u64,
     rnn: u64,
     rnn_bias: u64,
-    phi: u64,
+    phi: fp8.Table,
     beta: u64,
+    base: ?cuda.qmmf.Weight,
+    fp8_layers: bool,
 
     pub fn deinit(w: *Weights) void {
         w.memory.free();
@@ -59,34 +66,83 @@ fn admit(c: *const config.Config) !void {
 
 const Upload = struct {
     file: *const core.safetensors.File,
-    memory: cuda.DeviceBuffer,
-    offset: usize = 0,
-
-    fn bytes(u: *Upload, sources: []const []const u8) !u64 {
-        u.offset = std.mem.alignForward(usize, u.offset, 16);
-        const ptr = u.memory.ptr + u.offset;
-        for (sources) |source| {
-            try u.memory.upload(u.offset, source);
-            u.offset += source.len;
-        }
-        return ptr;
-    }
+    arena: fp8.Arena = .{},
+    options: fp8.Options,
 
     fn get(u: *Upload, name: []const u8) core.safetensors.Tensor {
         return u.file.get(name).?; // names.check validated all of these tensors and their shapes before upload
     }
 
     fn one(u: *Upload, name: []const u8) !u64 {
-        return u.bytes(&.{u.get(name).bytes});
+        return u.arena.put(&.{u.get(name).bytes});
     }
 
-    fn joined(u: *Upload, i: usize, comptime suffixes: []const []const u8) !u64 {
-        var parts: [suffixes.len][]const u8 = undefined;
-        inline for (suffixes, &parts) |suffix, *part| {
+    fn parts(u: *Upload, i: usize, comptime suffixes: []const []const u8) ![suffixes.len][]const u8 {
+        var result: [suffixes.len][]const u8 = undefined;
+        inline for (suffixes, &result) |suffix, *part| {
             var name: [128]u8 = undefined;
             part.* = u.get(try std.fmt.bufPrint(&name, "layers.{d}." ++ suffix ++ ".weight", .{i})).bytes;
         }
-        return u.bytes(&parts);
+        return result;
+    }
+
+    fn joined(u: *Upload, i: usize, comptime suffixes: []const []const u8) !u64 {
+        return u.arena.put(&(try u.parts(i, suffixes)));
+    }
+
+    fn matrix(u: *Upload, i: usize, comptime suffixes: []const []const u8, n: usize, k: usize) !fp8.Matrix {
+        return u.arena.matrix(&(try u.parts(i, suffixes)), n, k, u.options.layers);
+    }
+
+    fn read(u: *Upload, gpa: std.mem.Allocator, n_vocab: usize, unembed: ?core.safetensors.Tensor, base: ?fp8.BaseHead) !Weights {
+        var layers: [3]Layer = undefined;
+        for (&layers, 0..) |*l, i| l.* = .{
+            .dflare = try u.joined(i, &.{"dflare_norm"}),
+            .input_norm = try u.joined(i, &.{"input_layernorm"}),
+            .post_norm = try u.joined(i, &.{"post_attention_layernorm"}),
+            .q_norm = try u.joined(i, &.{"self_attn.q_norm"}),
+            .k_norm = try u.joined(i, &.{"self_attn.k_norm"}),
+            .ctx_norm = try u.joined(i, &.{"self_attn.k_norm_ctx"}),
+            .qkv = try u.matrix(i, &.{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj" }, q + 2 * kv, hidden),
+            .ctx_kv = try u.matrix(i, &.{ "self_attn.k_proj_ctx", "self_attn.v_proj_ctx" }, 2 * kv, hidden),
+            .out = try u.matrix(i, &.{"self_attn.o_proj"}, hidden, q),
+            .gate_up = try u.matrix(i, &.{ "mlp.gate_proj", "mlp.up_proj" }, 2 * inter, hidden),
+            .down = try u.matrix(i, &.{"mlp.down_proj"}, hidden, inter),
+        };
+        const alpha = if (unembed != null) coefficients(u.get("fuse_weight")) else @as([16]f32, @splat(0));
+        var out: Weights = .{
+            .memory = u.arena.memory orelse undefined,
+            .layers = layers,
+            .alpha = try u.arena.put(&.{std.mem.asBytes(&alpha)}),
+            .mask = try u.one("mask_embed"),
+            .norm = try u.one("norm.weight"),
+            .markov_norm = try u.one("markov_head.dflare_norm.weight"),
+            .markov_w1 = try u.one("markov_head.markov_w1.weight"),
+            .rnn = try u.one("markov_head.rnn_proj.weight"),
+            .rnn_bias = try u.one("markov_head.rnn_proj.bias"),
+            .phi = undefined,
+            .beta = undefined,
+            .base = undefined,
+            .fp8_layers = u.options.layers,
+        };
+        try u.foldHead(gpa, unembed, &out);
+        out.base = try u.arena.base(u.options, base, n_vocab, hidden);
+        return out;
+    }
+
+    fn foldHead(u: *Upload, gpa: std.mem.Allocator, unembed: ?core.safetensors.Tensor, w: *Weights) !void {
+        if (unembed) |head| {
+            const phi = try gpa.alloc(u16, vocab * rank);
+            defer gpa.free(phi);
+            const beta = try gpa.alloc(u16, vocab);
+            defer gpa.free(beta);
+            try fold.fold(gpa, bf16(head), bf16(u.get("markov_head.hidden_out.weight")), bf16(u.get("markov_head.hidden_out.bias")), phi, beta);
+            w.phi = try u.arena.table(std.mem.sliceAsBytes(phi), vocab, rank, u.options.head);
+            w.beta = (try u.arena.table(std.mem.sliceAsBytes(beta), vocab, 1, false)).data;
+        } else {
+            w.phi = try u.arena.table(null, vocab, rank, u.options.head);
+            w.beta = (try u.arena.table(null, vocab, 1, false)).data;
+        }
     }
 };
 
@@ -112,11 +168,11 @@ fn coefficients(t: core.safetensors.Tensor) [16]f32 {
     return a;
 }
 
-pub fn checkpointBytes(gpa: std.mem.Allocator, io: std.Io, c: *const config.Config, dir: []const u8) !usize {
+pub fn checkpointBytes(gpa: std.mem.Allocator, io: std.Io, c: *const config.Config, dir: []const u8, options: fp8.Options) !usize {
     try admit(c);
     var source = try openSource(gpa, io, dir);
     defer source.close(io);
-    return arenaBytes(gpa, c, source.names);
+    return arenaBytes(gpa, c, &source, options);
 }
 
 fn openSource(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !core.safetensors.File {
@@ -130,7 +186,8 @@ fn openSource(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !core.safeten
     };
 }
 
-fn arenaBytes(gpa: std.mem.Allocator, c: *const config.Config, header: core.safetensors.Header) !usize {
+fn arenaBytes(gpa: std.mem.Allocator, c: *const config.Config, file: *const core.safetensors.File, options: fp8.Options) !usize {
+    const header = file.names;
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     const validation = try names.check(arena.allocator(), c, header, .mtp);
@@ -141,6 +198,12 @@ fn arenaBytes(gpa: std.mem.Allocator, c: *const config.Config, header: core.safe
         return error.Inkling2DraftTensors;
     }
 
+    if (options.active()) {
+        var u: Upload = .{ .file = file, .options = options };
+        _ = try u.read(gpa, c.text.unpadded_vocab, null, null);
+        return u.arena.used;
+    }
+
     var stored: usize = 0;
     for (header.values()) |entry| stored += entry.end - entry.begin;
     return stored + validation.expected * 16 + prepared_head_bytes;
@@ -149,49 +212,25 @@ fn arenaBytes(gpa: std.mem.Allocator, c: *const config.Config, header: core.safe
 pub fn load(
     gpa: std.mem.Allocator,
     io: std.Io,
-    d: *const cuda.Driver,
     c: *const config.Config,
     dir: []const u8,
     unembed: core.safetensors.Tensor,
+    options: fp8.Options,
+    base: fp8.BaseHead,
 ) !Weights {
     try admit(c);
     var source = try openSource(gpa, io, dir);
     defer source.close(io);
-    var memory = try cuda.DeviceBuffer.alloc(d, try arenaBytes(gpa, c, source.names));
+    const d = base.stream.d;
+    var memory = try cuda.DeviceBuffer.alloc(d, try arenaBytes(gpa, c, &source, options));
     errdefer memory.free();
-    var u: Upload = .{ .file = &source, .memory = memory };
-    var layers: [3]Layer = undefined;
-    for (&layers, 0..) |*l, i| l.* = .{
-        .dflare = try u.joined(i, &.{"dflare_norm"}),
-        .input_norm = try u.joined(i, &.{"input_layernorm"}),
-        .post_norm = try u.joined(i, &.{"post_attention_layernorm"}),
-        .q_norm = try u.joined(i, &.{"self_attn.q_norm"}),
-        .k_norm = try u.joined(i, &.{"self_attn.k_norm"}),
-        .ctx_norm = try u.joined(i, &.{"self_attn.k_norm_ctx"}),
-        .qkv = try u.joined(i, &.{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj" }),
-        .ctx_kv = try u.joined(i, &.{ "self_attn.k_proj_ctx", "self_attn.v_proj_ctx" }),
-        .out = try u.joined(i, &.{"self_attn.o_proj"}),
-        .gate_up = try u.joined(i, &.{ "mlp.gate_proj", "mlp.up_proj" }),
-        .down = try u.joined(i, &.{"mlp.down_proj"}),
+    const stage = @max(if (options.layers) @as(usize, 2 * 2 * inter * hidden) else 0, if (options.head) @as(usize, vocab * rank * 2) else 0);
+    var p = if (options.active()) try fp8.Packer.init(d, base.stream, stage) else null;
+    defer if (p) |*packer| packer.deinit();
+    var u: Upload = .{
+        .file = &source,
+        .arena = .{ .memory = memory, .packer = if (p) |*packer| packer else null },
+        .options = options,
     };
-
-    const phi = try gpa.alloc(u16, vocab * rank);
-    defer gpa.free(phi);
-    const beta = try gpa.alloc(u16, vocab);
-    defer gpa.free(beta);
-    try fold.fold(gpa, bf16(unembed), bf16(u.get("markov_head.hidden_out.weight")), bf16(u.get("markov_head.hidden_out.bias")), phi, beta);
-    const alpha = coefficients(u.get("fuse_weight"));
-    return .{
-        .memory = memory,
-        .layers = layers,
-        .alpha = try u.bytes(&.{std.mem.asBytes(&alpha)}),
-        .mask = try u.one("mask_embed"),
-        .norm = try u.one("norm.weight"),
-        .markov_norm = try u.one("markov_head.dflare_norm.weight"),
-        .markov_w1 = try u.one("markov_head.markov_w1.weight"),
-        .rnn = try u.one("markov_head.rnn_proj.weight"),
-        .rnn_bias = try u.one("markov_head.rnn_proj.bias"),
-        .phi = try u.bytes(&.{std.mem.sliceAsBytes(phi)}),
-        .beta = try u.bytes(&.{std.mem.sliceAsBytes(beta)}),
-    };
+    return u.read(gpa, c.text.unpadded_vocab, unembed, base);
 }
