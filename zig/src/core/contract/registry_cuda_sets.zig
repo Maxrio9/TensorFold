@@ -109,7 +109,7 @@ pub const cuda_sets = [_]CudaSet{
     .{ .release = .{ .major = 13, .minor = 3 }, .usage = &([_]Override{
         .{ .name = "flashnext_batch fn_qsa_select", .usage = .{ .{ .regs = 32, .static = 1168, .bound = 1024 }, .{ .regs = 52, .static = 1168, .bound = 1024 }, .{ .regs = 52, .static = 1168, .bound = 1024 }, .{ .regs = 63, .static = 1168, .bound = 1024 }, .{ .regs = 63, .static = 1168, .bound = 1024 } } },
     } ++ joins.nvcc_133_after) },
-    .{ .release = .{ .major = 13, .minor = 4 }, .usage = &.{
+    .{ .release = .{ .major = 13, .minor = 4 }, .usage = &([_]Override{
         .{ .name = "inkling2_loop_math tf_ink2_loop_gate_down_prepared", .usage = .{ .{ .regs = 22, .static = 256, .bound = 256 }, .{ .regs = 22, .static = 256, .bound = 256 }, .{ .regs = 22, .static = 256, .bound = 256 }, .{ .regs = 26, .static = 256, .bound = 256 }, .{ .regs = 26, .static = 256, .bound = 256 } } },
-    } },
+    } ++ @import("inkling2_attn_records.zig").cuda_134 ++ @import("inkling2_ops_records.zig").cuda_134) },
 };

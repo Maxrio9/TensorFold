@@ -33,9 +33,11 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_df_conv(
 }
 
 // Score just the current predecessor's edges. A warp evaluates one of the top-16 candidates.
-extern "C" __global__ void __launch_bounds__(512) tf_ink2_df_select(
+template <typename Book>
+__device__ __forceinline__ void ink2DfSelect(
     const unsigned* __restrict__ top, const uint16_t* __restrict__ projected,
-    const uint16_t* __restrict__ predecessor, const uint16_t* __restrict__ successor,
+    const Book* __restrict__ predecessor, const Book* __restrict__ successor,
+    const float* __restrict__ prev_scales, const float* __restrict__ next_scales,
     unsigned* __restrict__ walk, long long* __restrict__ ids, uint16_t* __restrict__ logits,
     int step, int vocab, float cap) {
     using namespace ink2d;
@@ -48,10 +50,15 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_df_select(
     float score = -INFINITY;
     if (id < vocab && parent < vocab) {
         float correction = 0;
+        const float ps = sizeof(Book) == 1 ? prev_scales[parent] : 1.0f;
+        const float ss = sizeof(Book) == 1 ? next_scales[id] : 1.0f;
         for (int j = lane; j < kRank; j += 32) {
-            const float p = bf(predecessor[static_cast<size_t>(parent) * kRank + j]);
+            const Book a = predecessor[static_cast<size_t>(parent) * kRank + j];
+            const Book b = successor[static_cast<size_t>(id) * kRank + j];
+            const float p = sizeof(Book) == 1 ? bfr(fp8Value(a) * ps) : bf(a);
+            const float q = sizeof(Book) == 1 ? bfr(fp8Value(b) * ss) : bf(b);
             const float h = bf(projected[step * kRank + j]);
-            correction += bfr(p * h) * bf(successor[static_cast<size_t>(id) * kRank + j]);
+            correction += bfr(p * h) * q;
         }
         correction = tf_common::warp_sum(correction);
         const float unary = __uint_as_float(entries[2 + kLogprobTop + candidate]);
@@ -70,4 +77,21 @@ extern "C" __global__ void __launch_bounds__(512) tf_ink2_df_select(
             if (scores[i] > scores[best]) best = i;
         walk[step + 1] = isfinite(scores[best]) ? static_cast<unsigned>(ids[best]) : static_cast<unsigned>(vocab);
     }
+}
+
+extern "C" __global__ void __launch_bounds__(512) tf_ink2_df_select(
+    const unsigned* __restrict__ top, const uint16_t* __restrict__ projected,
+    const uint16_t* __restrict__ predecessor, const uint16_t* __restrict__ successor,
+    unsigned* __restrict__ walk, long long* __restrict__ ids, uint16_t* __restrict__ logits,
+    int step, int vocab, float cap) {
+    ink2DfSelect(top, projected, predecessor, successor, nullptr, nullptr, walk, ids, logits, step, vocab, cap);
+}
+
+extern "C" __global__ void __launch_bounds__(512) tf_ink2_df_select8(
+    const unsigned* __restrict__ top, const uint16_t* __restrict__ projected,
+    const uint8_t* __restrict__ predecessor, const uint8_t* __restrict__ successor,
+    const float* __restrict__ prev_scales, const float* __restrict__ next_scales,
+    unsigned* __restrict__ walk, long long* __restrict__ ids, uint16_t* __restrict__ logits,
+    int step, int vocab, float cap) {
+    ink2DfSelect(top, projected, predecessor, successor, prev_scales, next_scales, walk, ids, logits, step, vocab, cap);
 }

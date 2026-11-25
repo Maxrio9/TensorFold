@@ -30,6 +30,7 @@ pub fn topkSpec(unbiased: bool) c.Spec {
 pub const Topk = struct {
     kern: *const ops.Kernels,
     unbiased: bool = false,
+    warp: bool = false,
     shape: c.Shape = undefined,
     scores: []f32 = &.{},
     bias: []f32 = &.{},
@@ -37,6 +38,15 @@ pub const Topk = struct {
     out: [2]u64 = @splat(0),
 
     pub fn spec(self: *const Topk) c.Spec {
+        if (self.warp) {
+            const served = &[_]c.Shape{
+                .{ .rows = 4, .n = 128, .k = 8 },
+                .{ .rows = 1, .n = 128, .k = 8 },
+                .{ .rows = 5, .n = 129, .k = 8 },
+                .{ .rows = 16, .n = 256, .k = 32 },
+            };
+            return .{ .name = "inkling2 Mini warp router", .accum = .none, .depth = ref.noSums, .out = .raw, .nan = .{ .stated = topk_rule }, .served = served, .replaces = "tf_ink2_topk" };
+        }
         return topkSpec(self.unbiased);
     }
 
@@ -72,13 +82,14 @@ pub const Topk = struct {
         defer a.free(zero);
         @memset(zero, 0);
         self.dev = .{ try ref.input(rig, self.scores), try ref.input(rig, self.bias), try ref.input(rig, zero) };
-        self.out = .{ try rig.output(shape.rows * shape.k * 4), try rig.output(shape.rows * shape.k * 4) };
+        const start = try rig.output(shape.rows * shape.k * 8);
+        self.out = .{ start, start + shape.rows * shape.k * 4 };
         return true;
     }
 
     pub fn run(self: *Topk, rig: *rig_.Rig) !void {
         const bias = if (self.unbiased) self.dev[2] else self.dev[1];
-        try ops.topk(self.kern, rig.s, self.dev[0], bias, self.out[0], self.out[1], self.shape.rows, self.shape.n, self.shape.k, route_scale);
+        try ops.topkWithWarp(self.kern, rig.s, self.dev[0], bias, self.out[0], self.out[1], self.shape.rows, self.shape.n, self.shape.k, route_scale, self.warp);
     }
 
     pub fn count(self: *const Topk) usize {
@@ -116,6 +127,31 @@ pub const Topk = struct {
             }
         }
         return null;
+    }
+};
+
+pub const TopkWarp = struct {
+    const Fixture = ref.Checked(Topk);
+    fixture: Fixture,
+    vt: g.VTable = undefined,
+
+    pub fn kernel(self: *TopkWarp) g.Kernel {
+        var out = self.fixture.kernel();
+        self.vt = out.vt.*;
+        self.vt.replaced = replaced;
+        out.vt = &self.vt;
+        return out;
+    }
+
+    pub fn deinit(self: *TopkWarp) void {
+        self.fixture.deinit();
+    }
+
+    fn replaced(ptr: *anyopaque) ![]const u8 {
+        const fixture: *Fixture = @ptrCast(@alignCast(ptr));
+        const k = &fixture.k;
+        try ops.topk(k.kern, fixture.rig.s, k.dev[0], k.dev[1], k.out[0], k.out[1], k.shape.rows, k.shape.n, k.shape.k, route_scale);
+        return fixture.rig.bytes(k.out[0], k.count());
     }
 };
 

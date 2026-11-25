@@ -183,6 +183,8 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         try j.write(q.format);
         try j.objectField("drafts");
         try j.write(r.drafts);
+        try j.objectField("drafter");
+        try j.write(r.drafter);
         try j.objectField("model_cap");
         try j.write(r.model_cap);
         try j.objectField("maximum");
@@ -199,9 +201,8 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         try j.endObject();
         try out.writeByte('\n');
     } else {
-        const drafts = r.drafts;
         try out.print("Mini CUDA capacity for {s}, {s}, {d} streams, {s} KV, drafts {s}\n", .{
-            model, if (o.unified) "unified" else "discrete", o.parallel, @tagName(q.format), if (drafts) "on" else "off",
+            model, if (o.unified) "unified" else "discrete", o.parallel, @tagName(q.format), r.drafter orelse "off",
         });
         try printAmounts(out, "Memory", memory);
         if (r.maximum) |n| {

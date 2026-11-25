@@ -22,7 +22,7 @@ pub const Set = struct {
     silus: [2]ref.Gated(glue.Silu) = undefined,
     ctxs: [2]ref.Gated(head.Ctx) = undefined,
     rnns: [2]ref.Gated(head.Rnn) = undefined,
-    vocabs: [2]head.Banded(head.Vocab) = undefined,
+    vocabs: [3]head.Banded(head.Vocab) = undefined,
     picks: [2]ref.Checked(glue.Pick) = undefined,
 
     pub fn init(set: *Set, gpu: check.Gpu, s: cuda.Stream, a: std.mem.Allocator, list: *std.ArrayList(g.Kernel)) !void {
@@ -40,7 +40,7 @@ pub const Set = struct {
         for (&set.silus, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .swapped = i == 1 } };
         for (&set.ctxs, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .early = i == 1 } };
         for (&set.rnns, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .late = i == 1 } };
-        for (&set.vocabs, 0..) |*x, i| x.* = .{ .inner = .{ .rig = rig, .k = .{ .kern = k, .short = i == 1 } } };
+        for (&set.vocabs, 0..) |*x, i| x.* = .{ .inner = .{ .rig = rig, .k = .{ .kern = k, .short = i == 1, .fp8 = i == 2 } } };
         for (&set.picks, 0..) |*x, i| x.* = .{ .rig = rig, .k = .{ .kern = k, .alone = i == 1 } };
         for (&set.mixes) |*x| try list.append(a, x.kernel());
         for (&set.adds) |*x| try list.append(a, x.kernel());

@@ -19,7 +19,12 @@ __device__ __forceinline__ float warpSum(float v) {
     for (int o = 16; o > 0; o >>= 1) v += __shfl_xor_sync(0xffffffffu, v, o);
     return v;
 }
-
+__device__ __forceinline__ float logitCap(float x, float cap) { return tanhf(x / cap) * cap; }
+__device__ __forceinline__ float rowDot(const uint16_t* x, const uint16_t* w, int c, int lane) {
+    float sum = 0.0f;
+    for (int i = lane; i < c; i += 32) sum += bf(x[i]) * bf(w[i]);
+    return warpSum(sum);
+}
 // Sums of N values over the block in a fixed order: warp shuffles, then warp 0 over the warps' partials.
 template <int N>
 __device__ __forceinline__ void blockSums(float (&v)[N], float* sh) {
@@ -34,9 +39,7 @@ __device__ __forceinline__ void blockSums(float (&v)[N], float* sh) {
         v[i] = __shfl_sync(0xffffffffu, warpSum(t), 0);
     }
 }
-
 }  // namespace ink2o
-
 using namespace ink2o;
 
 // Per row: the embedding row times rsqrt(mean square + eps) times the norm weight, one bf16 round (embed_norm).
@@ -254,11 +257,7 @@ extern "C" __global__ void __launch_bounds__(256) tf_ink2_rowdot(const uint16_t*
     const int lane = threadIdx.x & 31, j = blockIdx.y * 8 + (threadIdx.x >> 5);
     if (j >= J) return;
     const size_t row = blockIdx.x;
-    const uint16_t* xr = x + row * C;
-    const uint16_t* wr = W + static_cast<size_t>(j) * C;
-    float s = 0.0f;
-    for (int c = lane; c < C; c += 32) s += bf(xr[c]) * bf(wr[c]);
-    s = warpSum(s);
+    float s = rowDot(x + row * C, W + static_cast<size_t>(j) * C, C, lane);
     if (lane != 0) return;
     if (act == 1) s = 1.0f / (1.0f + expf(-s));
     if (out_bf16)
@@ -455,8 +454,9 @@ extern "C" __global__ void __launch_bounds__(128) tf_ink2_conv_rewind(const Rewi
 // The final logit softcap in place: x = tanh(x / cap) * cap.
 extern "C" __global__ void tf_ink2_softcap(float* __restrict__ x, long long n, float cap) {
     const long long i = static_cast<long long>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (i < n) x[i] = tanhf(x[i] / cap) * cap;
+    if (i < n) x[i] = logitCap(x[i], cap);
 }
+#include "decode_head.cuh"
 
 namespace ink2o {
 

@@ -13,23 +13,32 @@ pub const Set = struct {
     loaded: bool = false,
     attns: [7]rows.Attn = undefined,
     fp8_attns: [4]rows.Attn = undefined,
+    fp8_prefetch: [2]rows.Attn = undefined,
     preps: [3]prep.Prep = undefined,
     tables: [2]prep.Table = undefined,
 
     /// Every registration (the fold first: the split and prompt launches must equal its bits), then the controls.
     pub fn init(set: *Set, gpu: check.Gpu, s: cuda.Stream, a: std.mem.Allocator, list: *std.ArrayList(g.Kernel)) !void {
-        set.k = try K.Kernels.load(gpu.d);
+        {
+            set.k = try K.Kernels.load(gpu.d);
+            errdefer set.k.unload();
+            try set.k.enableFp8Prefetch();
+        }
         const forms = [_]struct { rows.Path, rows.Plant }{ .{ .sliding, .none }, .{ .fold, .none }, .{ .split, .none }, .{ .prompt, .none }, .{ .sliding, .late_bias }, .{ .fold, .no_sink }, .{ .prompt, .q_ulp } };
         for (&set.attns, forms) |*x, f| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = f[0], .plant = f[1] };
         for (&set.preps, [_]bool{ false, true, true }, 0..) |*x, global, i| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .global = global, .tau_off = i == 2 };
         for (&set.tables, 0..) |*x, i| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .late = i == 1 };
         for (&set.fp8_attns, forms[0..4]) |*x, f| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = f[0], .fp8 = true };
+        for (&set.fp8_prefetch, [_]rows.Path{ .sliding, .split }) |*x, path| {
+            x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = path, .fp8 = true, .prefetch = true };
+        }
         set.loaded = true;
         errdefer set.deinit();
         for (set.preps[0..2]) |*x| try list.append(a, x.kernel());
         try list.append(a, set.tables[0].kernel());
         for (set.attns[0..4]) |*x| try list.append(a, x.kernel());
         for (&set.fp8_attns) |*x| try list.append(a, x.kernel());
+        for (&set.fp8_prefetch) |*x| try list.append(a, x.kernel());
         try list.append(a, set.preps[2].kernel());
         try list.append(a, set.tables[1].kernel());
         for (set.attns[4..]) |*x| try list.append(a, x.kernel());
@@ -39,6 +48,7 @@ pub const Set = struct {
         if (!set.loaded) return;
         for (&set.attns) |*x| x.deinit();
         for (&set.fp8_attns) |*x| x.deinit();
+        for (&set.fp8_prefetch) |*x| x.deinit();
         for (&set.preps) |*x| x.deinit();
         for (&set.tables) |*x| x.deinit();
         set.k.unload();

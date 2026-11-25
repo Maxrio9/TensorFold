@@ -68,6 +68,8 @@ pub const Kernels = struct {
     mix_rows: cuda.Function,
     rowdot: cuda.Function,
     topk: cuda.Function,
+    topk_warp: ?cuda.Function,
+    warp_router: bool,
     gateup: cuda.Function,
     conv: cuda.Function,
     softcap: cuda.Function,
@@ -83,6 +85,7 @@ pub const Kernels = struct {
         errdefer mod.unload();
         var rows_mod = try cuda.Module.load(d, cuda.kernels.inkling2_rows);
         errdefer rows_mod.unload();
+        const warp_router = try @import("sys").environment.read(bool, "TF_INKLING2_TOPK_WARP", false);
         return .{
             .mod = mod,
             .rows_mod = rows_mod,
@@ -93,6 +96,8 @@ pub const Kernels = struct {
             .mix_rows = try mod.function("tf_ink2_mix_rows"),
             .rowdot = try mod.function("tf_ink2_rowdot"),
             .topk = try mod.function("tf_ink2_topk"),
+            .topk_warp = mod.function("tf_ink2_topk_warp") catch null,
+            .warp_router = warp_router,
             .gateup = try mod.function("tf_ink2_gateup"),
             .conv = try mod.function("tf_ink2_conv"),
             .softcap = try mod.function("tf_ink2_softcap"),
@@ -150,12 +155,22 @@ pub fn rowdot(k: *const Kernels, s: cuda.Stream, x: u64, w: u64, out: u64, rows:
 
 /// The router's picks and weights from fp32 sigmoid scores [rows, experts] and the selection bias.
 pub fn topk(k: *const Kernels, s: cuda.Stream, scores: u64, bias: u64, pick: u64, wts: u64, rows: usize, experts: usize, top: usize, scale: f32) !void {
+    try topkWithWarp(k, s, scores, bias, pick, wts, rows, experts, top, scale, false);
+}
+
+/// Mini decode may use one warp per router row at up to 256 experts.
+pub fn topkWithWarp(k: *const Kernels, s: cuda.Stream, scores: u64, bias: u64, pick: u64, wts: u64, rows: usize, experts: usize, top: usize, scale: f32, warp: bool) !void {
     if (experts > 512 * 8 or top > 32) return error.Inkling2RouterShape;
     var a: cuda.Args = .{};
     for ([_]u64{ scores, bias, pick, wts }) |v| a.add(v);
     a.add(int(experts));
     a.add(int(top));
     a.add(scale);
+    if (warp and experts <= 256) {
+        const f = k.topk_warp orelse return error.Inkling2WarpRouterKernels;
+        a.add(int(rows));
+        return go(f, s, .{ .x = @intCast((rows + 3) / 4) }, 128, &a);
+    }
     try go(k.topk, s, .{ .x = @intCast(rows) }, 512, &a);
 }
 

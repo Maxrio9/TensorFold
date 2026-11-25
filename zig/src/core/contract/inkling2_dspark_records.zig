@@ -1,5 +1,28 @@
 //! Inkling 2's DSpark launch records. The Mini tap was compiled with nvcc 13.4.92.
 const registry = @import("registry.zig");
+const limits = @import("limits.zig");
+
+fn fp8Kernel(comptime symbol: []const u8, registers: [limits.sms.len]u32) registry.CudaRecord {
+    var usage: [limits.sms.len]limits.Usage = undefined;
+    for (&usage, registers) |*u, r| u.* = .{ .regs = @intCast(r), .static = 0, .bound = 256 };
+    return .{
+        .launch = .{ .name = "inkling2 dspark " ++ symbol, .symbol = symbol, .image = "inkling2_dspark", .threads = 256, .min_sm = 80 },
+        .usage = usage,
+        .later_pending = true,
+    };
+}
+
+const fp8 = [_]registry.CudaRecord{
+    fp8Kernel("tf_ink2_draft_pack_layers", .{ 23, 25, 24, 32, 32 }),
+    fp8Kernel("tf_ink2_draft_pack_rows", .{ 27, 27, 29, 29, 29 }),
+    fp8Kernel("tf_ink2_dsp_vocab8", .{ 17, 16, 21, 15, 15 }),
+};
+
+pub const nvcc_134 = blk: {
+    var out: [fp8.len]registry.Override = undefined;
+    for (&out, fp8) |*o, r| o.* = .{ .name = r.launch.name, .usage = r.usage };
+    break :blk out;
+};
 
 /// nvcc 13.0's usage (nvcc -cubin, five SMs, the glue flags); 13.2 pending, 13.3 in measurements/pending_133.zig.
 pub const cuda = [_]registry.CudaRecord{
@@ -14,7 +37,7 @@ pub const cuda = [_]registry.CudaRecord{
     .{ .launch = .{ .name = "inkling2 dspark tf_ink2_dsp_rnn", .symbol = "tf_ink2_dsp_rnn", .image = "inkling2_dspark", .threads = 256, .min_sm = 80 }, .usage = .{ .{ .regs = 32, .static = 5120, .bound = 256 }, .{ .regs = 39, .static = 5120, .bound = 256 }, .{ .regs = 39, .static = 5120, .bound = 256 }, .{ .regs = 40, .static = 5120, .bound = 256 }, .{ .regs = 40, .static = 5120, .bound = 256 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2 dspark tf_ink2_dsp_vocab", .symbol = "tf_ink2_dsp_vocab", .image = "inkling2_dspark", .threads = 256, .min_sm = 80 }, .usage = .{ .{ .regs = 21, .static = 0, .bound = 256 }, .{ .regs = 22, .static = 0, .bound = 256 }, .{ .regs = 22, .static = 0, .bound = 256 }, .{ .regs = 15, .static = 0, .bound = 256 }, .{ .regs = 15, .static = 0, .bound = 256 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2 dspark tf_ink2_dsp_pick_merge", .symbol = "tf_ink2_dsp_pick_merge", .image = "inkling2_dspark", .threads = 32, .min_sm = 80 }, .usage = .{ .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } }, .later_pending = true },
-};
+} ++ fp8;
 /// nvcc 13.2's, where it differs: none measured (no 13.2 compiler), so later_pending keeps every launch pending.
 pub const cuda_132 = [_]registry.Override{};
 /// nvcc 13.3's: none here, as later_pending reads 13.3 from measurements/pending_133.zig (all ten launches).

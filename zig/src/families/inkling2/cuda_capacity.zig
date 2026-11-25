@@ -13,6 +13,7 @@ const draft_weights = @import("dspark_weights.zig");
 const draft = @import("dspark_cuda.zig");
 const dflash = @import("dflash2_cuda.zig");
 const draft_runtime = @import("loop_drafter.zig");
+const lazy_head = @import("loop_lazy_head.zig");
 const Dense = cuda.exl3.Dense;
 
 pub const Format = loop.CacheFormat;
@@ -48,7 +49,9 @@ pub const Checkpoint = struct {
     checkpoint_bytes: u64,
     target_arena: u64,
     draft_arena: u64,
+    draft_prepared_head: ?u64 = null,
     draft_kind: draft_runtime.Kind = .dspark,
+    lazy_head_bytes: u64 = 0,
     dense_scratch: u64,
 
     pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, why: *config.Why) !Checkpoint {
@@ -72,6 +75,7 @@ pub const Checkpoint = struct {
             }
         }
         const src = try native.drafterSource(a, io, dir, &c, .{ .drafts = drafts, .context = 1, .drafter = drafter_dir });
+        defer if (src) |d| d.deinit(a);
         const drafter = if (src) |d| try d.checkpointBytes(a, io, &c) else 0;
         return .{
             .text = c.text,
@@ -80,7 +84,12 @@ pub const Checkpoint = struct {
             .checkpoint_bytes = bytes,
             .target_arena = weights.arenaBytes(bytes),
             .draft_arena = drafter,
+            .draft_prepared_head = if (src) |d| d.preparedHeadBytes(&c) else 0,
             .draft_kind = if (src) |d| d.kind else .dspark,
+            .lazy_head_bytes = if (c.exl3 and lazy_head.enabled())
+                lazy_head.allocationBytes(c.text.unpadded_vocab, c.text.hidden)
+            else
+                0,
             .dense_scratch = dense.bytes(),
         };
     }
@@ -99,13 +108,14 @@ pub const Checkpoint = struct {
         const df = drafted and ck.draft_kind == .dflash2;
         const draft_partials = if (ds) draft.partialBytes(context) else if (df) dflash.partialBytes() else 0;
         const draft_scratch = if (ds) draft.Drafter.scratchBytes(context) else if (df) dflash.scratchBytes() else 0;
-        const prepared_head: u64 = if (ds) draft_weights.prepared_head_bytes else 0;
+        const prepared_head: u64 = if (drafted) ck.draft_prepared_head orelse
+            (if (ds) draft_weights.prepared_head_bytes else 0) else 0;
         return .{
             .target_weights = ck.target_arena,
             .drafter_weights_and_padding = ck.draft_arena - prepared_head,
             .drafter_prepared_head = prepared_head,
             .dense_scratch = ck.dense_scratch,
-            .model_working = try engine.Model.planScratch(ck.text, context, if (ck.exl3) pack.expertGeometry(ck.text) else null),
+            .model_working = ck.lazy_head_bytes + try engine.Model.planScratch(ck.text, context, if (ck.exl3) pack.expertGeometry(ck.text) else null),
             .backend_shared = shared[0] + shared[1] + shared[2],
             .drafter_shared_other = draft_scratch - shared_taps - draft_partials,
             .drafter_shared_taps = shared_taps,

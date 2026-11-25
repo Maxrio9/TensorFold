@@ -5,7 +5,7 @@ const std = @import("std");
 const limits = @import("limits.zig");
 pub fn lookup(name: []const u8, release: limits.Nvcc) ?[limits.sms.len]limits.Usage {
     if (release.major == 13 and release.minor == 4) {
-        for (@import("inkling2_dflash2_records.zig").nvcc_134) |r|
+        for (@import("inkling2_dflash2_records.zig").nvcc_134 ++ @import("inkling2_dspark_records.zig").nvcc_134) |r|
             if (std.mem.eql(u8, r.name, name)) return r.usage;
     }
     if (release.major == 13 and release.minor == 3) {

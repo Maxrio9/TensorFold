@@ -53,6 +53,7 @@ const Tracked = struct {
 pub const Report = struct {
     model_cap: u32,
     drafts: bool,
+    drafter: ?[]const u8,
     maximum: ?u32,
     rounded_down: ?u32,
     model_cap_binds: ?bool,
@@ -136,9 +137,11 @@ fn admit(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool,
 
 fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool, weight_check: u64, q: Query) !Report {
     const cap = ck.text.max_context;
+    const drafter = if (ck.draft_arena > 0) ck.draft_kind.name() else null;
     if (q.context) |context| return .{
         .model_cap = cap,
-        .drafts = ck.draft_arena > 0,
+        .drafts = drafter != null,
+        .drafter = drafter,
         .maximum = null,
         .rounded_down = null,
         .model_cap_binds = null,
@@ -157,7 +160,8 @@ fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool
     }
     return .{
         .model_cap = cap,
-        .drafts = ck.draft_arena > 0,
+        .drafts = drafter != null,
+        .drafter = drafter,
         .maximum = lo,
         .rounded_down = lo / 1024 * 1024,
         .model_cap_binds = lo == cap,
@@ -220,4 +224,36 @@ test "Mini capacity: binary search and fixed-context admission agree at both sid
     const refused = try search(a, &ck, small, ck.checkpoint_bytes, .{ .parallel = 1 });
     try std.testing.expectEqual(0, refused.maximum.?);
     try std.testing.expectEqual(.weights, refused.result.refused_at.?);
+}
+
+test "Mini capacity: four-stream DFlash2 reports its own weight, KV, scratch and ready bytes" {
+    const a = std.testing.allocator;
+    var ck = try mini.capacity.testCheckpoint(a);
+    ck.draft_kind = .dflash2;
+    ck.dense_scratch = 7_078_656;
+    const gib = 1 << 30;
+    const pool: budget.Pool = .{ .total = 32 * gib, .free = 31 * gib, .reserve = 4 * gib, .limit = null, .unified = false };
+    const q: Query = .{ .parallel = 4, .context = 8704 };
+    for ([_]struct { weights: u64, ready: u64 }{
+        .{ .weights = 989_966_848, .ready = 17_102_789_360 },
+        .{ .weights = 988_977_664, .ready = 17_101_800_176 },
+        .{ .weights = 624_644_608, .ready = 16_737_467_120 },
+        .{ .weights = 623_655_424, .ready = 16_736_477_936 },
+    }) |row| {
+        ck.draft_arena = row.weights;
+        const r = try search(a, &ck, pool, ck.checkpoint_bytes, q);
+        const c = r.result.components.?;
+        try std.testing.expect(r.drafts);
+        try std.testing.expectEqualStrings("DFlash2", r.drafter.?);
+        try std.testing.expectEqual(row.weights, c.drafter_weights_and_padding);
+        try std.testing.expectEqual(0, c.drafter_prepared_head);
+        try std.testing.expectEqual(42_086_400, c.drafter_kv);
+        try std.testing.expectEqual(47_947_520, c.drafter_shared_other + c.drafter_shared_taps + c.drafter_attention_partials);
+        try std.testing.expectEqual(478_182_920, r.result.tracked.?.per_stream);
+        try std.testing.expectEqual(row.ready, r.result.tracked.?.ready);
+    }
+    ck.draft_arena = 0;
+    const off = try search(a, &ck, pool, ck.checkpoint_bytes, q);
+    try std.testing.expect(!off.drafts and off.drafter == null);
+    try std.testing.expectEqual(0, off.result.components.?.drafter_kv);
 }

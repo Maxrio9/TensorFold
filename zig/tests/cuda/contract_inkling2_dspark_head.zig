@@ -310,6 +310,7 @@ pub fn vocabSpec(short: bool) c.Spec {
 /// out = softcap(bf16(base + bf16(fold_bias + fold . latent))) at bf16, -inf at padding rows.
 pub const Vocab = struct {
     kern: *const dk.Kernels,
+    fp8: bool = false,
     /// control: launched with one real row fewer
     short: bool = false,
     shape: c.Shape = undefined,
@@ -317,12 +318,19 @@ pub const Vocab = struct {
     latent: []u16 = &.{},
     fold: []u16 = &.{},
     fbias: []u16 = &.{},
-    in: [4]u64 = @splat(0),
+    scales: []f32 = &.{},
+    in: [5]u64 = @splat(0),
     out: u64 = 0,
 
     pub const sums = {};
 
     pub fn spec(self: *const Vocab) c.Spec {
+        if (self.fp8) {
+            var result = vocabSpec(self.short);
+            if (!self.short) result.name = "inkling2 dspark tf_ink2_dsp_vocab8 (scaled FP8 fold and BF16 activations)";
+            result.served = &.{ .{ .rows = 1, .n = 200_058, .k = R }, .{ .rows = 7, .n = 3001, .k = R } };
+            return result;
+        }
         return vocabSpec(self.short);
     }
 
@@ -331,7 +339,7 @@ pub const Vocab = struct {
     }
 
     pub fn free(self: *Vocab, a: std.mem.Allocator) void {
-        inline for (.{ "base", "latent", "fold", "fbias" }) |f| {
+        inline for (.{ "base", "latent", "fold", "fbias", "scales" }) |f| {
             a.free(@field(self, f));
             @field(self, f) = &.{};
         }
@@ -369,15 +377,53 @@ pub const Vocab = struct {
             self.fbias[7] = c.toBf16(-ref.inf); // row 7: -30 at every step
             if (steps > 1) self.latent[R + 9] = c.toBf16(ref.nan); // step 1: every real row NaN
         }
-        self.in = .{ try ref.input(rig, self.base), try ref.input(rig, self.latent), try ref.input(rig, self.fold), try ref.input(rig, self.fbias) };
+        self.in = .{ try ref.input(rig, self.base), try ref.input(rig, self.latent), 0, try ref.input(rig, self.fbias), 0 };
+        if (self.fp8) {
+            try self.prepareFp8(a, rig, fill, rng);
+        } else {
+            self.in[2] = try ref.input(rig, self.fold);
+        }
         self.out = try rig.output(steps * n * 4);
         return true;
+    }
+
+    fn prepareFp8(self: *Vocab, a: std.mem.Allocator, rig: *rig_.Rig, fill: g.Fill, rng: std.Random) !void {
+        const n = self.shape.n;
+        const codes = try a.alloc(u8, n * R);
+        defer a.free(codes);
+        self.scales = try a.alloc(f32, n);
+        const integers = [_]u8{ 0x38, 0x40, 0x48, 0x50, 0x58, 0x60, 0x68 };
+        for (self.scales, 0..) |*scale, row| {
+            scale.* = if (fill == .stress) 1.0 else 0.14 * @as(f32, @floatFromInt(1 + row % 13));
+            for (0..R) |k| {
+                const pair = if (k < R / 2) k else (k + R / 2 - 1) % (R / 2);
+                const bits = rng.int(u8);
+                const code: u8 = if (fill == .stress)
+                    integers[if (pair == 0) row % 3 else (row + pair * 7 + pair / 9) % integers.len]
+                else
+                    (bits & 0x80) | ((bits & 0x7f) % 0x38);
+                codes[row * R + k] = code;
+            }
+        }
+        if (fill == .nonfinite) codes[3 * R + 17] = 0x7f;
+        for (codes, self.fold) |code, *w| w.* = c.toBf16(@floatCast(core.quant.fp8.e4m3(code)));
+        self.in[2] = try ref.input(rig, codes);
+        self.in[4] = try ref.input(rig, self.scales);
     }
 
     pub fn run(self: *Vocab, rig: *rig_.Rig) !void {
         const n = self.shape.n;
         const valid = validOf(n) - @intFromBool(self.short);
-        for (0..self.shape.rows) |j| try dk.vocab(self.kern, rig.s, self.in[0] + j * n * 2, self.in[1] + j * R * 2, self.in[2], self.in[3], cap, valid, n, self.out + j * n * 4);
+        const f = if (self.fp8) try self.kern.mod.function("tf_ink2_dsp_vocab8") else null;
+        for (0..self.shape.rows) |j| {
+            const base = self.in[0] + j * n * 2;
+            const latent = self.in[1] + j * R * 2;
+            const out = self.out + j * n * 4;
+            if (f) |fp8_kernel|
+                try dk.vocab8(fp8_kernel, rig.s, base, latent, .{ .data = self.in[2], .scales = self.in[4] }, self.in[3], cap, valid, n, out)
+            else
+                try dk.vocab(self.kern, rig.s, base, latent, self.in[2], self.in[3], cap, valid, n, out);
+        }
     }
 
     pub fn count(self: *const Vocab) usize {
@@ -395,7 +441,9 @@ pub const Vocab = struct {
                 continue;
             }
             for (&terms, self.latent[j * R ..][0..R], self.fold[v * R ..][0..R]) |*t, x, y| t.* = Iv.of(ref.bf(x) * ref.bf(y));
-            const b = s.sum(&terms, vocabDepth(self.shape), &scratch).add(Iv.of(ref.bf(self.fbias[v]))).bf();
+            const dot = s.sum(&terms, vocabDepth(self.shape), &scratch);
+            const scaled_dot = if (self.fp8) dot.mul(Iv.of(self.scales[v])) else dot;
+            const b = scaled_dot.add(Iv.of(ref.bf(self.fbias[v]))).bf();
             const x = Iv.of(ref.bf(self.base[j * n + v])).add(b).bf();
             out[j * n + v] = tanh(x.div(Iv.of(cap))).mul(Iv.of(cap)).bf();
         };
