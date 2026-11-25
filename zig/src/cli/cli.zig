@@ -21,7 +21,7 @@ const usage =
     \\       tensorfold plan MODEL [--memory-gb GIB] [--ram GB]...
     \\       tensorfold plan MODEL --device-mib N --parallel 1..16 [--unified] [--free-mib F] [--drafter DIR]
     \\            [--vision [--vision-max-images N] [--vision-image-tokens N] [--vision-image-share request|fixed]]
-    \\                [--driver-mib D] [--desktop-reserve-gib G] [--reserve-gib R] [--limit-gib L]
+    \\                [--compute-capability SM] [--driver-mib D] [--desktop-reserve-gib G] [--reserve-gib R] [--limit-gib L]
     \\                [--kv-cache fp8|bf16] [--no-drafts] [--context C] [--json]
     \\       tensorfold merge MODEL ADAPTER OUT
     \\       tensorfold merge DENSE ADAPTER OUT --quantize SHIPPED

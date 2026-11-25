@@ -30,6 +30,7 @@ test {
     _ = native;
     _ = capacity;
     _ = dspark_ops;
+    _ = @import("dspark_cuda.zig");
     _ = loop;
     _ = loop_model;
     _ = lazy_head;

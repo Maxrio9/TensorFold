@@ -10,7 +10,6 @@ const dflash = @import("dflash2_cuda.zig");
 const dflash_weights = @import("dflash2_weights.zig");
 const core = @import("core");
 const fp8 = @import("draft_fp8.zig");
-const lazy_head = @import("loop_lazy_head.zig");
 
 pub const Kind = enum {
     dspark,
@@ -40,27 +39,28 @@ pub const Source = struct {
         if (src.owns_path) a.free(src.path);
     }
 
-    fn options(src: Source, borrow_head: bool) fp8.Options {
+    fn options(src: Source, capability: u32, borrow_head: bool) fp8.Options {
+        if (capability < 120) return .{};
         return fp8.Options.fromEnv(borrow_head, src.kind == .dflash2);
     }
 
-    pub fn checkpointBytes(src: Source, a: std.mem.Allocator, io: std.Io, c: *const config.Config) !usize {
-        const opts = src.options(lazy_head.enabled());
+    pub fn checkpointBytes(src: Source, a: std.mem.Allocator, io: std.Io, c: *const config.Config, capability: u32, borrow_head: bool) !usize {
+        const opts = src.options(capability, borrow_head);
         return switch (src.kind) {
             .dspark => dspark_weights.checkpointBytes(a, io, c, src.path, opts),
             .dflash2 => dflash_weights.checkpointBytes(a, io, src.path, c.text.unpadded_vocab, opts),
         };
     }
 
-    pub fn preparedHeadBytes(src: Source, c: *const config.Config) usize {
-        const opts = src.options(lazy_head.enabled());
+    pub fn preparedHeadBytes(src: Source, c: *const config.Config, capability: u32, borrow_head: bool) usize {
+        const opts = src.options(capability, borrow_head);
         const folded = if (src.kind == .dspark) dspark_weights.preparedHeadBytes(opts.head) else 0;
         return folded + opts.baseBytes(c.text.unpadded_vocab, c.text.hidden);
     }
 
     pub fn load(src: Source, a: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, c: *const config.Config, ck: *core.Checkpoint, s: cuda.Stream, unembed: u64, borrowed_head: ?cuda.qmmf.Weight) !Weights {
         std.debug.assert(s.d == d);
-        const opts = if (try d.currentCapability() >= 120) src.options(borrowed_head != null) else fp8.Options{};
+        const opts = src.options(try d.currentCapability(), borrowed_head != null);
         const base: fp8.BaseHead = .{ .stream = s, .source = unembed, .borrowed = borrowed_head };
         return switch (src.kind) {
             .dspark => blk: {
@@ -71,6 +71,15 @@ pub const Source = struct {
         };
     }
 };
+
+test "Ampere and Ada account for full BF16 drafter weights even with a Blackwell head requested" {
+    const src: Source = .{ .kind = .dflash2, .path = "" };
+    for ([_]u32{ 86, 89 }) |capability| {
+        const opts = src.options(capability, true);
+        try std.testing.expect(!opts.active());
+        try std.testing.expect(!opts.borrow_head);
+    }
+}
 
 pub const Weights = union(Kind) {
     dspark: dspark_weights.Weights,
@@ -126,6 +135,18 @@ pub const Drafter = union(Kind) {
         return switch (d.*) {
             inline else => |*x| &x.sessions[slot],
         };
+    }
+
+    pub fn snapshotBytes(d: *Drafter, slot: usize, at: usize) usize {
+        if (d.* == .dspark) return dspark.Session.committedBytes(at);
+        const state = d.session(slot);
+        return @intCast(state.taps - state.memory.ptr);
+    }
+
+    pub fn eachSnapshot(d: *Drafter, slot: usize, at: usize, writer: anytype) !void {
+        const state = d.session(slot);
+        if (d.* == .dspark) return state.eachCommitted(at, writer);
+        try writer.span(state.memory.ptr, @intCast(state.taps - state.memory.ptr));
     }
 
     pub fn absorb(d: *Drafter, slot: usize, k: *const ops.Kernels, s: cuda.Stream, from: u64, pos: usize, rows: usize, eps: f32) !void {

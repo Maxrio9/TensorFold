@@ -185,8 +185,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         problem.* = why;
         return null;
     }
-    // a family whose rope can stretch (Qwen's YaRN, from its config or --rope-yarn) names its own ceiling
-    const own = if (comptime @hasDecl(F, "contextCeiling")) F.contextCeiling(a, io, o.dir, o.rope_yarn) catch |e| {
+    const own = if (comptime F == @import("inkling2").native)
+        (try mini_capacity.modelContext(a, io, o.dir, problem)) orelse return null
+    else if (comptime @hasDecl(F, "contextCeiling")) F.contextCeiling(a, io, o.dir, o.rope_yarn) catch |e| {
         problem.* = try std.fmt.allocPrint(a, "{s} ({s}): YaRN takes rope_type yarn, factor, original_max_position_embeddings and their product as max_position_embeddings, and --rope-yarn a factor from 1 matching it", .{ if (o.rope_yarn != null) "--rope-yarn" else "the checkpoint's rope scaling", @errorName(e) });
         return null;
     } else modelContext(a, io, o.dir);
@@ -285,8 +286,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     var probe: Probe = .{ .a = a, .io = io, .ctx = &g.ctx, .held = held0, .weights = weights, .problem = problem };
     var opts: F.Options = .{ .context = @intCast(window), .drafts = o.drafts, .segments = segments, .slide = o.slide };
     if (!family_options.set(F, o, &opts, problem)) return null;
-    var mini_plan: mini_capacity.Startup = .{ .a = a, .io = io, .request = o, .before = before, .problem = problem };
-    if (comptime F == @import("inkling2").native) if (capability >= 120 and !try mini_plan.admit(&opts)) return null;
+    var mini_plan: mini_capacity.Startup = .{ .a = a, .io = io, .request = o, .before = before, .capability = capability, .problem = problem };
+    if (comptime F == @import("inkling2").native) if (!try mini_plan.admit(&opts)) return null;
     if (@hasField(F.Options, "room")) opts.room = .{ .ctx = &probe, .read = Probe.read };
     if (try family_memory.weightRefusal(a, weights, before, held0)) |why| {
         problem.* = why;

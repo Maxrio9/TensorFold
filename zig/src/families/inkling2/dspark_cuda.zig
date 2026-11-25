@@ -132,12 +132,90 @@ pub const Session = struct {
         return session;
     }
 
+    fn committedRows(layer: usize, at: usize) usize {
+        return if (layer == 1) at else @min(at, local_window);
+    }
+
+    pub fn committedBytes(at: usize) usize {
+        return (at + 2 * committedRows(0, at)) * 2 * kv * 2 + newest_bytes;
+    }
+
+    /// Visit the committed BF16 K/V spans in logical order, followed by the last fusion vector.
+    pub fn eachCommitted(session: *const Session, at: usize, writer: anytype) !void {
+        const row_bytes = kv * 2;
+        for (0..3) |layer| {
+            const rows = committedRows(layer, at);
+            const first = if (layer == 1) 0 else (at - rows) % local_ring;
+            const head = if (layer == 1) rows else @min(rows, local_ring - first);
+            for ([2]u64{ session.k[layer], session.v[layer] }) |base| {
+                if (head > 0) try writer.span(base + first * row_bytes, head * row_bytes);
+                if (head < rows) try writer.span(base, (rows - head) * row_bytes);
+            }
+        }
+        try writer.span(session.newest, newest_bytes);
+    }
+
     pub fn reset(session: *Session) void {
         session.end = 0;
         session.pending = 0;
         session.held_len = 0;
     }
 };
+
+test "DSpark snapshots visit only committed KV rows and the fusion vector" {
+    const Span = struct { ptr: u64, bytes: usize };
+    const Recorder = struct {
+        writes: std.ArrayList(Span) = .empty,
+        bytes: usize = 0,
+
+        pub fn span(w: *@This(), ptr: u64, bytes: usize) !void {
+            try w.writes.append(std.testing.allocator, .{ .ptr = ptr, .bytes = bytes });
+            w.bytes += bytes;
+        }
+    };
+    var session: Session = undefined;
+    session.k = .{ 10_000_000, 30_000_000, 50_000_000, undefined, undefined };
+    session.v = .{ 20_000_000, 40_000_000, 60_000_000, undefined, undefined };
+    session.newest = 70_000_000;
+    var w: Recorder = .{};
+    defer w.writes.deinit(std.testing.allocator);
+    const row = kv * 2;
+
+    try session.eachCommitted(128, &w);
+    try std.testing.expectEqual(6 * 128 * row + Session.newest_bytes, Session.committedBytes(128));
+    try std.testing.expectEqual(Session.committedBytes(128), w.bytes);
+    try std.testing.expectEqualSlices(Span, &.{
+        .{ .ptr = session.k[0], .bytes = 128 * row },
+        .{ .ptr = session.v[0], .bytes = 128 * row },
+        .{ .ptr = session.k[1], .bytes = 128 * row },
+        .{ .ptr = session.v[1], .bytes = 128 * row },
+        .{ .ptr = session.k[2], .bytes = 128 * row },
+        .{ .ptr = session.v[2], .bytes = 128 * row },
+        .{ .ptr = session.newest, .bytes = Session.newest_bytes },
+    }, w.writes.items);
+
+    w.writes.clearRetainingCapacity();
+    w.bytes = 0;
+    const at = local_ring + 5;
+    const first = (block + 5) * row;
+    const tail = (local_window - 5) * row;
+    try session.eachCommitted(at, &w);
+    try std.testing.expectEqual((2 * local_window + at) * 2 * row + Session.newest_bytes, Session.committedBytes(at));
+    try std.testing.expectEqual(Session.committedBytes(at), w.bytes);
+    try std.testing.expectEqualSlices(Span, &.{
+        .{ .ptr = session.k[0] + first, .bytes = tail },
+        .{ .ptr = session.k[0], .bytes = 5 * row },
+        .{ .ptr = session.v[0] + first, .bytes = tail },
+        .{ .ptr = session.v[0], .bytes = 5 * row },
+        .{ .ptr = session.k[1], .bytes = at * row },
+        .{ .ptr = session.v[1], .bytes = at * row },
+        .{ .ptr = session.k[2] + first, .bytes = tail },
+        .{ .ptr = session.k[2], .bytes = 5 * row },
+        .{ .ptr = session.v[2] + first, .bytes = tail },
+        .{ .ptr = session.v[2], .bytes = 5 * row },
+        .{ .ptr = session.newest, .bytes = Session.newest_bytes },
+    }, w.writes.items);
+}
 
 pub const Drafter = struct {
     w: w_.Weights,

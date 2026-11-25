@@ -13,6 +13,7 @@ pub const default_driver_mib = 335;
 
 pub const Options = struct {
     device_mib: u64,
+    capability: u32 = 120,
     free_mib: ?u64 = null,
     driver_mib: ?u64 = null,
     desktop_reserve_gib: f64 = 0,
@@ -62,6 +63,9 @@ pub fn parse(args: []const []const u8) ?Options {
             const value = args[i];
             if (eql(u8, flag, "--device-mib")) {
                 o.device_mib = sizeMiB(value) orelse return null;
+            } else if (eql(u8, flag, "--compute-capability")) {
+                o.capability = std.fmt.parseInt(u32, value, 10) catch return null;
+                if (o.capability < 80) return null;
             } else if (eql(u8, flag, "--free-mib")) {
                 o.free_mib = sizeMiB(value) orelse return null;
             } else if (eql(u8, flag, "--driver-mib")) {
@@ -149,8 +153,8 @@ fn jsonResult(j: *std.json.Stringify, r: mini.Result) !void {
         try j.write(pg.pool.pages * pg.layout.page_tokens);
         try j.objectField("fixed_bytes_per_stream");
         try j.write(pg.layout.fixed_bytes);
-        try j.objectField("snapshot_slots");
-        try j.write(pg.pool.snaps);
+        try j.objectField("prefix_retention");
+        try j.write(mini.retention(pg));
     }
     try j.objectField("admitted");
     try j.write(r.refused_at == null);
@@ -175,6 +179,7 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
     const q: mini.Query = .{
         .parallel = o.parallel,
         .context = o.context,
+        .capability = o.capability,
         .prompt_cache_gib = o.prompt_cache_gib,
         .format = if (o.bf16) .bf16 else .fp8,
         .drafts = !o.no_drafts,
@@ -206,6 +211,8 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         try j.beginObject();
         try j.objectField("model");
         try j.write(model);
+        try j.objectField("compute_capability");
+        try j.write(o.capability);
         try j.objectField("unified");
         try j.write(o.unified);
         try j.objectField("parallel");
@@ -232,8 +239,8 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
         try j.endObject();
         try out.writeByte('\n');
     } else {
-        try out.print("Mini CUDA capacity for {s}, {s}, {d} streams, {s} KV, drafts {s}\n", .{
-            model, if (o.unified) "unified" else "discrete", o.parallel, @tagName(q.format), r.drafter orelse "off",
+        try out.print("Mini CUDA capacity for {s}, sm_{d}, {s}, {d} streams, {s} KV, drafts {s}\n", .{
+            model, o.capability, if (o.unified) "unified" else "discrete", o.parallel, @tagName(q.format), r.drafter orelse "off",
         });
         try printAmounts(out, "Memory", memory);
         if (r.maximum) |n| {
@@ -241,9 +248,17 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
             try out.print("Model cap {d} tokens ({s})\n", .{ r.model_cap, if (r.model_cap_binds.?) "binding" else "available beyond this budget" });
         }
         if (r.result.components) |c| try printAmounts(out, "Allocation components", c);
-        if (r.result.paging) |pg| try out.print("Shared KV pool {d} tokens, {d} fixed bytes per stream, {d} snapshot slots\n", .{
-            pg.pool.pages * pg.layout.page_tokens, pg.layout.fixed_bytes, pg.pool.snaps,
-        });
+        if (r.result.paging) |pg| {
+            try out.print("Shared KV pool {d} tokens, {d} fixed bytes per stream\n", .{
+                pg.pool.pages * pg.layout.page_tokens, pg.layout.fixed_bytes,
+            });
+            const cap = mini.retention(pg);
+            if (cap.marks == 0) {
+                try out.writeAll("Prefix retention disabled (0 pages, 0 bytes, 0 marks)\n");
+            } else {
+                try out.print("Prefix retention limit {d} pages, {d} bytes, {d} marks\n", .{ cap.pages, cap.bytes, cap.marks });
+            }
+        }
         if (r.result.tracked) |t| try printAmounts(out, "Tracked totals", t);
         try printAmounts(out, "Admission room", r.result.rooms);
         if (r.result.message) |why| {

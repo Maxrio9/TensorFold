@@ -334,14 +334,15 @@ test "plan: parseArgs takes the model first and the repeatable flags after it" {
 test "plan device arguments accept explicit counts, overrides, and the model window" {
     if (comptime !@hasDecl(engines, "mini_capacity")) return error.SkipZigTest;
     const argv = &.{
-        "Org/Test",              "--unified", "--device-mib",  "124608",    "--free-mib",  "119280", "--driver-mib", "0",
-        "--desktop-reserve-gib", "0.5",       "--reserve-gib", "2.5",       "--limit-gib", "100",    "--parallel",   "8",
-        "--kv-cache",            "bf16",      "--no-drafts",   "--context", "0",           "--json",
+        "Org/Test",              "--unified", "--device-mib",  "124608",    "--free-mib",  "119280", "--driver-mib",         "0",
+        "--desktop-reserve-gib", "0.5",       "--reserve-gib", "2.5",       "--limit-gib", "100",    "--parallel",           "8",
+        "--kv-cache",            "bf16",      "--no-drafts",   "--context", "0",           "--json", "--compute-capability", "89",
     };
     const parsed = parseArgs(std.testing.allocator, argv).?;
     const o = parsed.device.?;
     try std.testing.expectEqualStrings("Org/Test", parsed.model);
     try std.testing.expectEqual(124608, o.device_mib);
+    try std.testing.expectEqual(89, o.capability);
     try std.testing.expectEqual(119280, o.free_mib.?);
     try std.testing.expectEqual(0, o.driver_mib.?);
     try std.testing.expectEqual(0.5, o.desktop_reserve_gib);
@@ -362,6 +363,7 @@ test "plan device arguments reject incomplete and out-of-range values" {
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "0" },
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "17" },
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "auto" },
+        &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--compute-capability", "8.9" },
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--free-mib", "16304" },
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--driver-mib", "-1" },
         &.{ "Org/Test", "--device-mib", "16303", "--parallel", "1", "--desktop-reserve-gib", "nan" },

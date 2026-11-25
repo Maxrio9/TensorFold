@@ -68,7 +68,7 @@ pub const Checkpoint = struct {
         return n;
     }
 
-    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, vision: ?native.VisionOptions, why: *config.Why) !Checkpoint {
+    pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, vision: ?native.VisionOptions, capability: u32, why: *config.Why) !Checkpoint {
         const c = try native.readConfig(a, io, dir, why);
         try loop.validateLoad(&c, 1, false);
         if (vision) |limits| try @import("mini_vision.zig").validate(c.vision, limits);
@@ -91,7 +91,11 @@ pub const Checkpoint = struct {
         }
         const src = try native.drafterSource(a, io, dir, &c, .{ .drafts = drafts, .context = 1, .drafter = drafter_dir });
         defer if (src) |d| d.deinit(a);
-        const drafter = if (src) |d| try d.checkpointBytes(a, io, &c) else 0;
+        const lazy_bytes = if (c.exl3 and capability >= 120 and lazy_head.enabled())
+            lazy_head.allocationBytes(c.text.unpadded_vocab, c.text.hidden)
+        else
+            0;
+        const drafter = if (src) |d| try d.checkpointBytes(a, io, &c, capability, lazy_bytes != 0) else 0;
         return .{
             .text = c.text,
             .schedule = schedule,
@@ -99,12 +103,9 @@ pub const Checkpoint = struct {
             .checkpoint_bytes = bytes,
             .target_arena = weights.arenaBytes(bytes),
             .draft_arena = drafter,
-            .draft_prepared_head = if (src) |d| d.preparedHeadBytes(&c) else 0,
+            .draft_prepared_head = if (src) |d| d.preparedHeadBytes(&c, capability, lazy_bytes != 0) else 0,
             .draft_kind = if (src) |d| d.kind else .dspark,
-            .lazy_head_bytes = if (c.exl3 and lazy_head.enabled())
-                lazy_head.allocationBytes(c.text.unpadded_vocab, c.text.hidden)
-            else
-                0,
+            .lazy_head_bytes = lazy_bytes,
             .dense_scratch = dense.bytes(),
             .vision_weights = if (vision != null) try native.visionBytes(a, io, dir, 0, 1) else 0,
             .vision = vision,

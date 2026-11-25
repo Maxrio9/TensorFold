@@ -263,7 +263,9 @@ tensorfold-native plan /path/to/model --unified --device-mib 124608 --free-mib 1
 The planner reads local checkpoint metadata and reports the largest context per request for the requested stream
 count, both exactly and rounded down to a multiple of 1024. Use `--context C` to check a specific window or
 `--context 0` for the model's window. The default uses FP8 KV and a bundled drafter when present.
-Use `--kv-cache bf16` or `--no-drafts` to match other serving settings.
+Use `--compute-capability 89` to price pre-Blackwell settings on an sm_89 GPU. An omitted compute capability
+uses sm_120 settings. Use `--kv-cache bf16` or `--no-drafts` to match other serving settings. The planner reports the
+page, byte, and mark limits for retained prefixes in the shared pool.
 
 Without `--free-mib`, the planner subtracts `--driver-mib` and `--desktop-reserve-gib` from total memory. The default
 driver allowance is 335 MiB, the rounded-up difference between warm process VRAM and tracked device bytes on an

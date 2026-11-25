@@ -16,6 +16,7 @@ pub const Query = struct {
     parallel: u32,
     parallel_fixed: bool = true,
     context: ?u32 = null,
+    capability: u32 = 120,
     format: Format = .fp8,
     drafts: bool = true,
     drafter: ?[]const u8 = null,
@@ -48,7 +49,6 @@ const Tracked = struct {
     model: u64,
     per_stream: u64,
     extra_streams: u64,
-    snapshot_bytes: u64 = 0,
     ready: u64,
 };
 
@@ -119,9 +119,9 @@ fn admit(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool,
     }
     const cache_limit = if (q.prompt_cache_gib) |v| std.math.lossyCast(u64, v * (1 << 30)) else std.math.maxInt(u64);
     const extras = @as(u64, pool.lanes - 1);
-    const keep_bytes = @min(cache_limit, pool.pages * layout.pageBytes());
-    const cache_entries = if (keep_bytes >= layout.pageBytes()) q.cache_entries else 0;
-    if (cache_entries > 0) pool.kept = keep_bytes;
+    const keep_pages = @min(cache_limit / layout.pageBytes(), pool.pages);
+    const cache_entries = if (keep_pages > 0) q.cache_entries else 0;
+    if (cache_entries > 0) pool.kept = keep_pages * layout.pageBytes();
     c.target_global_kv = pool.pages * layout.pageBytes();
     const extra = extras * stream;
     const ready = model + extra + c.target_global_kv;
@@ -173,9 +173,20 @@ fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool
     };
 }
 
+/// Mini's model_max_length is in its text config. Resolve it using the same parser as the planner and loader.
+pub fn modelContext(a: Allocator, io: std.Io, dir: []const u8, problem: *[]const u8) !?i64 {
+    var why: mini.capacity.ConfigWhy = .{};
+    const c = mini.native.readConfig(a, io, dir, &why) catch |err| {
+        if (err == error.OutOfMemory) return err;
+        problem.* = if (why.text().len > 0) try a.dupe(u8, why.text()) else @errorName(err);
+        return null;
+    };
+    return c.text.max_context;
+}
+
 pub fn plan(a: Allocator, io: std.Io, dir: []const u8, before: budget.Pool, q: Query, problem: *[]const u8) !?Report {
     var why: @import("inkling2").capacity.ConfigWhy = .{};
-    const ck = mini.capacity.Checkpoint.read(a, io, dir, q.drafts, q.drafter, q.vision, &why) catch |err| {
+    const ck = mini.capacity.Checkpoint.read(a, io, dir, q.drafts, q.drafter, q.vision, q.capability, &why) catch |err| {
         if (err == error.OutOfMemory) return err;
         problem.* = if (why.text().len > 0) try a.dupe(u8, why.text()) else mini.native.explain(null, err) orelse @errorName(err);
         return null;
@@ -186,13 +197,12 @@ pub fn plan(a: Allocator, io: std.Io, dir: []const u8, before: budget.Pool, q: Q
         return null;
     };
     var selected = q;
-    if (selected.context == 0) selected.context = null;
     selected.cache_entries = @min(kv.most_snaps, try @import("core").kv_prompts.sharingDefault(q.cache_entries));
     return try search(a, &ck, before, weight_check, selected);
 }
 
 /// Set the exact same plan used by `plan --device-mib` on the native model opener.
-fn runtime(a: Allocator, io: std.Io, o: api.Open, before: budget.Pool, opts: *mini.native.Options, problem: *[]const u8) !bool {
+fn runtime(a: Allocator, io: std.Io, o: api.Open, before: budget.Pool, capability: u32, opts: *mini.native.Options, problem: *[]const u8) !bool {
     if (o.lanes_fixed and o.lanes > max_streams) {
         problem.* = mini.native.explain(null, error.Inkling2TooManyStreams).?;
         return false;
@@ -200,7 +210,8 @@ fn runtime(a: Allocator, io: std.Io, o: api.Open, before: budget.Pool, opts: *mi
     const q: Query = .{
         .parallel = @min(o.lanes, max_streams),
         .parallel_fixed = o.lanes_fixed,
-        .context = if ((o.context orelse 0) > 0) @intCast(opts.context) else null,
+        .context = if (o.context != null) @intCast(opts.context) else null,
+        .capability = capability,
         .format = if (opts.kv8) .fp8 else .bf16,
         .drafts = opts.drafts,
         .drafter = opts.drafter,
@@ -221,12 +232,13 @@ pub const Startup = struct {
     a: Allocator,
     io: std.Io,
     request: api.Open,
+    capability: u32,
     before: budget.Pool,
     problem: *[]const u8,
 
     pub fn admit(s: *Startup, opts: *mini.native.Options) !bool {
         opts.replan = .{ .ctx = s, .run = replan };
-        return runtime(s.a, s.io, s.request, s.before, opts, s.problem);
+        return runtime(s.a, s.io, s.request, s.before, s.capability, opts, s.problem);
     }
 
     fn replan(ctx: *anyopaque, opts: *mini.native.Options, available: u64) anyerror!bool {
@@ -234,9 +246,13 @@ pub const Startup = struct {
         var limited = s.before;
         // The live check counted only CUDA allocations after the driver opened its context.
         limited.free = @min(limited.free, limited.reserve +| available);
-        return runtime(s.a, s.io, s.request, limited, opts, s.problem);
+        return runtime(s.a, s.io, s.request, limited, s.capability, opts, s.problem);
     }
 };
+
+pub fn retention(pg: mini.native.Paging) struct { pages: u64, bytes: u64, marks: usize } {
+    return .{ .pages = pg.pool.kept / pg.layout.pageBytes(), .bytes = pg.pool.kept, .marks = pg.cache_entries };
+}
 
 pub fn reportStartup(paging: ?mini.native.Paging, model: u64, room: u64, reserve: u64, stream: u64, context: i64) void {
     std.log.info("Mini CUDA startup: model {d} bytes, room after reserve {d} bytes, reserve {d} bytes, stream {d} bytes", .{ model, room, reserve, stream });
@@ -343,5 +359,26 @@ test "Mini capacity: prefix retention and caps leave the allocation unchanged" {
     try std.testing.expectEqual(on.cache_entries, capped.cache_entries);
     try std.testing.expectEqual(on.pool.pages, capped.pool.pages);
     try std.testing.expectEqual(on.ready_bytes, capped.ready_bytes);
-    try std.testing.expectEqual(@as(u64, (1 << 30) / 5), capped.pool.kept);
+    const cap_bytes = (1 << 30) / 5;
+    try std.testing.expectEqual(cap_bytes / capped.layout.pageBytes(), retention(capped).pages);
+    try std.testing.expectEqual(retention(capped).pages * capped.layout.pageBytes(), retention(capped).bytes);
+    try std.testing.expectEqual(0, retention(off).marks);
+    try std.testing.expectEqual(0, retention(off).pages);
+}
+
+test "Mini capacity: explicit zero requires the model window, omitted context fits what is available" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const ck = try mini.capacity.testCheckpoint(a);
+    const pool: budget.Pool = .{ .total = 32 << 30, .free = 31 << 30, .reserve = 4 << 30, .limit = null, .unified = false };
+    const automatic = try search(a, &ck, pool, ck.checkpoint_bytes, .{ .parallel = 1 });
+    try std.testing.expect(automatic.result.refused_at == null and automatic.result.context < ck.text.max_context);
+    const full = try search(a, &ck, pool, ck.checkpoint_bytes, .{ .parallel = 1, .context = 0 });
+    try std.testing.expectEqual(ck.text.max_context, full.result.context);
+    try std.testing.expect(full.maximum == null and full.result.refused_at != null);
+    const large: budget.Pool = .{ .total = 124 << 30, .free = 120 << 30, .reserve = 24 << 30, .limit = null, .unified = true };
+    const admitted = try search(a, &ck, large, ck.checkpoint_bytes, .{ .parallel = 1, .context = 0 });
+    try std.testing.expectEqual(ck.text.max_context, admitted.result.context);
+    try std.testing.expect(admitted.maximum == null and admitted.result.refused_at == null);
 }

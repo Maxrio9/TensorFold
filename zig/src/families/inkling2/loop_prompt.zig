@@ -6,7 +6,7 @@ const lanes = @import("lanes");
 const engine = @import("loop_engine.zig");
 const backend = @import("loop_backend.zig");
 const page = @import("loop_pages.zig");
-const draft = @import("dspark_cuda.zig");
+const draft = @import("loop_drafter.zig");
 const kv = core.kv_pool;
 const prompts = core.kv_prompts;
 
@@ -16,12 +16,12 @@ pub const State = struct {
 };
 
 pub const Checkpoint = struct {
-    fn draftState(b: *backend.Backend) ?*draft.Session {
-        return if (b.m.capture_taps) b.drafter.?.session(b.m.slot) else null;
+    fn drafter(b: *backend.Backend) ?*draft.Drafter {
+        return if (b.m.capture_taps) &b.drafter.? else null;
     }
 
     pub fn bytes(b: *backend.Backend, at: u32) u64 {
-        const draft_bytes = if (draftState(b)) |state| state.taps - state.memory.ptr else 0;
+        const draft_bytes = if (drafter(b)) |d| d.snapshotBytes(b.m.slot, at) else 0;
         return b.m.snapshotBytes(at) + draft_bytes;
     }
 
@@ -29,12 +29,13 @@ pub const Checkpoint = struct {
         const l = try b.stateLane(owner);
         if (at == 0 or at > b.m.context or size != bytes(b, at)) return error.BadLoopSnapshot;
         if (out and (l.fill orelse l.len) != at) return error.NotAtMark;
-        const session = draftState(b);
+        const d = drafter(b);
+        const session = if (d) |active| active.session(b.m.slot) else null;
         if (session) |state| if (out and (state.end != at or state.pending != 0)) return error.DraftContextGap;
 
         var writer = page.StateCopy.init(b.m, b.s, ids, out);
         try b.m.eachState(at, &writer);
-        if (session) |state| try writer.span(state.memory.ptr, @intCast(state.taps - state.memory.ptr));
+        if (d) |active| try active.eachSnapshot(b.m.slot, at, &writer);
         std.debug.assert(writer.offset == size);
         if (!out) {
             if (session) |state| {
