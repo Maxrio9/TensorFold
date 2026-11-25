@@ -20,7 +20,7 @@ pub const Options = struct {
     limit_gib: ?[]const u8 = null,
     parallel: u32,
     context: ?u32 = null,
-    bf16: bool = true,
+    bf16: bool = false,
     unified: bool = false,
     no_drafts: bool = false,
     drafter: ?[]const u8 = null,

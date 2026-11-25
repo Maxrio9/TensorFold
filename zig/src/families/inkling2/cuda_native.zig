@@ -31,7 +31,7 @@ pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
 pub const Options = struct {
     context: usize,
     drafts: bool,
-    kv8: bool = false,
+    kv8: bool = true,
     segments: usize = 1,
     slide: bool = false,
     vision: ?VisionOptions = null,

@@ -17,7 +17,7 @@ pub const max_streams = mini.capacity.max_streams;
 pub const Query = struct {
     parallel: u32,
     context: ?u32 = null,
-    format: Format = .bf16,
+    format: Format = .fp8,
     drafts: bool = true,
     drafter: ?[]const u8 = null,
     vision: ?mini.native.VisionOptions = null,
