@@ -54,7 +54,7 @@ pub const PartHooks = struct {
         /// The owner's live bytes of `group` after `at` tokens into the held pages of `dst`.
         copy: *const fn (ptr: *anyopaque, owner: ?*anyopaque, group: u32, at: u32, dst: Part) anyerror!void,
         /// The held pages of `src` into the owner's live `group` (the next prompt chunk starts at its position).
-        restore: *const fn (ptr: *anyopaque, owner: ?*anyopaque, group: u32, src: Part) anyerror!void,
+        restore: *const fn (ptr: *anyopaque, owner: ?*anyopaque, group: u32, at: u32, src: Part) anyerror!void,
         /// Rows [0, rows) of every layer of `group` (numbered as in Copy) from page `src` into page `dst`.
         copy_rows: *const fn (ptr: *anyopaque, owner: ?*anyopaque, group: u32, src: u32, dst: u32, rows: u32) anyerror!void,
         /// Every copy queued for `owner` has completed, on every rank that runs it.

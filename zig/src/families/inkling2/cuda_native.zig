@@ -14,6 +14,7 @@ const draft_runtime = @import("loop_drafter.zig");
 const dflash_weights = @import("dflash2_weights.zig");
 const vision = @import("mini_vision.zig");
 const lazy_head = @import("loop_lazy_head.zig");
+const pages = @import("loop_pages.zig");
 
 pub const model_type = "inkling2_loop";
 pub const formats: []const []const u8 = &.{ "modelopt-mixed", "exl3" };
@@ -22,12 +23,23 @@ pub const max_segments: u32 = 1;
 pub const startup_streams: u32 = 1;
 pub const prompt_rows: u32 = engine.prompt_rows;
 pub const window_rows: u32 = engine.window_rows;
+pub const page_tokens = pages.page_tokens;
+pub const share_grid = page_tokens;
+pub const share_reclaim_lru = true;
+pub const snap_lookahead = 0;
 pub const explains_open = true;
 pub const takes_drafter = true;
 pub const framed_structures = true;
 
 pub const VisionOptions = vision.Limits;
 pub const Room = struct { ctx: *anyopaque, read: *const fn (*anyopaque) ?u64 };
+pub const Replan = struct { ctx: *anyopaque, run: *const fn (*anyopaque, *Options, u64) anyerror!bool };
+pub const Paging = struct {
+    layout: core.kv_pool.Layout,
+    pool: core.kv_pool.Plan,
+    ready_bytes: u64,
+    cache_entries: usize = 0,
+};
 pub const Options = struct {
     context: usize,
     drafts: bool,
@@ -37,6 +49,8 @@ pub const Options = struct {
     vision: ?VisionOptions = null,
     precision: ?enum { full } = null,
     room: ?Room = null,
+    paging: ?Paging = null,
+    replan: ?Replan = null,
     drafter: ?[]const u8 = null,
     tp: usize = 1,
     rank: usize = 0,
@@ -69,6 +83,10 @@ pub const Loaded = struct {
     target: *Owned,
     draft_kind: ?[]const u8 = null,
     vision: ?*vision.Images,
+    layout: ?core.kv_pool.Layout = null,
+    engine_paged: bool = false,
+    paging: ?Paging = null,
+    context: usize,
 };
 
 fn own(ptr: *anyopaque) *Owned {
@@ -96,6 +114,25 @@ fn reserve(p: *anyopaque, streams: u32) anyerror!void {
 pub fn fits(p: *anyopaque, prompt: u32, max_tokens: u32) bool {
     const o: *const Owned = @ptrCast(@alignCast(p));
     return o.admission.fits(prompt, max_tokens) and o.backend.admits(prompt, max_tokens);
+}
+
+pub fn kvPool(p: *anyopaque) ?core.kv_pool.Source {
+    const pool = if (own(p).model.pages) |*x| &x.pool else return null;
+    return .{ .pool = pool, .page_tokens = pages.page_tokens };
+}
+
+pub fn share_pool(p: *anyopaque) ?*core.kv_pool.Pool {
+    return if (kvPool(p)) |src| src.pool else null;
+}
+
+pub const share_state = @import("loop_prompt.zig").Checkpoint;
+
+pub fn share_backend(p: *anyopaque) *backend.Backend {
+    return &own(p).backend;
+}
+
+pub fn share_attach(p: *anyopaque, prompts: ?core.kv_prompts.Prompts) void {
+    own(p).backend.prompts = prompts;
 }
 
 pub fn readConfig(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, why: *config.Why) !config.Config {
@@ -201,7 +238,8 @@ pub fn checkCacheRoom(state_bytes: u64, room: u64) error{Inkling2CacheRoom}!void
     if (state_bytes > room) return error.Inkling2CacheRoom;
 }
 
-pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, o: Options) !Loaded {
+pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: []const u8, kernels: ?[]const u8, asked: Options) !Loaded {
+    var o = asked;
     if (kernels != null) return error.Inkling2CapturedKernels;
     if (o.segments != 1 or o.tp != 1 or o.rank != 0) return error.Inkling2LoopOneRankOnly;
     var why: config.Why = .{};
@@ -221,6 +259,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var bits = if (c.exl3) try pack.readBits(gpa, io, dir) else null;
     defer if (bits) |*b| b.deinit();
     var moved = false;
+    const before_weights = cuda.usage(false).device;
     var w = try weights.load(gpa, ctx.d, &ck, &c, p, if (bits) |b| try pack.bitsMap(b.value) else null);
     errdefer if (!moved) w.deinit();
     if (ck.unused() != 0) return error.UnusedCheckpointTensor;
@@ -242,10 +281,19 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     const draft_weights_bytes = if (dw) |*d| d.bytes() else 0;
     const before_state = cuda.usage(false).device;
     const state_room = if (o.room) |room| room.read(room.ctx) orelse return error.Inkling2CacheRoom else null;
+    if (o.paging) |pg| if (state_room) |room| {
+        const loaded_bytes = before_state - before_weights;
+        if (pg.ready_bytes -| loaded_bytes > room) {
+            const replan = o.replan orelse return error.Inkling2CacheRoom;
+            if (!try replan.run(replan.ctx, &o, room +| loaded_bytes)) return error.Inkling2CacheRoom;
+            try checkCacheRoom(o.paging.?.ready_bytes -| loaded_bytes, room);
+            std.log.info("Mini CUDA sized the pool from the free memory measured after loading weights", .{});
+        }
+    };
     var k = try engine.Kernels.load(ctx, c.exl3);
     errdefer if (!moved) k.deinit();
     try k.reserveDense(stream, w.layers);
-    var m = try engine.Model.init(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16);
+    var m = try engine.Model.initWithPages(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16, if (o.paging) |pg| pg.pool.pages else 0);
     errdefer if (!moved) m.deinit();
     m.lazy_head = lazy;
     lazy = null;
@@ -272,9 +320,14 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     out.model.w = &out.weights;
     out.backend.m = &out.model;
     out.backend.k = &out.kernels;
-    if (out.vision) |*v| {
-        out.backend.vision = v;
-        try out.backend.reserve(startup_streams);
+    if (out.vision) |*v| out.backend.vision = v;
+    try out.backend.reserve(if (o.paging) |pg| pg.pool.lanes else startup_streams);
+    if (o.paging) |pg| {
+        const tracked = cuda.usage(false).device - before_weights;
+        if (tracked != pg.ready_bytes) {
+            std.log.err("Mini CUDA allocation check failed: planned {d}, allocated {d} bytes", .{ pg.ready_bytes, tracked });
+            return error.Inkling2AllocationMismatch;
+        }
     }
     try out.backend.warm(io);
     const global_kv = loop.CacheLayout.globalBytesPerToken(&w.p, m.layout.format);
@@ -293,6 +346,10 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         .target = out,
         .draft_kind = if (drafter) |src| src.kind.name() else null,
         .vision = if (out.vision) |*v| v else null,
+        .layout = if (o.paging) |pg| pg.layout else null,
+        .engine_paged = o.paging != null,
+        .paging = o.paging,
+        .context = o.context,
     };
 }
 
@@ -309,7 +366,8 @@ pub fn snap_restore(ptr: *anyopaque, owner: ?*anyopaque, saved: *anyopaque) anye
 }
 
 pub fn snap_drop(ptr: *anyopaque, saved: *anyopaque) void {
-    own(ptr).backend.dropState(@ptrCast(@alignCast(saved)));
+    const o = own(ptr);
+    o.model.drop(o.stream, @ptrCast(@alignCast(saved)));
 }
 
 pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
@@ -326,6 +384,7 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
         error.MiniDSparkMissing => "the model does not include model-mtp.safetensors for --drafter dspark",
         error.MiniDFlash2Tensor => "Mini DFlash2 weights do not match the checkpoint configuration",
         error.Inkling2CacheRoom => "the CUDA memory budget cannot fit Mini’s working state and KV cache: lower --context or free device memory",
+        error.Inkling2AllocationMismatch => "Mini CUDA tracked allocation differs from its capacity plan",
         error.Inkling2CapturedKernels => "Inkling 2 Mini runs the engine's own kernels: unset TENSORFOLD_CUDA_KERNELS",
         error.Inkling2TooManyStreams => "Inkling 2 Mini on CUDA holds at most 16 streams: lower --parallel",
         error.ChainsOnly => "Inkling 2 Mini supports only non-branching text drafts",
@@ -375,6 +434,7 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 25,
     var precisions: [24]plan_.Precision = @splat(.nvfp4);
     w.p = try plan_.build(&w.c.text, &precisions);
     var m: engine.Model = undefined;
+    m.pages = null;
     m.d = @ptrFromInt(0x1000); // never called: the hook answers every allocation
     m.w = &w;
     m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .fp8, loop.promptRows(w.c.exl3));

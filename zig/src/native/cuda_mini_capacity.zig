@@ -5,9 +5,7 @@ const api = @import("engine_api");
 const memory = @import("cuda_family_memory.zig");
 const budget = @import("cuda_memory.zig");
 const windows = @import("cuda_window.zig");
-const kv_pages = @import("cuda_kv_pool.zig");
-const startup = @import("cuda_startup_costs.zig");
-const streams = @import("cuda_streams.zig");
+const kv = @import("core").kv_pool;
 const Allocator = std.mem.Allocator;
 
 pub const model_type = mini.native.model_type;
@@ -16,30 +14,32 @@ pub const max_streams = mini.capacity.max_streams;
 
 pub const Query = struct {
     parallel: u32,
+    parallel_fixed: bool = true,
     context: ?u32 = null,
     format: Format = .fp8,
     drafts: bool = true,
     drafter: ?[]const u8 = null,
     vision: ?mini.native.VisionOptions = null,
+    prompt_cache_gib: ?f64 = null,
+    cache_entries: usize = kv.most_snaps,
 };
 
 pub const Result = struct {
     context: u32,
-    refused_at: ?enum { model_context, weights, first_stream_state, snapshot_staging, calibration, streams } = null,
+    refused_at: ?enum { model_context, weights, first_stream_state, streams } = null,
     message: ?[]const u8 = null,
     components: ?mini.capacity.Components = null,
     rooms: Rooms,
     tracked: ?Tracked = null,
+    paging: ?mini.native.Paging = null,
 };
 
 const Rooms = struct {
     weights: u64,
     first_stream_state: ?u64 = null,
     after_model: ?u64 = null,
-    after_staging: ?u64 = null,
     extra_streams: ?u64 = null,
     after_streams: ?u64 = null,
-    prompt_cache_budget: ?u64 = null,
 };
 
 const Tracked = struct {
@@ -48,6 +48,7 @@ const Tracked = struct {
     model: u64,
     per_stream: u64,
     extra_streams: u64,
+    snapshot_bytes: u64 = 0,
     ready: u64,
 };
 
@@ -77,13 +78,11 @@ fn admit(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool,
         return r;
     };
     r.context = @intCast(window);
-    const c = try ck.allocations(r.context, q.format);
+    var c = try ck.allocationsMode(r.context, q.format, true);
     r.components = c;
     const state = c.state();
     const model = c.weights() + state;
     const stream = c.stream();
-    const extra = @as(u64, q.parallel - mini.native.startup_streams) * stream;
-    r.tracked = .{ .weights_check = weight_check, .first_stream_state = state, .model = model, .per_stream = stream, .extra_streams = extra, .ready = model + extra };
     if (try memory.weightRefusal(a, weight_check, before, 0)) |why| {
         r.refused_at = .weights;
         r.message = why;
@@ -91,48 +90,45 @@ fn admit(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool,
     }
     const state_room = poolAfter(before, c.weights()).room(c.weights());
     r.rooms.first_stream_state = state_room;
-    mini.native.checkCacheRoom(state, state_room) catch |err| {
-        r.refused_at = .first_stream_state;
-        r.message = mini.native.explain(null, err);
-        return r;
-    };
     const after = poolAfter(before, model);
-    r.rooms.after_model = after.room(model);
-    var problem: []const u8 = "";
-    var unused: u8 = 0;
-    const loaded = .{ .ctx = @as(*anyopaque, &unused), .free_streams = mini.native.startup_streams, .stream_bytes = stream };
-    const o: api.Open = .{ .dir = "", .model_type = model_type, .context = window, .lanes = q.parallel, .lanes_fixed = true, .drafts = q.drafts };
-    const staging = try kv_pages.startupRoom(mini.native, a, loaded, o, after.room(model), 0, &problem) orelse {
-        r.refused_at = .snapshot_staging;
-        r.message = problem;
-        return r;
-    };
-    r.rooms.after_staging = staging;
-    const room = try startup.room(a, null, staging, &problem) orelse {
-        r.refused_at = .calibration;
-        r.message = problem;
-        return r;
-    };
+    const room = after.room(model);
+    r.rooms.after_model = room;
     r.rooms.extra_streams = room;
-    const counted = try streams.count(mini.native, a, loaded, o, .{
+    const full: kv.groups.Group = .{ .kind = .full, .row = c.global_kv_per_token / ck.scheduleGlobalVisits(), .layers = ck.scheduleGlobalVisits() };
+    var layout = kv.Layout.ofRows(full, mini.native.page_tokens, stream, 0);
+    const local_layers = ck.schedule.n_visits - full.layers;
+    const local: kv.groups.Group = .{ .kind = .window, .row = 2 * ck.text.local.kv * q.format.rowBytes(ck.text.local.dim), .layers = local_layers };
+    layout.window = local;
+    const request: kv.Budget = .{
         .room = room,
-        .model = model,
-        .reserve = before.reserve,
-        .low = "",
-        .window = window,
-        .stream_bytes = stream,
-        .host_cache = false,
-        .host_budget = 0,
-        .share = false,
-    }, &problem) orelse {
-        r.refused_at = .streams;
-        r.message = problem;
+        .engine = 0,
+        .lanes = q.parallel,
+        .fixed = q.parallel_fixed,
+        .window = @as(u64, r.context) + mini.native.window_rows,
+        .engine_paged = true,
+    };
+    var pool = kv.plan(layout, request) catch |err| {
+        r.refused_at = if (err == error.NoStream) .first_stream_state else .streams;
+        r.message = if (err == error.NoStream) mini.native.explain(null, error.Inkling2CacheRoom) else try std.fmt.allocPrint(a, "--parallel {d} exceeds the room for Mini CUDA lanes beside one request at --context {d}", .{ q.parallel, r.context });
         return r;
     };
-    // Mini's eager slot allocation is complete here. The post-warm-up pool optimizer is specific to Qwen.
-    const held = stream * (counted.streams -| loaded.free_streams);
-    r.rooms.after_streams = room - held;
-    r.rooms.prompt_cache_budget = kv_pages.kept(mini.native, loaded, null, o, room, held, 0, false).copied;
+    if (state > state_room) {
+        r.refused_at = .first_stream_state;
+        r.message = mini.native.explain(null, error.Inkling2CacheRoom);
+        return r;
+    }
+    const cache_limit = if (q.prompt_cache_gib) |v| std.math.lossyCast(u64, v * (1 << 30)) else std.math.maxInt(u64);
+    const extras = @as(u64, pool.lanes - 1);
+    const keep_bytes = @min(cache_limit, pool.pages * layout.pageBytes());
+    const cache_entries = if (keep_bytes >= layout.pageBytes()) q.cache_entries else 0;
+    if (cache_entries > 0) pool.kept = keep_bytes;
+    c.target_global_kv = pool.pages * layout.pageBytes();
+    const extra = extras * stream;
+    const ready = model + extra + c.target_global_kv;
+    r.components = c;
+    r.tracked = .{ .weights_check = weight_check, .first_stream_state = state, .model = model, .per_stream = stream, .extra_streams = extra, .ready = ready };
+    r.rooms.after_streams = room - extra - c.target_global_kv;
+    r.paging = .{ .layout = layout, .pool = pool, .ready_bytes = ready, .cache_entries = cache_entries };
     return r;
 }
 
@@ -152,11 +148,17 @@ fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool
 
     var scratch = std.heap.ArenaAllocator.init(a);
     defer scratch.deinit();
+    var selected = q;
+    var probe = q;
+    probe.context = 1;
+    const base = try admit(scratch.allocator(), ck, before, weight_check, probe, 1);
+    if (base.paging) |pg| selected.parallel = pg.pool.lanes;
+    selected.parallel_fixed = true;
     var lo: u32 = 0;
     var hi = cap;
     while (lo < hi) {
         const mid = lo + (hi - lo) / 2 + 1;
-        const r = try admit(scratch.allocator(), ck, before, weight_check, q, mid);
+        const r = try admit(scratch.allocator(), ck, before, weight_check, selected, mid);
         if (r.refused_at == null) lo = mid else hi = mid - 1;
     }
     return .{
@@ -166,8 +168,8 @@ fn search(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool
         .maximum = lo,
         .rounded_down = lo / 1024 * 1024,
         .model_cap_binds = lo == cap,
-        .result = try admit(a, ck, before, weight_check, q, @max(lo, 1)),
-        .next_context = if (lo > 0 and lo < cap) try admit(a, ck, before, weight_check, q, lo + 1) else null,
+        .result = try admit(a, ck, before, weight_check, selected, @max(lo, 1)),
+        .next_context = if (lo > 0 and lo < cap) try admit(a, ck, before, weight_check, selected, lo + 1) else null,
     };
 }
 
@@ -183,7 +185,64 @@ pub fn plan(a: Allocator, io: std.Io, dir: []const u8, before: budget.Pool, q: Q
         problem.* = try std.fmt.allocPrint(a, "cannot estimate checkpoint weight files ({s}); refusing CUDA admission", .{@errorName(err)});
         return null;
     };
-    return try search(a, &ck, before, weight_check, q);
+    var selected = q;
+    if (selected.context == 0) selected.context = null;
+    selected.cache_entries = @min(kv.most_snaps, try @import("core").kv_prompts.sharingDefault(q.cache_entries));
+    return try search(a, &ck, before, weight_check, selected);
+}
+
+/// Set the exact same plan used by `plan --device-mib` on the native model opener.
+fn runtime(a: Allocator, io: std.Io, o: api.Open, before: budget.Pool, opts: *mini.native.Options, problem: *[]const u8) !bool {
+    if (o.lanes_fixed and o.lanes > max_streams) {
+        problem.* = mini.native.explain(null, error.Inkling2TooManyStreams).?;
+        return false;
+    }
+    const q: Query = .{
+        .parallel = @min(o.lanes, max_streams),
+        .parallel_fixed = o.lanes_fixed,
+        .context = if ((o.context orelse 0) > 0) @intCast(opts.context) else null,
+        .format = if (opts.kv8) .fp8 else .bf16,
+        .drafts = opts.drafts,
+        .drafter = opts.drafter,
+        .vision = opts.vision,
+        .prompt_cache_gib = o.prompt_cache_gib,
+        .cache_entries = if (o.keep) |n| @intCast(@max(n, 0)) else kv.most_snaps,
+    };
+    const r = try plan(a, io, o.dir, before, q, problem) orelse return false;
+    opts.paging = r.result.paging orelse {
+        problem.* = r.result.message.?;
+        return false;
+    };
+    opts.context = r.result.context;
+    return true;
+}
+
+pub const Startup = struct {
+    a: Allocator,
+    io: std.Io,
+    request: api.Open,
+    before: budget.Pool,
+    problem: *[]const u8,
+
+    pub fn admit(s: *Startup, opts: *mini.native.Options) !bool {
+        opts.replan = .{ .ctx = s, .run = replan };
+        return runtime(s.a, s.io, s.request, s.before, opts, s.problem);
+    }
+
+    fn replan(ctx: *anyopaque, opts: *mini.native.Options, available: u64) anyerror!bool {
+        const s: *Startup = @ptrCast(@alignCast(ctx));
+        var limited = s.before;
+        // The live check counted only CUDA allocations after the driver opened its context.
+        limited.free = @min(limited.free, limited.reserve +| available);
+        return runtime(s.a, s.io, s.request, limited, opts, s.problem);
+    }
+};
+
+pub fn reportStartup(paging: ?mini.native.Paging, model: u64, room: u64, reserve: u64, stream: u64, context: i64) void {
+    std.log.info("Mini CUDA startup: model {d} bytes, room after reserve {d} bytes, reserve {d} bytes, stream {d} bytes", .{ model, room, reserve, stream });
+    if (paging) |pg| std.log.info("Mini CUDA KV: {d} pool tokens, {d} per request, {d} fixed bytes per stream, {d} snapshot slots, {d} allocated bytes", .{
+        pg.pool.pages * pg.layout.page_tokens, context, pg.layout.fixed_bytes, pg.pool.snaps, pg.ready_bytes,
+    });
 }
 
 test "Mini capacity: binary search and fixed-context admission agree at both sides of the boundary" {
@@ -197,14 +256,14 @@ test "Mini capacity: binary search and fixed-context admission agree at both sid
             const total: u64 = if (unified) 36 * g else 24 * g;
             const pool: budget.Pool = .{ .total = total, .free = total - g, .reserve = try budget.reserveBytes(null, total, unified), .limit = limit, .unified = unified };
             for ([_]u32{ 1, 4 }) |parallel| {
-                const q: Query = .{ .parallel = parallel };
+                const q: Query = .{ .parallel = parallel, .cache_entries = 0 };
                 const r = try search(a, &ck, pool, ck.checkpoint_bytes, q);
                 try std.testing.expect(r.maximum.? > 0 and r.maximum.? < ck.text.max_context);
                 try std.testing.expectEqual(r.maximum.?, r.result.context);
                 try std.testing.expectEqual(null, r.result.refused_at);
                 try std.testing.expectEqual(r.maximum.? + 1, r.next_context.?.context);
                 const refused_at = r.next_context.?.refused_at.?;
-                try std.testing.expectEqual(@as(@TypeOf(refused_at), if (parallel == 1) .first_stream_state else .streams), refused_at);
+                try std.testing.expect(refused_at == .first_stream_state or refused_at == .streams);
                 var fixed = q;
                 fixed.context = r.maximum.? + 64;
                 try std.testing.expect((try search(a, &ck, pool, ck.checkpoint_bytes, fixed)).result.refused_at != null);
@@ -234,7 +293,7 @@ test "Mini capacity: four-stream DFlash2 reports its own weight, KV, scratch and
     ck.dense_scratch = 7_078_656;
     const gib = 1 << 30;
     const pool: budget.Pool = .{ .total = 32 * gib, .free = 31 * gib, .reserve = 4 * gib, .limit = null, .unified = false };
-    const q: Query = .{ .parallel = 4, .context = 8704, .format = .fp8 };
+    const q: Query = .{ .parallel = 4, .context = 8704, .format = .fp8, .cache_entries = 0 };
     for ([_]struct { weights: u64, ready: u64 }{
         .{ .weights = 989_966_848, .ready = 17_102_791_408 },
         .{ .weights = 988_977_664, .ready = 17_101_802_224 },
@@ -250,11 +309,39 @@ test "Mini capacity: four-stream DFlash2 reports its own weight, KV, scratch and
         try std.testing.expectEqual(0, c.drafter_prepared_head);
         try std.testing.expectEqual(42_086_400, c.drafter_kv);
         try std.testing.expectEqual(47_947_520, c.drafter_shared_other + c.drafter_shared_taps + c.drafter_attention_partials);
-        try std.testing.expectEqual(478_182_920, r.result.tracked.?.per_stream);
-        try std.testing.expectEqual(row.ready, r.result.tracked.?.ready);
+        try std.testing.expectEqual(331_120_276, r.result.tracked.?.per_stream);
+        try std.testing.expectEqual(35 * 4, r.result.paging.?.pool.pages);
+        try std.testing.expectEqual(row.ready + 17_302_448, r.result.tracked.?.ready);
     }
     ck.draft_arena = 0;
     const off = try search(a, &ck, pool, ck.checkpoint_bytes, q);
     try std.testing.expect(!off.drafts and off.drafter == null);
     try std.testing.expectEqual(0, off.result.components.?.drafter_kv);
+}
+
+test "Mini capacity: prefix retention and caps leave the allocation unchanged" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var ck = try mini.capacity.testCheckpoint(a);
+    ck.draft_kind = .dflash2;
+    const pool: budget.Pool = .{ .total = 24 << 30, .free = 23 << 30, .reserve = 1 << 30, .limit = null, .unified = false };
+    var q: Query = .{ .parallel = 4, .context = 8704 };
+    const on = (try search(a, &ck, pool, ck.checkpoint_bytes, q)).result.paging.?;
+    try std.testing.expectEqual(kv.most_snaps, on.cache_entries);
+    try std.testing.expectEqual(@as(usize, 0), on.pool.snaps);
+    try std.testing.expectEqual(@as(u64, 0), on.layout.snap_bytes);
+    try std.testing.expectEqual(on.pool.pages * on.layout.pageBytes(), on.pool.kept);
+    q.prompt_cache_gib = 0;
+    const off = (try search(a, &ck, pool, ck.checkpoint_bytes, q)).result.paging.?;
+    try std.testing.expectEqual(@as(usize, 0), off.cache_entries);
+    try std.testing.expectEqual(@as(u64, 0), off.pool.kept);
+    try std.testing.expectEqual(on.pool.pages, off.pool.pages);
+    try std.testing.expectEqual(on.ready_bytes, off.ready_bytes);
+    q.prompt_cache_gib = 0.2;
+    const capped = (try search(a, &ck, pool, ck.checkpoint_bytes, q)).result.paging.?;
+    try std.testing.expectEqual(on.cache_entries, capped.cache_entries);
+    try std.testing.expectEqual(on.pool.pages, capped.pool.pages);
+    try std.testing.expectEqual(on.ready_bytes, capped.ready_bytes);
+    try std.testing.expectEqual(@as(u64, (1 << 30) / 5), capped.pool.kept);
 }

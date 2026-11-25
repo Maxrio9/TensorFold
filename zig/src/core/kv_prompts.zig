@@ -20,6 +20,7 @@ pub const Query = struct {
     frame: u32 = 0,
     /// What the rows depend on beyond key, images and frame (0: nothing).
     namespace: u64 = 0,
+    salt: ?u64 = null,
     /// The request's own chunk starts; empty: the store's grid.
     starts: []const u32 = &.{},
     /// Rows this pass prefills; null: the prompt's length.
@@ -31,6 +32,8 @@ pub const Query = struct {
     }
 };
 
+pub const Kept = struct { held: bool = false, shared: usize = 0 };
+
 /// The store as a family sees it: a prompt pass begins, keeps at its marks, and reports once its prompt is in.
 pub const Prompts = struct {
     ctx: *anyopaque,
@@ -40,7 +43,7 @@ pub const Prompts = struct {
         /// The deepest state `prompt` resumes: its pages into `adopt` (held once more), the rest restored into `owner`.
         begin: *const fn (ctx: *anyopaque, q: Query, history_len: u32, shared: []const u32, owner: *anyopaque, adopt: *std.ArrayList(u32)) anyerror!Plan,
         /// At `at` the store takes the pages of `mine` it lacks and the state; `path`'s first n replace the stream's.
-        keep: *const fn (ctx: *anyopaque, q: Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) usize,
+        keep: *const fn (ctx: *anyopaque, q: Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) Kept,
         /// One log line after a prompt pass: where it resumed and how many states it kept.
         report: *const fn (ctx: *anyopaque, prompt: usize, from: u32, kept: u64) void,
         free: *const fn (ctx: *anyopaque, marks: []const u32) void,
@@ -50,7 +53,7 @@ pub const Prompts = struct {
         return p.vtable.begin(p.ctx, q, history_len, shared, owner, adopt);
     }
 
-    pub fn keep(p: Prompts, q: Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) usize {
+    pub fn keep(p: Prompts, q: Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) Kept {
         return p.vtable.keep(p.ctx, q, at, owner, mine, path);
     }
 
@@ -80,12 +83,13 @@ pub const Prompts = struct {
         defer gpa.free(path);
         const mine = try gpa.dupe(u32, l.ids.items);
         defer gpa.free(mine);
-        const shared = p.keep(q, @intCast(at), owner, mine[0..n], path);
-        if (std.mem.eql(u32, mine[0..shared], path[0..shared])) return shared == n;
+        const kept = p.keep(q, @intCast(at), owner, mine[0..n], path);
+        const shared = kept.shared;
+        if (std.mem.eql(u32, mine[0..shared], path[0..shared])) return kept.held;
         @memcpy(mine[0..shared], path[0..shared]); // the same tokens' rows: a resume from any row is exact
         try table.write(table.ctx, mine, 0);
         for (path[0..shared], 0..) |id, i| pool.share(l, i, id);
-        return shared == n;
+        return kept.held;
     }
 };
 
@@ -144,7 +148,11 @@ pub const Blob = struct {
 
 /// TF_KV_SHARE=n: keep prompts as pool pages and at most n states past them (0, empty or unset: copies, as before).
 pub fn sharing() error{BadKvShare}!usize {
-    const v = @import("profile").given(.TF_KV_SHARE) orelse return 0;
+    return sharingDefault(0);
+}
+
+pub fn sharingDefault(default: usize) error{BadKvShare}!usize {
+    const v = @import("profile").given(.TF_KV_SHARE) orelse return default;
     return std.fmt.parseInt(usize, v, 10) catch error.BadKvShare;
 }
 
@@ -192,9 +200,9 @@ const Stub = struct {
     fn begin(_: *anyopaque, _: Query, _: u32, _: []const u32, _: *anyopaque, _: *std.ArrayList(u32)) anyerror!Plan {
         return .{ .from = 256, .marks = try testing.allocator.dupe(u32, &.{512}) };
     }
-    fn keep(ctx: *anyopaque, _: Query, _: u32, _: *anyopaque, mine: []const u32, path: []u32) usize {
+    fn keep(ctx: *anyopaque, _: Query, _: u32, _: *anyopaque, mine: []const u32, path: []u32) Kept {
         @memcpy(path, Stub.of(ctx).held[0..mine.len]);
-        return mine.len;
+        return .{ .held = true, .shared = mine.len };
     }
     fn report(_: *anyopaque, _: usize, _: u32, _: u64) void {}
     fn free(_: *anyopaque, marks: []const u32) void {

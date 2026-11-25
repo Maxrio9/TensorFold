@@ -40,7 +40,7 @@ const Family = struct {
         if (f.fail_copy) return error.CopyFailed; // after its work is queued
         f.copies += 1;
     }
-    fn restore(p: *anyopaque, _: ?*anyopaque, group: u32, src: radix.Parts.Part) anyerror!void {
+    fn restore(p: *anyopaque, _: ?*anyopaque, group: u32, _: u32, src: radix.Parts.Part) anyerror!void {
         const f = of(p);
         if (f.hold_on_restore > 0) {
             var ids: [8]u32 = undefined;
@@ -235,6 +235,35 @@ test "reclaim frees a copied part while its path and retained part are a stream'
     try expectEqual(@as(usize, 0), w.store.tree.snaps);
     for (l.ids.items) |id| try expect(w.pool.holders(id) >= 1); // the stream's pages stay
     for (win.ids.items) |id| try expectEqual(@as(u32, 1), w.pool.holders(id));
+}
+
+test "LRU reclaims an older copied state and its prefix even after a hit" {
+    var w: World = .{ .pool = undefined };
+    try w.init(&copied_state, 16);
+    defer w.deinit();
+    w.store.reclaim_lru = true;
+    const newer = [_]u32{ 14, 13, 12, 11, 10, 9, 8, 7, 6 };
+    const queries: []const radix.Query = &.{ .of(prompt[0..9]), .of(&newer) };
+    var adopt: std.ArrayList(u32) = .empty;
+    defer adopt.deinit(testing.allocator);
+    for (queries, 0..) |q, i| {
+        var l = try w.lease(2);
+        defer w.pool.finish(&l);
+        var path: [2]u32 = undefined;
+        try expect(w.store.keepParts(q, 8, null, l.ids.items, &.{.{ .base = 0, .ids = &.{} }}, &path).held);
+        if (i == 0) {
+            const plan = try w.store.begin(testing.allocator, q, 9, &.{}, null, &adopt);
+            defer plan.deinit(testing.allocator);
+            try expectEqual(@as(u32, 8), plan.from);
+            for (adopt.items) |id| w.pool.release(id);
+        }
+    }
+    try expectEqual(@as(usize, 6), w.pool.available());
+    var live = try w.lease(7);
+    defer w.pool.finish(&live);
+    try expect(w.store.find(queries[0]) == null);
+    try expect(w.store.find(queries[1]) != null);
+    try expectEqual(@as(usize, 5), w.store.tree.heldPages());
 }
 
 test "a restore that takes pool pages runs reclaim, which never evicts the entry being restored" {

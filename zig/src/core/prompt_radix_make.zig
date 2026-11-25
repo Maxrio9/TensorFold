@@ -120,11 +120,11 @@ pub const Decl = struct {
     }
 
     /// The copied parts of `e` into the owner's live state, fenced; the store keeps their pages.
-    pub fn restore(d: Decl, owner: ?*anyopaque, ps: []const Part) !void {
+    pub fn restore(d: Decl, owner: ?*anyopaque, at: u32, ps: []const Part) !void {
         if (d.specs.len == 0) return;
         const h = d.hooks.?;
         defer h.vtable.fence(h.ptr, owner); // the copies out of the store's pages are done, failed or not
-        for (d.specs, ps, 0..) |spec, part, g| if (spec.make == .copied) try h.vtable.restore(h.ptr, owner, @intCast(g), part);
+        for (d.specs, ps, 0..) |spec, part, g| if (spec.make == .copied) try h.vtable.restore(h.ptr, owner, @intCast(g), at, part);
     }
 
     /// The retained parts a resume at `at` maps: whole pages held for the stream, partial ones and `extra` as copies.

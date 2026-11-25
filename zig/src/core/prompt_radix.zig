@@ -124,6 +124,7 @@ pub const Store = struct {
     page_only: bool = false,
     /// Checkpoints inside a page (C4): any row on the request's schedule, the partial page a held copy.
     tails: bool = false,
+    reclaim_lru: bool = false,
 
     const SHARED_KEYS = 64;
 
@@ -322,7 +323,7 @@ pub const Store = struct {
         defer n.pins -= 1;
         const family = s.tree.family;
         if (e.saved) |saved| try family.vtable.restore(family.ptr, owner, saved);
-        try s.decl.restore(owner, e.parts);
+        try s.decl.restore(owner, f.at(), e.parts);
     }
 
     /// A resume's copies are done (the stream mapped its own pages from them): each source's hold goes back.
@@ -543,9 +544,9 @@ pub const Store = struct {
         const pages = s.tree.pages;
         // parts and tails first: their path may be in use
         if (s.decl.specs.len > 0 or s.tails) while (pages.vtable.available(pages.ptr) < want) {
-            s.tree.evictAt(evict_mod.partVictim(&s.tree) orelse break);
+            s.tree.evictAt(evict_mod.partVictim(&s.tree, s.reclaim_lru) orelse break);
         };
-        while (pages.vtable.available(pages.ptr) < want) if (!s.tree.evictLeaf()) return false;
+        while (pages.vtable.available(pages.ptr) < want) if (!s.tree.evictLeafBy(s.reclaim_lru)) return false;
         return true;
     }
 

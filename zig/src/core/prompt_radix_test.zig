@@ -305,6 +305,34 @@ test "reclaim frees the pages of the least valuable leaf nobody holds, and spare
     try std.testing.expectEqual(@as(usize, 0), f.live);
 }
 
+test "reclaim can prefer the oldest idle leaf even when it previously served a hit" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var f: Fake = .{ .gpa = std.testing.allocator };
+    var s = try newStore(&f, rules);
+    defer s.deinit();
+    s.reclaim_lru = true;
+    s.limit(.{ .pages = 40, .snaps = 4 });
+    var mine: std.ArrayList(u32) = .empty;
+    const x = seq(24, 0);
+    _ = try pass(&f, &s, a, &x, 20, &.{}, &mine);
+    f.leave(mine.items);
+    var adopt: std.ArrayList(u32) = .empty;
+    defer adopt.deinit(std.testing.allocator);
+    const hit = try s.begin(a, .of(&x), 20, &.{}, null, &adopt);
+    try std.testing.expectEqual(@as(u32, 20), hit.from);
+    f.leave(adopt.items);
+    const y = seq(24, 100);
+    _ = try pass(&f, &s, a, &y, 20, &.{}, &mine);
+    f.leave(mine.items);
+    var rest: [54]u32 = undefined;
+    f.lane(&rest);
+    try std.testing.expect(s.reclaim(3));
+    try std.testing.expect(s.find(.of(&x)) == null);
+    try std.testing.expect(s.find(.of(&y)) != null);
+}
+
 test "a history every turn resumes again after one kept a longer state is a branch point: its turns never supersede it" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();

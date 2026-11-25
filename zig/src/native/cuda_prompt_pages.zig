@@ -10,6 +10,7 @@ const Allocator = std.mem.Allocator;
 
 /// Whether the family keeps prompts this way: it declares the hooks, its streams are on pages and TF_KV_SHARE is set.
 pub fn wanted(comptime F: type, loaded: anytype) !bool {
+    if (comptime @hasField(@TypeOf(loaded), "paging")) if (loaded.paging) |p| return p.cache_entries > 0;
     return could(F, loaded) and try hooks.sharing() > 0;
 }
 
@@ -17,6 +18,19 @@ pub fn wanted(comptime F: type, loaded: anytype) !bool {
 pub fn could(comptime F: type, loaded: anytype) bool {
     if (comptime !@hasDecl(F, "share_attach")) return false;
     return loaded.layout != null;
+}
+
+pub fn pageLimit(loaded: anytype) ?usize {
+    if (comptime @hasField(@TypeOf(loaded), "paging")) if (loaded.paging) |p| {
+        return @intCast(p.pool.kept / p.layout.pageBytes());
+    };
+    return null;
+}
+
+/// The limit on retained mark metadata for a family with no reserved snapshot slots.
+pub fn entryLimit(loaded: anytype) ?usize {
+    if (comptime @hasField(@TypeOf(loaded), "paging")) if (loaded.paging) |p| return p.cache_entries;
+    return null;
 }
 
 /// What the unpaged store's note on a state past its whole budget adds: the setting, where `could` holds.
@@ -34,6 +48,10 @@ pub const Adapter = struct {
 
     /// The family's store, its pool's reclaim evicting the tree's idle pages; null: the family has no pool.
     pub fn open(comptime F: type, gpa: Allocator, target: anytype, page_tokens: u32, snap_limit: usize) !?*Adapter {
+        return openLimited(F, gpa, target, page_tokens, snap_limit, null);
+    }
+
+    pub fn openLimited(comptime F: type, gpa: Allocator, target: anytype, page_tokens: u32, snap_limit: usize, page_limit: ?usize) !?*Adapter {
         const pool = F.share_pool(target) orelse return null;
         const x = try gpa.create(Adapter);
         errdefer gpa.destroy(x);
@@ -46,12 +64,44 @@ pub const Adapter = struct {
         rules.min_gap = 256;
         rules.tail = true;
         const copies: radix.Snapshots = .{ .ptr = target, .vtable = &snaps.Snaps(F, null).vtable };
-        x.* = .{ .gpa = gpa, .pool = pool, .store = try radix.Store.init(gpa, copies, radix.pagesOf(kv.Pool, pool, pool.page_bytes), rules), .detach = Detach(F).call, .target = target };
+        const pages = radix.pagesOf(kv.Pool, pool, pool.page_bytes);
+        const store = if (comptime @hasDecl(F, "share_state"))
+            try radix.Store.initGroups(gpa, copies, pages, rules, .{ .parts = &.{.{ .kind = .state, .make = .copied }}, .legacy = false }, .{ .ptr = target, .vtable = &StatePart(F).vtable })
+        else
+            try radix.Store.init(gpa, copies, pages, rules);
+        x.* = .{ .gpa = gpa, .pool = pool, .store = store, .detach = Detach(F).call, .target = target };
         errdefer x.store.deinit();
-        x.store.limit(.{ .pages = pool.total(), .snaps = snap_limit });
+        x.store.reclaim_lru = @hasDecl(F, "share_reclaim_lru") and F.share_reclaim_lru;
+        x.store.limit(.{ .pages = page_limit orelse pool.total(), .snaps = snap_limit });
         try pool.joinReclaim(.{ .ctx = x, .call = reclaim }); // a promise or a hold evicts the tree's idle pages first
         F.share_attach(target, .{ .ctx = x, .vtable = &vtable });
         return x;
+    }
+
+    fn StatePart(comptime F: type) type {
+        return struct {
+            fn bytes(ptr: *anyopaque, _: u32, at: u32) u64 {
+                return F.share_state.bytes(F.share_backend(ptr), at);
+            }
+
+            fn copy(ptr: *anyopaque, owner: ?*anyopaque, _: u32, at: u32, dst: radix.Parts.Part) anyerror!void {
+                try F.share_state.copy(F.share_backend(ptr), owner, at, dst.ids, dst.bytes, true);
+            }
+
+            fn restore(ptr: *anyopaque, owner: ?*anyopaque, _: u32, at: u32, src: radix.Parts.Part) anyerror!void {
+                try F.share_state.copy(F.share_backend(ptr), owner, at, src.ids, src.bytes, false);
+            }
+
+            fn copyRows(_: *anyopaque, _: ?*anyopaque, _: u32, _: u32, _: u32, _: u32) anyerror!void {
+                return error.PageAlignedMarksOnly;
+            }
+
+            fn fence(ptr: *anyopaque, _: ?*anyopaque) void {
+                F.share_state.fence(F.share_backend(ptr));
+            }
+
+            const vtable: radix.PartHooks.VTable = .{ .bytes = bytes, .copy = copy, .restore = restore, .copy_rows = copyRows, .fence = fence };
+        };
     }
 
     fn Detach(comptime F: type) type {
@@ -86,16 +136,18 @@ pub const Adapter = struct {
         return .{ .from = p.from, .marks = p.marks };
     }
 
-    fn keep(ctx: *anyopaque, q: hooks.Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) usize {
+    fn keep(ctx: *anyopaque, q: hooks.Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) hooks.Kept {
         const x = of(ctx);
-        const ids = identities(x.gpa, q.images) catch return 0; // nothing kept: a later turn prefills it
+        const ids = identities(x.gpa, q.images) catch return .{}; // nothing kept: a later turn prefills it
         defer x.gpa.free(ids);
-        return x.store.keep(query(q, ids), at, owner, mine, path).shared;
+        const retained: []const radix.Retained = if (x.store.decl.specs.len > 0) &.{.{ .base = 0, .ids = &.{} }} else &.{};
+        const kept = x.store.keepParts(query(q, ids), at, owner, mine, retained, path);
+        return .{ .held = kept.held, .shared = kept.shared };
     }
 
     /// The family's query as the store takes it, its images as `ids`.
     fn query(q: hooks.Query, ids: []const radix.Identity) radix.Query {
-        return .{ .key = q.key, .prompt_len = q.prompt_len, .images = ids, .frame = q.frame, .namespace = q.namespace, .starts = q.starts, .prefilled = q.prefilled };
+        return .{ .key = q.key, .prompt_len = q.prompt_len, .images = ids, .frame = q.frame, .namespace = q.namespace, .salt = q.salt, .starts = q.starts, .prefilled = q.prefilled };
     }
 
     /// The images' identities in the store's type (none allocated for text).
@@ -158,7 +210,7 @@ test "TF_KV_SHARE's adapter: a kept prompt's pages resume a later one, adopted; 
     try f.pool.cover(&lease, 3, null);
     var path: [2]u32 = undefined;
     var owner: u8 = 0;
-    try testing.expectEqual(@as(usize, 2), p.keep(.of(&prompt), 8, &owner, lease.ids.items[0..2], &path));
+    try testing.expectEqual(@as(usize, 2), p.keep(.of(&prompt), 8, &owner, lease.ids.items[0..2], &path).shared);
     try testing.expectEqualSlices(u32, lease.ids.items[0..2], &path);
     f.pool.finish(&lease);
     var adopt: std.ArrayList(u32) = .empty;
@@ -196,8 +248,8 @@ test "TF_KV_SHARE's adapter: a picture under the same key words reaches the stor
     try f.pool.cover(&lb, 2, null);
     var path: [2]u32 = undefined;
     var owner: u8 = 0;
-    try testing.expectEqual(@as(usize, 2), p.keep(qa, 8, &owner, la.ids.items, &path));
-    try testing.expectEqual(@as(usize, 2), p.keep(qb, 8, &owner, lb.ids.items, &path));
+    try testing.expectEqual(@as(usize, 2), p.keep(qa, 8, &owner, la.ids.items, &path).shared);
+    try testing.expectEqual(@as(usize, 2), p.keep(qb, 8, &owner, lb.ids.items, &path).shared);
     try testing.expectEqual(la.ids.items[0], path[0]); // the text page: a's
     try testing.expectEqual(lb.ids.items[1], path[1]); // the image's page: b's own
     var adopt: std.ArrayList(u32) = .empty;

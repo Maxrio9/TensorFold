@@ -20,6 +20,7 @@ pub const Options = struct {
     limit_gib: ?[]const u8 = null,
     parallel: u32,
     context: ?u32 = null,
+    prompt_cache_gib: ?f64 = null,
     bf16: bool = false,
     unified: bool = false,
     no_drafts: bool = false,
@@ -78,6 +79,8 @@ pub fn parse(args: []const []const u8) ?Options {
                 o.drafter = value;
             } else if (eql(u8, flag, "--context")) {
                 o.context = std.fmt.parseInt(u32, value, 10) catch return null;
+            } else if (eql(u8, flag, "--prompt-cache-gib")) {
+                o.prompt_cache_gib = sizeGiB(value) orelse return null;
             } else if (eql(u8, flag, "--vision-max-images")) {
                 o.max_images = std.fmt.parseInt(u32, value, 10) catch return null;
                 if (o.max_images < 1 or o.max_images > 100) return null;
@@ -141,6 +144,14 @@ fn jsonResult(j: *std.json.Stringify, r: mini.Result) !void {
     try j.beginObject();
     try j.objectField("context");
     try j.write(r.context);
+    if (r.paging) |pg| {
+        try j.objectField("pool_tokens");
+        try j.write(pg.pool.pages * pg.layout.page_tokens);
+        try j.objectField("fixed_bytes_per_stream");
+        try j.write(pg.layout.fixed_bytes);
+        try j.objectField("snapshot_slots");
+        try j.write(pg.pool.snaps);
+    }
     try j.objectField("admitted");
     try j.write(r.refused_at == null);
     try j.objectField("refused_at");
@@ -164,6 +175,7 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
     const q: mini.Query = .{
         .parallel = o.parallel,
         .context = o.context,
+        .prompt_cache_gib = o.prompt_cache_gib,
         .format = if (o.bf16) .bf16 else .fp8,
         .drafts = !o.no_drafts,
         .drafter = o.drafter,
@@ -229,6 +241,9 @@ pub fn run(a: Allocator, io: std.Io, out: *Writer, model: []const u8, dir: []con
             try out.print("Model cap {d} tokens ({s})\n", .{ r.model_cap, if (r.model_cap_binds.?) "binding" else "available beyond this budget" });
         }
         if (r.result.components) |c| try printAmounts(out, "Allocation components", c);
+        if (r.result.paging) |pg| try out.print("Shared KV pool {d} tokens, {d} fixed bytes per stream, {d} snapshot slots\n", .{
+            pg.pool.pages * pg.layout.page_tokens, pg.layout.fixed_bytes, pg.pool.snaps,
+        });
         if (r.result.tracked) |t| try printAmounts(out, "Tracked totals", t);
         try printAmounts(out, "Admission room", r.result.rooms);
         if (r.result.message) |why| {

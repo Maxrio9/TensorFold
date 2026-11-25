@@ -64,7 +64,7 @@ const Fake = struct {
         return 0;
     }
     fn copy(_: *anyopaque, _: ?*anyopaque, _: u32, _: u32, _: radix.Parts.Part) anyerror!void {}
-    fn partRestore(_: *anyopaque, _: ?*anyopaque, _: u32, _: radix.Parts.Part) anyerror!void {}
+    fn partRestore(_: *anyopaque, _: ?*anyopaque, _: u32, _: u32, _: radix.Parts.Part) anyerror!void {}
     fn copyRows(p: *anyopaque, _: ?*anyopaque, group: u32, src: u32, dst: u32, rows: u32) anyerror!void {
         const f = of(p);
         f.rows[f.nrows] = .{ group, src, dst, rows };

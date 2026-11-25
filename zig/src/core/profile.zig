@@ -156,7 +156,7 @@ pub const entries = [_]Entry{
     .{ .id = .TF_QWEN_KV_PAGES_ALL, .families = qwen, .class = .debug, .syntax = .one, .effect = "Put the engine's own stream on pages too", .evidence = "#1357" },
     .{ .id = .TF_QWEN_KV_SHARE, .families = qwen, .class = .identical, .effect = "Keep prompt pages and bounded recurrent snapshots", .evidence = "#1357" },
     .{ .id = .TF_QWEN_KV_HOST, .families = qwen, .class = .identical, .syntax = .one, .effect = "Keep KV pages in mapped host memory; one stream, state runs on the device", .evidence = "#2637" },
-    .{ .id = .TF_KV_SHARE, .families = &.{ "gemma4", "gemma4_unified", "kolibri1", "spark2_5", "glm5_next", "dory" }, .class = .identical, .effect = "Keep prompt states over the core KV pool", .evidence = "#1657" },
+    .{ .id = .TF_KV_SHARE, .families = &.{ "gemma4", "gemma4_unified", "kolibri1", "spark2_5", "glm5_next", "dory", "inkling2_loop" }, .class = .identical, .effect = "Keep prompt states over the core KV pool", .evidence = "#1657" },
     .{ .id = .TF_FLASHNEXT_KV_PAGES, .families = flash, .class = .experimental, .effect = "KV pool page size; no profile qualifies it yet", .evidence = "#1660" },
     .{ .id = .TF_FLASHNEXT_KV_PAGES_ALL, .families = flash, .class = .debug, .syntax = .one, .effect = "Put every stream on pool pages for checks", .evidence = "#1660" },
     .{ .id = .TF_KV_PAGES, .families = &.{"glm5_next"}, .class = .identical, .syntax = .auto, .effect = "GLM KV pool pages; auto from two ranks with BF16, windows with FP8", .evidence = "#1322" },

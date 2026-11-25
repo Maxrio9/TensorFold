@@ -60,6 +60,14 @@ pub const Checkpoint = struct {
     vision_weights: u64 = 0,
     vision: ?native.VisionOptions = null,
 
+    pub fn scheduleGlobalVisits(ck: *const Checkpoint) u32 {
+        var n: u32 = 0;
+        for (ck.schedule.visits[0..ck.schedule.n_visits]) |visit| {
+            if (ck.schedule.at(visit.layer).kind == .global) n += 1;
+        }
+        return n;
+    }
+
     pub fn read(a: std.mem.Allocator, io: std.Io, dir: []const u8, drafts: bool, drafter_dir: ?[]const u8, vision: ?native.VisionOptions, why: *config.Why) !Checkpoint {
         const c = try native.readConfig(a, io, dir, why);
         try loop.validateLoad(&c, 1, false);
@@ -104,14 +112,21 @@ pub const Checkpoint = struct {
     }
 
     pub fn allocations(ck: *const Checkpoint, context: u32, format: Format) !Components {
+        return ck.allocationsMode(context, format, false);
+    }
+
+    pub fn allocationsMode(ck: *const Checkpoint, context: u32, format: Format, paged: bool) !Components {
         const rows_per_pass = loop.promptRows(ck.exl3);
-        const layout = try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format, rows_per_pass);
+        const layout = if (paged)
+            try loop.CacheLayout.initPaged(&ck.text, &ck.schedule, context, format, rows_per_pass)
+        else
+            try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format, rows_per_pass);
         const slot = engine.slotAllocs(&layout, ck.schedule.n_visits);
         const lane = backend.laneAllocs(ck.text.unpadded_vocab);
         const shared = backend.sharedAllocs(ck.text.unpadded_vocab);
         const conv = layout.bytes - layout.at(0).conv_offset;
         const global = loop.CacheLayout.globalBytesPerToken(&ck.schedule, format);
-        const global_kv = global * std.mem.alignForward(u64, context, 64);
+        const global_kv = if (paged) 0 else global * std.mem.alignForward(u64, context, 64);
         const drafted = ck.draft_arena > 0;
         const shared_taps = if (drafted) draft.sharedTapBytes(rows_per_pass) else 0;
         const ds = drafted and ck.draft_kind == .dspark;
@@ -128,12 +143,13 @@ pub const Checkpoint = struct {
             .drafter_weights_and_padding = ck.draft_arena - prepared_head,
             .drafter_prepared_head = prepared_head,
             .dense_scratch = ck.dense_scratch,
-            .model_working = ck.lazy_head_bytes + try engine.Model.planScratch(ck.text, context, if (ck.exl3) pack.expertGeometry(ck.text) else null),
+            .model_working = ck.lazy_head_bytes + try engine.Model.planScratchMode(ck.text, context, if (ck.exl3) pack.expertGeometry(ck.text) else null, paged),
             .backend_shared = shared[0] + shared[1] + shared[2],
             .drafter_shared_other = draft_scratch - shared_taps - draft_partials,
             .drafter_shared_taps = shared_taps,
             .drafter_attention_partials = draft_partials,
             .target_global_kv = global_kv,
+            .target_page_table = if (paged) @import("loop_pages.zig").tableBytes(context) else 0,
             .target_local_kv = layout.bytes - conv - global_kv,
             .target_conv = conv,
             .target_rewind = slot[1] + slot[2] + slot[3],
@@ -160,6 +176,7 @@ pub const Components = struct {
     drafter_shared_taps: u64,
     drafter_attention_partials: u64,
     target_global_kv: u64,
+    target_page_table: u64 = 0,
     target_local_kv: u64,
     target_conv: u64,
     target_rewind: u64,
@@ -174,7 +191,8 @@ pub const Components = struct {
     }
 
     pub fn stream(self: Components) u64 {
-        return self.target_global_kv + self.target_local_kv + self.target_conv +
+        return (if (self.target_page_table == 0) self.target_global_kv else 0) +
+            self.target_page_table + self.target_local_kv + self.target_conv +
             self.target_rewind + self.backend_lane + self.drafterSession() + (self.vision_prompt_rows orelse 0);
     }
 

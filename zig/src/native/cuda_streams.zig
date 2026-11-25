@@ -60,6 +60,9 @@ pub fn shareSlots(share: bool, snap_bytes: u64, host_cache: bool) !?usize {
 
 /// The family's streams in `b.room`; null with `problem` set when none fit or --parallel asks for more than fit.
 pub fn count(comptime F: type, a: Allocator, loaded: anytype, o: api.Open, b: Budget, problem: *[]const u8) !?Count {
+    if (comptime @hasField(@TypeOf(loaded), "paging")) if (loaded.paging) |p| {
+        return .{ .streams = p.pool.lanes, .paged = p.pool, .layout = p.layout };
+    };
     const free = loaded.free_streams;
     const grow = budget.growRoom(b.room, !@hasField(F.Options, "lanes"));
     const wrapped = kv_pages.wrapped(F, loaded, free, b.stream_bytes, b.room);

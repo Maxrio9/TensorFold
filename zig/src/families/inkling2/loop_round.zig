@@ -102,6 +102,13 @@ pub fn prepare(m: *Model, s: cuda.Stream, chains: []const Chain, head0: usize, h
     try m.upload(s, m.s.pos, std.mem.sliceAsBytes(pos[0..shape.rows]));
     try m.upload(s, m.s.seg_of, std.mem.sliceAsBytes(seg_of[0..shape.rows]));
     try m.upload(s, m.s.segs, std.mem.sliceAsBytes(segs[0..chains.len]));
+    if (m.pages != null) {
+        for (chains, segs[0..chains.len]) |chain, *seg| {
+            seg.paged = 1;
+            seg.off = @bitCast(m.pageTable(chain.slot));
+        }
+        try m.upload(s, m.s.segs + engine.max_slots * @sizeOf(attention.Seg), std.mem.sliceAsBytes(segs[0..chains.len]));
+    }
     for (shape.parts[0..shape.count]) |part| m.slots[part.slot].recorded = if (part.record) part.rows else 0;
     return shape;
 }
@@ -234,7 +241,7 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
                 .kv_heads = layer.heads.kv,
                 .pos = m.s.pos + r0 * 4,
                 .seg_of = m.s.seg_of,
-                .segs = m.s.segs + i * @sizeOf(attention.Seg),
+                .segs = m.s.segs + (i + if (dynamic and m.pages != null) @as(usize, engine.max_slots) else 0) * @sizeOf(attention.Seg),
                 .tiles = m.s.tiles + tileOffset(shape.count, i, kind) * @sizeOf(attention.Tile),
                 .n_tiles = part.tiles[kind],
                 .last_pos = @intCast(m.context - 1),

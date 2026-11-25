@@ -4,6 +4,7 @@ const cuda = @import("cuda");
 const core = @import("core");
 const ink = @import("inkling2");
 const rig_ = @import("contract_rig.zig");
+const pages = @import("contract_inkling2_attn_pages.zig");
 const ref = core.contract.inkling2_attn_ref;
 
 const contract = core.contract;
@@ -35,6 +36,13 @@ const fp8_fold_name = "inkling2 attn FP8 global fold";
 pub const slide_prompt_name = "inkling2 attn sliding prompt";
 pub const slide_prompt_fp8_name = "inkling2 attn sliding prompt FP8";
 const fp8_split_name = "inkling2 attn FP8 global split";
+const paged_shapes = [_]c.Shape{
+    // The four stress rows straddle a full period, exposing smaller accumulators in all three replay orders.
+    .{ .rows = 7, .n = n_out, .k = 2049 },
+    .{ .rows = 1, .n = n_out, .k = 255 },
+    .{ .rows = 1, .n = n_out, .k = 256 },
+    .{ .rows = 3, .n = n_out, .k = 257 },
+};
 
 pub const fold_name = "inkling2 attn tf_ink2_attn_fold + tf_ink2_merge (global layers, 16,384-key chunks)";
 
@@ -105,6 +113,7 @@ pub const Attn = struct {
     plant: Plant = .none,
     fp8: bool = false,
     prefetch: bool = false,
+    paged: bool = false,
     shape: c.Shape = undefined,
     fill: g.Fill = .random,
     layer: K.Layer = undefined,
@@ -171,6 +180,20 @@ pub const Attn = struct {
             s.replaces = if (self.path == .sliding) fp8_sliding_name else fp8_split_name;
             s.served = &prefetch_shapes;
         }
+        if (self.paged) {
+            s.name = switch (self.path) {
+                .fold => if (self.fp8) "inkling2 attn paged FP8 fold" else "inkling2 attn paged BF16 fold",
+                .split => if (self.prefetch) "inkling2 attn paged FP8 prefetch" else if (self.fp8)
+                    "inkling2 attn paged FP8 split"
+                else
+                    "inkling2 attn paged BF16 split",
+                .prompt => if (self.fp8) "inkling2 attn paged FP8 prompt" else "inkling2 attn paged BF16 prompt",
+                else => unreachable,
+            };
+            s.served = &paged_shapes;
+            s.tiles = @splat(.{});
+            s.replaces = null;
+        }
         return .{ .spec = s, .ctx = self, .vt = &vt, .control = if (self.plant == .none) null else .shapes };
     }
 
@@ -203,7 +226,7 @@ pub const Attn = struct {
         const n1 = if (self.streams == 2) rows / 2 else 0;
         const n0 = rows - n1;
         const last1 = @max(n1, shape.k / 2);
-        const segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(ring * kv * (D + (if (self.fp8) @as(usize, 4) else 0))) } };
+        var segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(ring * kv * (D + (if (self.fp8) @as(usize, 4) else 0))) } };
         self.pos = try a.alloc(usize, rows);
         self.stream = try a.alloc(usize, rows);
         for (0..rows) |r| {
@@ -233,6 +256,7 @@ pub const Attn = struct {
         d.gate = try self.rig.input(std.mem.sliceAsBytes(self.gate));
         d.pos = try self.rig.input(std.mem.sliceAsBytes(pos32[0..rows]));
         d.seg_of = try self.rig.input(std.mem.sliceAsBytes(pos32[rows..]));
+        if (self.paged) try self.pageMap().bind(&self.rig, segs[0..self.streams]);
         d.segs = try self.rig.input(std.mem.sliceAsBytes(segs[0..self.streams]));
         d.tiles = try self.rig.input(std.mem.sliceAsBytes(tiles[0..self.n_tiles]));
         try self.planted();
@@ -241,13 +265,27 @@ pub const Attn = struct {
         d.po = try self.rig.scratch(parts * D * 4);
         d.pml = try self.rig.scratch(parts * 8);
         d.out = try self.rig.output(rows * n_out * 2);
-        if (self.prefetch or self.path == .split or self.path == .prompt) d.base = try self.rig.scratch(rows * n_out * 2);
+        if (!self.paged and (self.prefetch or self.path == .split or self.path == .prompt))
+            d.base = try self.rig.scratch(rows * n_out * 2);
         return true;
+    }
+
+    fn pageMap(self: *const Attn) pages.Map {
+        return .{ .logical_ring = self.layer.ring, .streams = self.streams };
+    }
+
+    fn uploadCache(self: *Attn, bytes: []const u8, code: usize, scale: usize) !u64 {
+        if (!self.paged) return self.rig.input(bytes);
+        const a = self.rig.gpu.gpa;
+        const physical = try a.alloc(u8, bytes.len);
+        defer a.free(physical);
+        self.pageMap().pack(physical, bytes, kv, code, scale);
+        return self.rig.input(physical);
     }
 
     /// Pack each stream's codes and FP32 scales. The independent reference sees the expanded BF16 values.
     fn cacheInput(self: *Attn, data: []u16, ring: usize) !u64 {
-        if (!self.fp8) return self.rig.input(std.mem.sliceAsBytes(data));
+        if (!self.fp8) return self.uploadCache(std.mem.sliceAsBytes(data), D * @sizeOf(u16), 0);
         const a = self.rig.gpu.gpa;
         const rows = ring * kv;
         const code_len = rows * D;
@@ -271,7 +309,7 @@ pub const Attn = struct {
                 }
             }
         }
-        return self.rig.input(bytes);
+        return self.uploadCache(bytes, D, @sizeOf(f32));
     }
 
     /// q, k clipped as prep leaves them, v rms-normed, the table rel . proj rounded once; stress: gate 4's rows.
@@ -389,7 +427,9 @@ pub const Attn = struct {
             .fold => r.streams = 2, // the dispatcher's multi-stream branch: a block a chunk, its sub-chunks folded in order
             .split => slots = self.shape.rows * heads * stride * K.subs,
         }
-        try K.attend(self.k, self.rig.s, r, self.layer, stride, slots, q, .{ .k = d.kc, .v = d.vc, .format = if (self.fp8) .fp8 else .bf16 }, tab, d.po, d.pml, sink, d.gate, out);
+        var layer = self.layer;
+        if (self.paged) layer.ring = @intCast(self.pageMap().ring());
+        try K.attend(self.k, self.rig.s, r, layer, stride, slots, q, .{ .k = d.kc, .v = d.vc, .format = if (self.fp8) .fp8 else .bf16 }, tab, d.po, d.pml, sink, d.gate, out);
     }
 
     pub fn run(self: *Attn) !void {

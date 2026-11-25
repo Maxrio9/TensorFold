@@ -15,7 +15,8 @@ pub const Set = struct {
     fp8_attns: [4]rows.Attn = undefined,
     slide_attns: [2]rows.Attn = undefined,
     fp8_prefetch: [2]rows.Attn = undefined,
-    preps: [3]prep.Prep = undefined,
+    paged_attns: [7]rows.Attn = undefined,
+    preps: [4]prep.Prep = undefined,
     tables: [2]prep.Table = undefined,
 
     /// Every registration (the fold first: the split and prompt launches must equal its bits), then the controls.
@@ -27,7 +28,8 @@ pub const Set = struct {
         }
         const forms = [_]struct { rows.Path, rows.Plant }{ .{ .sliding, .none }, .{ .fold, .none }, .{ .split, .none }, .{ .prompt, .none }, .{ .sliding, .late_bias }, .{ .fold, .no_sink }, .{ .prompt, .q_ulp } };
         for (&set.attns, forms) |*x, f| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = f[0], .plant = f[1] };
-        for (&set.preps, [_]bool{ false, true, true }, 0..) |*x, global, i| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .global = global, .tau_off = i == 2 };
+        for (&set.preps, 0..) |*x, i|
+            x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .global = i > 0, .tau_off = i == 2, .paged = i == 3 };
         for (&set.tables, 0..) |*x, i| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .late = i == 1 };
         for (&set.fp8_attns, forms[0..4]) |*x, f| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = f[0], .fp8 = true };
         for (&set.slide_attns, [_]bool{ false, true }) |*x, fp8|
@@ -35,6 +37,15 @@ pub const Set = struct {
         for (&set.fp8_prefetch, [_]rows.Path{ .sliding, .split }) |*x, path| {
             x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &set.k, .path = path, .fp8 = true, .prefetch = true };
         }
+        const global_paths = [_]rows.Path{ .fold, .split, .prompt };
+        for (&set.paged_attns, 0..) |*x, i| x.* = .{
+            .rig = .{ .gpu = gpu, .s = s },
+            .k = &set.k,
+            .path = if (i == 6) .split else global_paths[i % global_paths.len],
+            .fp8 = i >= global_paths.len,
+            .prefetch = i == 6,
+            .paged = true,
+        };
         set.loaded = true;
         errdefer set.deinit();
         for (set.preps[0..2]) |*x| try list.append(a, x.kernel());
@@ -43,6 +54,8 @@ pub const Set = struct {
         for (&set.fp8_attns) |*x| try list.append(a, x.kernel());
         for (&set.slide_attns) |*x| try list.append(a, x.kernel());
         for (&set.fp8_prefetch) |*x| try list.append(a, x.kernel());
+        try list.append(a, set.preps[3].kernel());
+        for (&set.paged_attns) |*x| try list.append(a, x.kernel());
         try list.append(a, set.preps[2].kernel());
         try list.append(a, set.tables[1].kernel());
         for (set.attns[4..]) |*x| try list.append(a, x.kernel());
@@ -54,6 +67,7 @@ pub const Set = struct {
         for (&set.fp8_attns) |*x| x.deinit();
         for (&set.slide_attns) |*x| x.deinit();
         for (&set.fp8_prefetch) |*x| x.deinit();
+        for (&set.paged_attns) |*x| x.deinit();
         for (&set.preps) |*x| x.deinit();
         for (&set.tables) |*x| x.deinit();
         set.k.unload();

@@ -9,8 +9,8 @@ const Found = tree_mod.Found;
 const Key = tree_mod.Key;
 
 /// Whether `x` is a less valuable state than `y`: one never resumed before one that was, then the older.
-fn worse(x: *const Entry, y: *const Entry) bool {
-    if (x.hit != y.hit) return !x.hit;
+fn worse(x: *const Entry, y: *const Entry, lru: bool) bool {
+    if (!lru and x.hit != y.hit) return !x.hit;
     return x.used < y.used;
 }
 
@@ -71,7 +71,7 @@ const Pick = struct {
         // a state its conversation moved past goes first; a shared cut or a branch point only as the least valuable
         const gone = !e.shared and !e.branched and ((prompt.len > e.born and prompt.len > f.at() and along and extends(f.node, p.k)) or supersededAt(f, e.born));
         if (gone and (p.moved == null or e.used < p.moved.?.entry().used)) p.moved = f;
-        if (p.oldest == null or worse(e, p.oldest.?.entry())) p.oldest = f;
+        if (p.oldest == null or worse(e, p.oldest.?.entry(), false)) p.oldest = f;
     }
 };
 
@@ -89,11 +89,12 @@ pub fn victim(t: *const Tree, k: Key, skip: ?*Node) ?Found {
 
 const Parts = struct {
     t: *const Tree,
+    lru: bool,
     best: ?Found = null,
 
     fn consider(p: *Parts, f: Found) void {
         const e = f.entry();
-        if (p.frees(e) and (p.best == null or worse(e, p.best.?.entry()))) p.best = f;
+        if (p.frees(e) and (p.best == null or worse(e, p.best.?.entry(), p.lru))) p.best = f;
     }
 
     /// Whether `e` has a part or tail page only the store holds.
@@ -111,8 +112,8 @@ fn pickParts(n: *Node, p: *Parts) void {
 }
 
 /// The least valuable state with a part or tail page only the store holds, never a pinned one.
-pub fn partVictim(t: *const Tree) ?Found {
-    var p: Parts = .{ .t = t };
+pub fn partVictim(t: *const Tree, lru: bool) ?Found {
+    var p: Parts = .{ .t = t, .lru = lru };
     pickParts(t.root, &p);
     return p.best;
 }

@@ -20,6 +20,8 @@ pub fn main(init: std.process.Init) !void {
         return dsparkContract(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-kv-contract"))
         return cacheContract(gpu);
+    if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-paged-contract"))
+        return pagedContract(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-slide-contract"))
         return slideContract(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-head-contract"))
@@ -128,4 +130,22 @@ fn slideContract(gpu: check.Gpu) !void {
     try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
     std.debug.print("MINI SLIDING PROMPT CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
     try check.expect(tally.kernels == 2 and tally.problems() == 0, "Mini sliding prompt contract", .{});
+}
+
+fn pagedContract(gpu: check.Gpu) !void {
+    var stream = try cuda.Stream.init(gpu.d, false);
+    defer stream.deinit();
+    var kernels: std.ArrayList(gates.Kernel) = .empty;
+    defer kernels.deinit(gpu.gpa);
+    var set: @import("contract_inkling2_attn.zig").Set = .{};
+    try set.init(gpu, stream, gpu.gpa, &kernels);
+    defer set.deinit();
+    try set.preps[3].checkFp8(.{ .rows = 7, .n = 24 * 128, .k = 261 }, .random);
+    try set.preps[3].checkFp8(.{ .rows = 3, .n = 24 * 128, .k = 257 }, .nonfinite);
+    std.debug.print("MINI PAGED FP8 PREP 2/2 code, scale and guard fixtures\n", .{});
+    @import("contract_after.zig").keep(&kernels, &.{"inkling2 attn paged"});
+    var tally: gates.Tally = .{};
+    try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
+    std.debug.print("MINI PAGED KV CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
+    try check.expect(tally.kernels == 8 and tally.problems() == 0, "Mini paged KV contract", .{});
 }

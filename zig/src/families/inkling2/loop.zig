@@ -35,6 +35,8 @@ pub const SnapshotSlot = struct {
     kv_bytes: u64,
     conv_offset: u64,
     conv_bytes: u64,
+    global_offset: u64 = 0,
+    global_row: u64 = 0,
 };
 
 /// A stream or a saved prompt owns the same complete layout: no visit shares KV or convolution state with another.
@@ -46,6 +48,14 @@ pub const CacheLayout = struct {
     rows_per_pass: usize,
 
     pub fn init(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat, rows_per_pass: usize) !CacheLayout {
+        return make(c, p, context, format, rows_per_pass, false);
+    }
+
+    pub fn initPaged(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat, rows_per_pass: usize) !CacheLayout {
+        return make(c, p, context, format, rows_per_pass, true);
+    }
+
+    fn make(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat, rows_per_pass: usize, paged: bool) !CacheLayout {
         if (context == 0 or context > c.max_context or p.n_visits != c.visitCount() or
             rows_per_pass == 0 or rows_per_pass > exl3_prompt_rows) return error.BadLoopCache;
         var out: CacheLayout = undefined;
@@ -53,18 +63,29 @@ pub const CacheLayout = struct {
         out.format = format;
         out.rows_per_pass = rows_per_pass;
         out.bytes = 0;
+        var global_offset: u64 = 0;
         const conv_values = 3 * (2 * @as(u64, c.local.kv * c.local.dim) + 2 * @as(u64, c.hidden));
         for (p.visits[0..p.n_visits], 0..) |visit, i| {
             const layer = p.layers[visit.layer];
             const rows: u32 = @intCast(@min(rows_per_pass, context));
+            const global = paged and layer.kind == .global;
             const tokens = if (layer.kind == .global)
-                std.mem.alignForward(u32, context, 64)
+                (if (global) 0 else std.mem.alignForward(u32, context, 64))
             else
                 std.mem.alignForward(u32, c.window + rows - 1, 64);
-            const kv = try std.math.mul(u64, tokens, 2 * layer.heads.kv * format.rowBytes(layer.heads.dim));
+            const row = 2 * layer.heads.kv * format.rowBytes(layer.heads.dim);
+            const kv = try std.math.mul(u64, tokens, row);
             // The recurrence rounds each site then widens its complete state to FP32 before the FMAs.
             const conv = try std.math.mul(u64, conv_values, 4);
-            out.slots[i] = .{ .kv_offset = out.bytes, .kv_bytes = kv, .conv_offset = 0, .conv_bytes = conv };
+            out.slots[i] = .{
+                .kv_offset = out.bytes,
+                .kv_bytes = kv,
+                .conv_offset = 0,
+                .conv_bytes = conv,
+                .global_offset = global_offset,
+                .global_row = if (global) row else 0,
+            };
+            if (global) global_offset += row;
             out.bytes = try std.math.add(u64, out.bytes, kv);
         }
         var conv_offset = out.bytes;

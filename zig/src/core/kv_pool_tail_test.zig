@@ -24,7 +24,7 @@ const Family = struct {
         return 0;
     }
     fn copy(_: *anyopaque, _: ?*anyopaque, _: u32, _: u32, _: radix.Parts.Part) anyerror!void {}
-    fn restore(_: *anyopaque, _: ?*anyopaque, _: u32, _: radix.Parts.Part) anyerror!void {}
+    fn restore(_: *anyopaque, _: ?*anyopaque, _: u32, _: u32, _: radix.Parts.Part) anyerror!void {}
     fn copyRows(p: *anyopaque, _: ?*anyopaque, _: u32, src: u32, dst: u32, _: u32) anyerror!void {
         const f = of(p);
         f.mem[dst] = f.mem[src];

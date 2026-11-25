@@ -5,6 +5,7 @@ const core = @import("core");
 const cuda_check = @import("check.zig");
 const ink = @import("inkling2");
 const rig_ = @import("contract_rig.zig");
+const pages = @import("contract_inkling2_attn_pages.zig");
 const ref = core.contract.inkling2_attn_ref;
 
 const contract = core.contract;
@@ -18,6 +19,11 @@ const R = ref.d_rel;
 const u: f64 = 0x1p-24;
 
 const prep_shapes = [_]c.Shape{ .{ .rows = 16, .n = heads * D, .k = 300000 }, .{ .rows = 2048, .n = heads * D, .k = 2048 }, .{ .rows = 1, .n = heads * D, .k = 1048576 }, .{ .rows = 128, .n = heads * D, .k = 1048576 }, .{ .rows = 2048, .n = heads * D, .k = 1048576 } };
+const prep_paged_shapes = [_]c.Shape{
+    .{ .rows = 7, .n = heads * D, .k = 261 },
+    .{ .rows = 1, .n = heads * D, .k = 256 },
+    .{ .rows = 3, .n = heads * D, .k = 257 },
+};
 const nan_rule = "a NaN in a q, k or rel head stays NaN and leaves the head's other values unclipped (fminf drops the NaN " ++
     "norm, where transformers' clamp gives NaN); an infinity makes its head 0 and itself NaN; v rows propagate";
 
@@ -37,6 +43,7 @@ pub const Prep = struct {
     rig: rig_.Rig,
     k: *const K.Kernels,
     global: bool,
+    paged: bool = false,
     tau_off: bool = false, // control: the device runs with alpha 0
     shape: c.Shape = undefined,
     fill: g.Fill = .random,
@@ -82,6 +89,10 @@ pub const Prep = struct {
     pub fn kernel(self: *Prep) g.Kernel {
         var s = prepSpec(self.global);
         if (self.tau_off) s.name = "control: inkling2 attn tf_ink2_prep global rows without tau";
+        if (self.paged) {
+            s.name = "inkling2 attn paged BF16 prep";
+            s.served = &prep_paged_shapes;
+        }
         return .{ .spec = s, .ctx = self, .vt = &vt, .control = if (self.tau_off) .shapes else null };
     }
 
@@ -91,6 +102,21 @@ pub const Prep = struct {
         const rows = self.shape.rows;
         const cache = self.streams * kv * self.ring * D;
         return .{ rows * heads * D, rows * heads * R, cache, cache };
+    }
+
+    fn pageMap(self: *const Prep) pages.Map {
+        return .{ .logical_ring = self.ring, .streams = self.streams };
+    }
+
+    fn layer(self: *const Prep) K.Layer {
+        const ring = if (self.paged) self.pageMap().ring() else self.ring;
+        return .{ .window = if (self.global) 0 else 1024, .ring = @intCast(ring), .chunk = 0, .tau = self.global };
+    }
+
+    fn cacheRow(self: *const Prep, stream: usize, key_head: usize, pos: usize) usize {
+        if (!self.paged) return (stream * kv + key_head) * self.ring + pos % self.ring;
+        const map = self.pageMap();
+        return key_head * map.ring() + map.slot(stream, pos);
     }
 
     pub fn count(self: *const Prep) usize {
@@ -107,12 +133,17 @@ pub const Prep = struct {
         self.fill = fill;
         const a = self.rig.gpu.gpa;
         const rows = shape.rows;
-        self.ring = if (self.global) 4096 else K.Layer.sliding(1024, 2048).ring;
+        self.ring = if (self.paged)
+            std.mem.alignForward(usize, shape.k, pages.page_tokens)
+        else if (self.global)
+            4096
+        else
+            K.Layer.sliding(1024, 2048).ring;
         self.streams = if (rows >= 2 and rows <= 128) 2 else 1;
         const n1 = if (self.streams == 2) rows / 2 else 0;
         const n0 = rows - n1;
         const last1 = @max(n1, shape.k / 2);
-        const segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(self.ring * kv * D) } };
+        var segs = [2]K.Seg{ .{ .row0 = 0, .n = @intCast(n0), .p0 = @intCast(shape.k - n0), .off = 0 }, .{ .row0 = @intCast(n0), .n = @intCast(n1), .p0 = @intCast(last1 - n1), .off = @intCast(self.ring * kv * D) } };
         self.pos = try a.alloc(usize, rows);
         self.stream = try a.alloc(usize, rows);
         const pos32 = try a.alloc(i32, 2 * rows);
@@ -149,6 +180,7 @@ pub const Prep = struct {
         }
         self.dev[0] = try self.rig.input(std.mem.sliceAsBytes(pos32[0..rows]));
         self.dev[1] = try self.rig.input(std.mem.sliceAsBytes(pos32[rows..]));
+        if (self.paged) try self.pageMap().bind(&self.rig, segs[0..self.streams]);
         self.dev[2] = try self.rig.input(std.mem.sliceAsBytes(segs[0..self.streams]));
         for (self.raw, 0..) |x, i| self.in[i] = try self.rig.input(std.mem.sliceAsBytes(x));
         for (self.scales, 0..) |x, i| self.in[4 + i] = try self.rig.input(std.mem.sliceAsBytes(x));
@@ -161,9 +193,8 @@ pub const Prep = struct {
         try self.rig.zero(self.out[2], sz[2] * 2); // slots no row writes stay 0, so a stray write shows
         try self.rig.zero(self.out[3], sz[3] * 2);
         const r: K.Rows = .{ .rows = @intCast(self.shape.rows), .heads = heads, .kv_heads = kv, .pos = self.dev[0], .seg_of = self.dev[1], .segs = self.dev[2], .tiles = 0, .n_tiles = 0, .last_pos = @intCast(self.shape.k - 1) };
-        const l: K.Layer = .{ .window = if (self.global) 0 else 1024, .ring = @intCast(self.ring), .chunk = 0, .tau = self.global };
         const cfg: K.Prep = .{ .qk_clip = @floatCast(ref.qk_clip), .rel_clip = @floatCast(ref.rel_clip), .floor = @floatCast(ref.floor_pos), .alpha = if (self.tau_off) @as(f32, 0) else @as(f32, @floatCast(ref.alpha)), .eps = @floatCast(ref.eps) };
-        try K.prep(self.k, self.rig.s, r, l, cfg, self.in[0..4].*, self.in[4..6].*, self.out[0], self.out[1], .{ .k = self.out[2], .v = self.out[3] });
+        try K.prep(self.k, self.rig.s, r, self.layer(), cfg, self.in[0..4].*, self.in[4..6].*, self.out[0], self.out[1], .{ .k = self.out[2], .v = self.out[3] });
         try self.rig.s.synchronize();
     }
 
@@ -171,15 +202,16 @@ pub const Prep = struct {
     pub fn checkFp8(self: *Prep, shape: c.Shape, fill: g.Fill) !void {
         try cuda_check.expect(try self.prepare(shape, fill, 0x6b63), "Mini FP8 prep fixture", .{});
         try self.run();
-        const plane_rows = self.ring * kv;
+        const planes = if (self.paged) 1 else self.streams;
+        const plane_rows = self.streams * self.ring * kv / planes;
         const code_bytes = plane_rows * D;
         const plane_bytes = code_bytes + plane_rows * @sizeOf(f32);
-        const cache_bytes = self.streams * plane_bytes;
+        const cache_bytes = planes * plane_bytes;
         const a = self.rig.gpu.gpa;
         const seg_bytes = try self.rig.bytes(self.dev[2], self.streams * @sizeOf(K.Seg));
         var segs: [2]K.Seg = undefined;
         @memcpy(std.mem.sliceAsBytes(segs[0..self.streams]), seg_bytes);
-        if (self.streams > 1) segs[1].off = @intCast(plane_bytes);
+        if (!self.paged and self.streams > 1) segs[1].off = @intCast(plane_bytes);
         const seg_ptr = try self.rig.input(std.mem.sliceAsBytes(segs[0..self.streams]));
         const sz = self.sizes();
         const q = try self.rig.output(sz[0] * 2);
@@ -187,9 +219,8 @@ pub const Prep = struct {
         const k = try self.rig.scratch(cache_bytes);
         const v = try self.rig.scratch(cache_bytes);
         const r: K.Rows = .{ .rows = @intCast(shape.rows), .heads = heads, .kv_heads = kv, .pos = self.dev[0], .seg_of = self.dev[1], .segs = seg_ptr, .tiles = 0, .n_tiles = 0, .last_pos = @intCast(shape.k - 1) };
-        const l: K.Layer = .{ .window = if (self.global) 0 else 1024, .ring = @intCast(self.ring), .chunk = 0, .tau = self.global };
         const cfg: K.Prep = .{ .qk_clip = @floatCast(ref.qk_clip), .rel_clip = @floatCast(ref.rel_clip), .floor = @floatCast(ref.floor_pos), .alpha = @floatCast(ref.alpha), .eps = @floatCast(ref.eps) };
-        try K.prep(self.k, self.rig.s, r, l, cfg, self.in[0..4].*, self.in[4..6].*, q, rel, .{ .k = k, .v = v, .format = .fp8 });
+        try K.prep(self.k, self.rig.s, r, self.layer(), cfg, self.in[0..4].*, self.in[4..6].*, q, rel, .{ .k = k, .v = v, .format = .fp8 });
         for ([_]u64{ q, rel }, self.out[0..2], sz[0..2]) |ptr, bf16, n| {
             const expected = try a.dupe(u8, try self.rig.bytes(bf16, n * 2));
             defer a.free(expected);
@@ -202,8 +233,9 @@ pub const Prep = struct {
             @memset(expected, 0);
             const wide = try self.rig.bytes(bf16, sz[2] * 2);
             for (self.pos, self.stream) |pos, st| for (0..kv) |kv_head| {
-                const slot = kv_head * self.ring + pos % self.ring;
-                const at = (st * plane_rows + slot) * D * 2;
+                const row = self.cacheRow(st, kv_head, pos);
+                const slot = row % plane_rows;
+                const at = row * D * 2;
                 var vals: [D]f32 = undefined;
                 var max: f32 = 0;
                 for (&vals, 0..) |*val, i| {
@@ -212,14 +244,14 @@ pub const Prep = struct {
                 }
                 const scale: f32 = if (max > 0) max / 448 else 1;
                 const inv: f32 = if (max > 0) 448 / max else 1;
-                const base = st * plane_bytes;
+                const base = row / plane_rows * plane_bytes;
                 std.mem.writeInt(u32, expected[base + code_bytes + slot * 4 ..][0..4], @bitCast(scale), .little);
                 for (vals, expected[base + slot * D ..][0..D]) |val, *code|
                     code.* = if (std.math.isNan(val)) 0x7f else codec.e4m3FromF32(val * inv);
             };
             const actual = try self.rig.bytes(ptr, cache_bytes);
-            for (0..self.streams) |st| {
-                const base = st * plane_bytes;
+            for (0..planes) |plane| {
+                const base = plane * plane_bytes;
                 for (expected[base..][0..code_bytes], actual[base..][0..code_bytes]) |want, got|
                     try cuda_check.expect(want == got or (want == 0x7f and got == 0xff), "Mini FP8 prep code {x} vs {x}", .{ want, got });
                 try cuda_check.expect(std.mem.eql(u8, expected[base + code_bytes ..][0 .. plane_rows * 4], actual[base + code_bytes ..][0 .. plane_rows * 4]), "Mini FP8 prep scales and unwritten slots", .{});
@@ -271,7 +303,7 @@ pub const Prep = struct {
                 self.head(x[0..R], ref.rel_clip, t, sz[0] + (r * heads + h) * R, acc, order);
             }
             for (0..kv) |h| {
-                const slot = ((self.stream[r] * kv + h) * self.ring + self.pos[r] % self.ring) * D;
+                const slot = self.cacheRow(self.stream[r], h, self.pos[r]) * D;
                 for (x[0..D], 0..) |*v, i| v.* = ref.bf(self.raw[1][(r * kv + h) * D + i]);
                 self.head(x[0..D], ref.qk_clip, null, sz[0] + sz[1] + slot, acc, order); // k: the clip alone
                 var sq: [D]f64 = undefined;

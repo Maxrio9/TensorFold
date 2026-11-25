@@ -443,23 +443,27 @@ pub const Tree = struct {
     }
 
     /// Whether leaf `a` is less valuable than `b`: never resumed before resumed, then the less recently used.
-    fn lessValuable(a: *const Node, b: *const Node) bool {
+    fn lessValuable(a: *const Node, b: *const Node, lru: bool) bool {
         const hit_a = if (a.entry) |e| e.hit else false;
         const hit_b = if (b.entry) |e| e.hit else false;
-        if (hit_a != hit_b) return !hit_a;
+        if (!lru and hit_a != hit_b) return !hit_a;
         return a.used < b.used;
     }
 
-    fn weakestLeaf(t: *const Tree, n: *Node, best: *?*Node) void {
+    fn weakestLeaf(t: *const Tree, n: *Node, best: *?*Node, lru: bool) void {
         // the root is a leaf only for its tails
-        if ((n.parent != null or n.tails.items.len > 0) and n.kids.items.len == 0 and n.pins == 0 and t.idle(n) and (best.* == null or lessValuable(n, best.*.?))) best.* = n;
-        for (n.kids.items) |k| t.weakestLeaf(k, best);
+        if ((n.parent != null or n.tails.items.len > 0) and n.kids.items.len == 0 and n.pins == 0 and t.idle(n) and (best.* == null or lessValuable(n, best.*.?, lru))) best.* = n;
+        for (n.kids.items) |k| t.weakestLeaf(k, best, lru);
     }
 
     /// Evicts the least valuable leaf nobody holds; false when there is none.
     pub fn evictLeaf(t: *Tree) bool {
+        return t.evictLeafBy(false);
+    }
+
+    pub fn evictLeafBy(t: *Tree, lru: bool) bool {
         var best: ?*Node = null;
-        t.weakestLeaf(t.root, &best);
+        t.weakestLeaf(t.root, &best, lru);
         const n = best orelse return false;
         while (n.tails.items.len > 0) t.dropTail(n, n.tails.items.len - 1);
         if (n.entry != null) t.evict(n) else t.prune(n);

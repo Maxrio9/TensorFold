@@ -24,8 +24,8 @@ pub const prompt_shared = 3 * prompt_shared_fp8;
 pub const sliding_prompt_min_rows = 64;
 pub const prefetch_shared_fp8 = 2 * tile_keys * ((head_dim + 8) * 2 + head_dim + @sizeOf(f32));
 
-/// One stream's rows in a call (attention.cu's Seg): rows row0.. at positions p0.., its caches `off` elements in.
-pub const Seg = extern struct { row0: i32, n: i32, p0: i32, pad: i32 = 0, off: i64 };
+/// A stream's rows. With paging, off is the global page table address. Otherwise it is an element offset.
+pub const Seg = extern struct { row0: i32, n: i32, p0: i32, paged: i32 = 0, off: i64 };
 /// A block's (row, head) pairs: segment `seg`, pairs m0..m0+63 of it (attention.cu's int2).
 pub const Tile = extern struct { seg: i32, m0: i32 };
 

@@ -220,6 +220,9 @@ pub const Kept = struct {
 };
 
 pub fn kept(comptime F: type, loaded: anytype, paged: ?Plan, o: api.Open, room: u64, held: u64, host_budget: u64, host_mode: bool) Kept {
+    if (comptime @hasField(@TypeOf(loaded), "paging")) if (loaded.paging) |p| {
+        return .{ .snaps = p.pool.snaps, .copied = p.pool.kept, .snap_bytes = p.layout.snap_bytes };
+    };
     if (host_mode) return .{
         .snaps = 0,
         .copied = hostBudget(o, host_budget),

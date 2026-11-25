@@ -429,8 +429,9 @@ const Store = struct {
         const plan = try x.store.begin(x.gpa, .{ .key = q.key, .prompt_len = q.prompt_len }, history_len, shared, owner, adopt);
         return .{ .from = plan.from, .marks = plan.marks };
     }
-    fn keep(ctx: *anyopaque, q: kp.Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) usize {
-        return of(ctx).store.keep(.{ .key = q.key, .prompt_len = q.prompt_len }, at, owner, mine, path).shared;
+    fn keep(ctx: *anyopaque, q: kp.Query, at: u32, owner: *anyopaque, mine: []const u32, path: []u32) kp.Kept {
+        const kept = of(ctx).store.keep(.{ .key = q.key, .prompt_len = q.prompt_len }, at, owner, mine, path);
+        return .{ .held = kept.held, .shared = kept.shared };
     }
     fn report(_: *anyopaque, _: usize, _: u32, _: u64) void {}
     fn free(ctx: *anyopaque, marks: []const u32) void {

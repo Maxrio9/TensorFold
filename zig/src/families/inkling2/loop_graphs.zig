@@ -43,7 +43,7 @@ pub const Graphs = struct {
         _ = try cache.run(shape, s, 0, .{ .ctx = &body, .run = Body.run });
     }
 
-    pub fn warm(g: *Graphs, m: *engine.Model, k: *engine.Kernels, s: cuda.Stream, width: usize, record: bool) !void {
+    pub fn warm(g: *Graphs, m: *engine.Model, k: *engine.Kernels, s: cuda.Stream, width: usize, record: bool, lazy: bool) !void {
         if (!g.cache.settings.on or width > m.context) return;
         const zeros: [engine.window_rows]u32 = @splat(0);
         try m.reset(s);
@@ -51,8 +51,34 @@ pub const Graphs = struct {
         try s.synchronize();
         try m.reset(s);
         const chain: round.Chain = .{ .slot = m.slot, .position = 0, .tokens = zeros[0..width], .record = record };
-        try g.forward(m, k, s, &.{chain}, width, m.capture_taps, false);
+        try g.forward(m, k, s, &.{chain}, width, m.capture_taps, lazy);
         try s.synchronize();
         try m.reset(s);
     }
+
+    /// Price warmed greedy verify graphs so the first request does not learn their capture time.
+    pub fn price(g: *Graphs, m: *engine.Model, k: *engine.Kernels, s: cuda.Stream, io: std.Io, width: usize, lazy: bool, samples: usize) !f64 {
+        const zeros: [engine.window_rows]u32 = @splat(0);
+        const chain: round.Chain = .{ .slot = m.slot, .position = 0, .tokens = zeros[0..width], .record = width > 1 };
+        try g.warm(m, k, s, width, chain.record, lazy);
+        var times: [3]f64 = undefined;
+        for (times[0..samples]) |*ms| {
+            try m.reset(s);
+            try s.synchronize();
+            const t = std.Io.Clock.awake.now(io);
+            try g.forward(m, k, s, &.{chain}, width, m.capture_taps, lazy);
+            try s.synchronize();
+            ms.* = elapsed(io, t);
+        }
+        return median(times[0..samples]);
+    }
 };
+
+pub fn elapsed(io: std.Io, t: std.Io.Timestamp) f64 {
+    return @as(f64, @floatFromInt(t.durationTo(std.Io.Clock.awake.now(io)).toNanoseconds())) / 1e6;
+}
+
+pub fn median(times: []f64) f64 {
+    std.mem.sort(f64, times, {}, std.sort.asc(f64));
+    return times[times.len / 2];
+}

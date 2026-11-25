@@ -5,6 +5,7 @@
 #include "common/cp_async.cuh"
 #include "common/qmm_frag.cuh"
 #include "kv_fp8.cuh"
+#include "cache_rows.cuh"
 
 namespace ink2 {
 
@@ -15,14 +16,7 @@ constexpr int kKeys = 64;
 constexpr int kPad = kDim + 8;
 constexpr float kLog2e = 1.4426950408889634f;
 
-// One stream's rows in a call: rows row0..row0+n-1 sit at positions p0..p0+n-1; `off` is its cache's element offset.
-struct Seg {
-    int row0;
-    int n;
-    int p0;
-    int pad;
-    long long off;
-};
+using Seg = Ink2Segment;
 
 __device__ __forceinline__ float bf(uint16_t u) { return __uint_as_float(static_cast<uint32_t>(u) << 16); }
 
@@ -87,8 +81,8 @@ __device__ __forceinline__ void prepRow(const uint16_t* __restrict__ q_raw, cons
         for (int i = 0; i < 4; ++i) x[i] *= r;
     }
     const Seg s = segs[rseg[row]];
-    Cache* base = (key ? kc : vc) + s.off;
-    const size_t slot = static_cast<size_t>(h) * ring + pos % ring;
+    Cache* base = (key ? kc : vc) + s.offset();
+    const size_t slot = static_cast<size_t>(h) * ring + s.physical(pos, ring);
     Cache* dst = base + slot * kDim;
     if constexpr (sizeof(Cache) == 1) {
         // Keep the BF16 preparation boundary before compressing a cache row.
@@ -163,9 +157,7 @@ struct alignas(16) Fp8Tile {
 
 __device__ __forceinline__ void prefetchFp8(Fp8Tile& tile, const uint8_t* kc, const uint8_t* vc,
                                           size_t head_base, size_t scales, size_t head_row,
-                                          int ring, int kt, int lo, int hi) {
-    // The ring is a multiple of kKeys, so the aligned tile never wraps within a copy.
-    const size_t slot0 = kt % ring;
+                                          size_t slot0, int kt, int lo, int hi) {
     const size_t src = head_base + slot0 * kDim;
     for (int col = threadIdx.x * 16; col < kKeys * kDim; col += 128 * 16) {
         const int pos = kt + col / kDim;
@@ -246,8 +238,8 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
     if (FOLD)
         for (int n = 0; n < 16; ++n) O[n][0] = O[n][1] = O[n][2] = O[n][3] = 0.0f;
     const size_t head_row = static_cast<size_t>(kvh) * ring;
-    const size_t head_base = s.off + head_row * kDim;
-    const size_t scales = s.off + static_cast<size_t>(kv_heads) * ring * kDim;
+    const size_t head_base = s.offset() + head_row * kDim;
+    const size_t scales = s.offset() + static_cast<size_t>(kv_heads) * ring * kDim;
     const int step = FOLD ? kSub : b_hi - b_lo + 1;
     for (int s_lo = b_lo; s_lo <= b_hi && s_lo <= tile_hi; s_lo += step) {
         const int s_hi = s_lo + step - 1;
@@ -256,11 +248,13 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
         l[0] = l[1] = 0.0f;
         const int k_lo = max(s_lo, tile_lo), k_hi = min(s_hi, tile_hi);
         const int first = k_lo & ~(kKeys - 1);
-        if constexpr (PREFETCH) prefetchFp8(*input, kc, vc, head_base, scales, head_row, ring, first, k_lo, k_hi);
+        if constexpr (PREFETCH)
+            prefetchFp8(*input, kc, vc, head_base, scales, head_row, s.physical(first, ring), first, k_lo, k_hi);
         for (int kt = first; kt <= k_hi; kt += kKeys) {
             if constexpr (PREFETCH) tf_common::cp_wait<0>();
             __syncthreads();
-            const size_t slot0 = static_cast<size_t>(kt % ring);
+            // Both rings and pages are multiples of kKeys, so an aligned tile stays contiguous.
+            const size_t slot0 = PREFETCH ? 0 : s.physical(kt, ring);
             for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += 128) {
                 const int key = e >> 4, col = (e & 15) * 8;
                 const int kp = kt + key;
@@ -286,7 +280,8 @@ __device__ __forceinline__ void attnTile(const uint16_t* __restrict__ q, const C
             if constexpr (PREFETCH) {
                 // The current FP8 tile is fully expanded. Reuse its staging bytes while the BF16 MMAs run.
                 if (kt + kKeys <= k_hi)
-                    prefetchFp8(*input, kc, vc, head_base, scales, head_row, ring, kt + kKeys, k_lo, k_hi);
+                    prefetchFp8(*input, kc, vc, head_base, scales, head_row, s.physical(kt + kKeys, ring),
+                                kt + kKeys, k_lo, k_hi);
             }
             if (!busy) continue;
             float sc[8][4];

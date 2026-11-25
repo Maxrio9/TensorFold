@@ -232,7 +232,7 @@ fn print(name: []const u8, width: usize, score: Score) void {
     });
 }
 
-pub const FidelityMode = enum { reference, candidate };
+pub const FidelityMode = enum { reference, candidate, fp8_reference, fp8_candidate, fp8_paged };
 const FidelityPosition = struct { id: []const u8, step: usize };
 
 /// Use the served prompt path with draft taps, then force the same continuation through the served decode graphs.
@@ -248,18 +248,49 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
         context = @max(context, row.prompt_ids.len + row.generated_ids.len);
     }
     if (context == 0) return error.BadTeacherFixture;
-    const candidate = mode == .candidate;
-    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, .{
+    const candidate = mode == .candidate or mode == .fp8_candidate or mode == .fp8_paged;
+    const fp8 = mode != .reference;
+    var options: ink.native.Options = .{
         .context = context,
         .drafts = true,
         .drafter = drafter,
-        .kv8 = candidate,
-    });
+        .kv8 = fp8,
+    };
+    if (mode == .fp8_paged) {
+        if (comptime @hasDecl(ink, "loop_pages")) {
+            var why: ink.capacity.ConfigWhy = .{};
+            const ck = try ink.capacity.Checkpoint.read(a, gpu.io, model, true, drafter, null, &why);
+            const c = try ck.allocationsMode(@intCast(context), .fp8, true);
+            const layout: @import("core").kv_pool.Layout = .{
+                .fixed_bytes = c.stream(),
+                .token_bytes = c.global_kv_per_token,
+                .page_tokens = ink.loop_pages.page_tokens,
+                .snap_bytes = 0,
+            };
+            const pages = ink.loop_pages.need(context, 0);
+            options.paging = .{
+                .layout = layout,
+                .pool = .{ .lanes = 1, .snaps = 0, .copied = 0, .pages = pages },
+                .ready_bytes = c.weights() + c.state() + pages * layout.pageBytes(),
+            };
+        } else return error.NoPaging;
+    }
+    const loaded = try ink.native.open(a, gpu.io, gpu.ctx, model, null, options);
     defer loaded.deinit(loaded.ctx);
     const o = loaded.target;
     const d = if (o.backend.drafter) |*active| active else return error.NoDrafter;
     if (d.* != .dflash2) return error.ExpectedDFlash2;
-    if ((o.model.lazy_head != null) != candidate) return error.UnexpectedReleaseHead;
+    if ((o.model.lazy_head != null) != fp8) return error.UnexpectedReleaseHead;
+    var lease: @import("core").kv_pool.Lease = .{};
+    defer if (comptime @hasDecl(ink, "loop_pages")) {
+        o.stream.synchronize() catch {};
+        ink.loop_pages.finish(&o.model, &lease);
+    };
+    if (comptime @hasDecl(ink, "loop_pages")) if (o.model.pages) |*p| {
+        var prng = std.Random.DefaultPrng.init(50452);
+        prng.random().shuffle(u32, p.pool.free[0..p.pool.nfree]);
+        try ink.loop_pages.reserve(&o.model, o.stream, 0, &lease, ink.loop_pages.need(context, 0));
+    };
     o.model.capture_taps = true;
     const v = o.weights.c.text.unpadded_vocab;
     const live: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = o.model.s.logits, .len = max_width * v * 4 };
@@ -296,7 +327,7 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
             at = end;
         }
         var score: Score = .{};
-        try fidelityRows(mode, o.stream, live, logits[0..v], compare[0..v], &reader.interface, &writer.interface, &score, .{
+        try fidelityRows(candidate, o.stream, live, logits[0..v], compare[0..v], &reader.interface, &writer.interface, &score, .{
             .id = row.id,
             .step = 0,
         });
@@ -311,7 +342,7 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
             try d.absorb(0, &o.kernels.glue, o.stream, o.model.taps.?.buffer, pos, width, o.weights.c.text.eps);
             const dense = logits[0 .. width * v];
             const other = compare[0 .. width * v];
-            try fidelityRows(mode, o.stream, live, dense, other, &reader.interface, &writer.interface, &score, .{
+            try fidelityRows(candidate, o.stream, live, dense, other, &reader.interface, &writer.interface, &score, .{
                 .id = row.id,
                 .step = i + 1,
             });
@@ -330,7 +361,7 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
                 }
             }
             i += width;
-            if (candidate) width_next = 1 + width_next % max_width;
+            if (candidate or mode == .fp8_reference) width_next = 1 + width_next % max_width;
         }
         if (candidate) {
             print(row.id, 0, score);
@@ -340,10 +371,10 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
     if (!candidate) try writer.interface.flush();
 }
 
-fn fidelityRows(mode: FidelityMode, stream: cuda.Stream, live: cuda.DeviceBuffer, logits: []f32, other: []f32, reader: *std.Io.Reader, writer: *std.Io.Writer, score: *Score, first: FidelityPosition) !void {
+fn fidelityRows(candidate: bool, stream: cuda.Stream, live: cuda.DeviceBuffer, logits: []f32, other: []f32, reader: *std.Io.Reader, writer: *std.Io.Writer, score: *Score, first: FidelityPosition) !void {
     try stream.synchronize();
     try live.download(0, std.mem.sliceAsBytes(logits));
-    if (mode == .reference) return writer.writeAll(std.mem.sliceAsBytes(logits));
+    if (!candidate) return writer.writeAll(std.mem.sliceAsBytes(logits));
     try reader.readSliceAll(std.mem.sliceAsBytes(other));
     const v = live.len / (max_width * @sizeOf(f32));
     for (0..logits.len / v) |j| {

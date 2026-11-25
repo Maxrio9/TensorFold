@@ -6,7 +6,12 @@ const engine = @import("loop_engine.zig");
 const ops = @import("ops.zig");
 const dspark = @import("dspark_cuda.zig");
 const draft_runtime = @import("loop_drafter.zig");
+const graph = @import("loop_graphs.zig");
 const masked_draw = @import("loop_masked_draw.zig");
+const pages = @import("loop_pages.zig");
+const prefix = @import("loop_prompt.zig");
+const core = @import("core");
+const kv = core.kv_pool;
 
 const Model = engine.Model;
 const Kernels = engine.Kernels;
@@ -22,6 +27,8 @@ const Lane = struct {
     last: u64,
     rule: u64,
     sampled: bool = false,
+    lease: kv.Lease = .{},
+    cache: prefix.State = .{},
 };
 
 /// The bytes a slot's lane buffers ask for: a vocabulary row of last logits and a sampling rule.
@@ -38,7 +45,8 @@ pub fn sharedAllocs(vocab: u32) [3]usize {
 pub fn streamBytes(m: *const Model) u64 {
     const slot = engine.slotAllocs(&m.layout, m.w.p.n_visits);
     const lane = laneAllocs(m.w.c.text.unpadded_vocab);
-    return slot[0] + slot[1] + slot[2] + slot[3] + lane[0] + lane[1];
+    const table = if (m.pages != null) pages.tableBytes(m.context) else 0;
+    return slot[0] + slot[1] + slot[2] + slot[3] + lane[0] + lane[1] + table;
 }
 
 pub const Backend = struct {
@@ -56,10 +64,11 @@ pub const Backend = struct {
     next: u64 = 0,
     held: usize = 0, // slots with buffers
 
-    graphs: ?@import("loop_graphs.zig").Graphs = null,
+    graphs: ?graph.Graphs = null,
     drafter: ?draft_runtime.Drafter = null,
     vision: ?*@import("mini_vision.zig").Images = null,
     image_rows: [engine.max_slots]?cuda.DeviceBuffer = @splat(null),
+    prompts: ?core.kv_prompts.Prompts = null,
     costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     shared_costs: [dspark.depth + 1]lanes.config.Cost = undefined,
     propose_ms: f64 = 0,
@@ -70,6 +79,9 @@ pub const Backend = struct {
 
     pub fn warm(b: *Backend, io: std.Io) !void {
         if (!b.m.w.c.exl3) return;
+        var lease: kv.Lease = .{};
+        defer pages.finish(b.m, &lease);
+        try pages.reserve(b.m, b.s, 0, &lease, pages.need(window_rows, 0));
         const environment = @import("sys").environment;
         const separate = try environment.read(bool, "TF_INKLING2_VERIFY_GRAPHS", true);
         b.graphs = @as(@TypeOf(b.graphs.?), undefined);
@@ -80,7 +92,7 @@ pub const Backend = struct {
             g.deinit();
             b.graphs = null;
         }
-        try g.warm(b.m, b.k, b.s, 1, false);
+        try g.warm(b.m, b.k, b.s, 1, false, false);
         const d = if (b.drafter) |*d| d else return;
         if (d.* == .dflash2) {
             const shared = if (try b.d.currentCapability() == 121) @as(u32, 4) else 2;
@@ -91,15 +103,10 @@ pub const Backend = struct {
         b.m.capture_taps = true;
         defer b.m.capture_taps = false;
         const max = @min(b.costs.len, b.m.context);
-        const zeros: [window_rows]u32 = @splat(0);
+        const lazy = d.* == .dflash2 and b.m.lazy_head != null;
+        const samples: usize = if (d.* == .dflash2) 3 else 1;
         for (1..max + 1) |width| {
-            try g.warm(b.m, b.k, b.s, width, width > 1);
-            try b.m.reset(b.s);
-            try b.s.synchronize();
-            const t0 = std.Io.Clock.awake.now(io);
-            try b.decode(zeros[0..width], 0, width > 1);
-            try b.s.synchronize();
-            const verify_ms = elapsed(io, t0);
+            const verify_ms = try g.price(b.m, b.k, b.s, io, width, lazy, samples);
             var propose_ms: f64 = 0;
             if (width > 1) {
                 const session = d.session(0);
@@ -107,9 +114,13 @@ pub const Backend = struct {
                 try d.absorb(0, &b.k.glue, b.s, b.m.taps.?.buffer, 0, width, b.m.w.c.text.eps);
                 try b.s.synchronize();
                 if (d.* == .dflash2) try d.propose(0, b.m, b.k, b.s, 0, width - 1, null);
-                const t1 = std.Io.Clock.awake.now(io);
-                try d.propose(0, b.m, b.k, b.s, 0, width - 1, null);
-                propose_ms = elapsed(io, t1);
+                var times: [3]f64 = undefined;
+                for (times[0..samples]) |*ms| {
+                    const t = std.Io.Clock.awake.now(io);
+                    try d.propose(0, b.m, b.k, b.s, 0, width - 1, null);
+                    ms.* = graph.elapsed(io, t);
+                }
+                propose_ms = graph.median(times[0..samples]);
             }
             b.costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms + propose_ms };
             b.shared_costs[width - 1] = .{ .width = @intCast(width), .ms = verify_ms };
@@ -119,10 +130,6 @@ pub const Backend = struct {
         d.session(0).reset();
         try b.m.reset(b.s);
         try b.s.synchronize();
-    }
-
-    fn elapsed(io: std.Io, t: std.Io.Timestamp) f64 {
-        return @as(f64, @floatFromInt(t.durationTo(std.Io.Clock.awake.now(io)).toNanoseconds())) / 1e6;
     }
 
     pub fn decode(b: *Backend, tokens: []const u32, position: usize, record: bool) !void {
@@ -185,7 +192,7 @@ pub const Backend = struct {
     }
 
     pub fn deinit(b: *Backend) void {
-        for (&b.lanes_) |*x| if (x.*) |*l| l.rows.deinit(b.gpa);
+        for (b.streams) |stream| if (stream) |s| release(b, s);
         for (b.slot[0..b.held]) |*pair| for (pair) |*x| x.free();
         for (&b.image_rows) |*slot| if (slot.*) |*rows| rows.free();
         if (b.graphs) |*g| g.deinit();
@@ -228,7 +235,8 @@ pub const Backend = struct {
     }
 
     pub fn admits(b: *const Backend, prompt: usize, max_new: usize) bool {
-        return b.freeSlot() != null and prompt <= b.m.context and max_new <= b.m.context - prompt;
+        if (b.freeSlot() == null or prompt > b.m.context or max_new > b.m.context - prompt) return false;
+        return if (b.m.pages) |*p| p.pool.fits(pages.need(prompt, max_new)) else true;
     }
 
     fn freeSlot(b: *const Backend) ?usize {
@@ -241,7 +249,6 @@ pub const Backend = struct {
         return null;
     }
 
-    /// The device buffer holding `s`'s last prompt logits.
     pub fn lastOf(b: *const Backend, s: *const lanes.Stream) !u64 {
         const i = b.slotOf(s) orelse return error.UnknownStream;
         return b.lanes_[i].?.last;
@@ -284,11 +291,11 @@ pub const Backend = struct {
         if (prompt.len == 0) return error.EmptyPrompt;
         if (s.images.len > 0 and b.vision == null) return error.Inkling2LoopTextOnly;
         if (prompt.len > b.m.context or s.max_new > b.m.context - prompt.len) return error.PastContext;
-        if (b.slotOf(s) == null) {
-            const i = b.freeSlot() orelse return error.NoFreeSlot;
-            b.lanes_[i] = .{ .last = b.slot[i][0].ptr, .rule = b.slot[i][1].ptr };
-            b.streams[i] = s;
-        }
+        release(b, s);
+        const i = b.freeSlot() orelse return error.NoFreeSlot;
+        b.lanes_[i] = .{ .last = b.slot[i][0].ptr, .rule = b.slot[i][1].ptr };
+        b.streams[i] = s;
+        errdefer release(b, s);
         const l = try b.laneOf(s);
         l.sampled = false;
         if (cuda.sample.ruleFor(s.sampling)) |r| {
@@ -296,12 +303,13 @@ pub const Backend = struct {
             l.sampled = true;
         }
         l.len = 0;
-        try b.m.reset(b.s);
-        const at = if (b.m.capture_taps) blk: {
-            b.drafter.?.session(b.m.slot).reset();
-            if (s.reuse.saved != null) s.reuse_failed = true; // rebuild the drafter's context along with the target
-            break :blk 0;
-        } else b.resumeSaved(s);
+        s.cached = 0;
+        if (b.m.capture_taps) b.drafter.?.session(i).reset();
+        const at = if (b.m.pages != null) try prefix.open(b, s, l) else blk: {
+            try b.m.reset(b.s);
+            if (b.m.capture_taps and s.reuse.saved != null) s.reuse_failed = true;
+            break :blk if (b.m.capture_taps) 0 else b.resumeSaved(s);
+        };
         if (s.images.len > 0) try b.vision.?.begin(b.s, s, at, b.image_rows[b.m.slot].?.ptr);
         l.len = at;
         l.fill = at;
@@ -315,8 +323,10 @@ pub const Backend = struct {
         if (s.isCancelled()) return error.Cancelled;
         const rows_per_pass = b.m.promptRows();
         var end = @min(prompt.len, (at / rows_per_pass + 1) * rows_per_pass);
-        for (s.reuse.marks) |mark| {
-            if (mark > at and mark < end) end = mark;
+        const mark = prefix.nextMark(l.cache.marks, at, prompt.len);
+        end = @min(end, mark);
+        for (s.reuse.marks) |reuse_at| {
+            if (reuse_at > at and reuse_at < end) end = reuse_at;
         }
         const done = end == prompt.len;
         if (s.images.len == 0) {
@@ -332,7 +342,7 @@ pub const Backend = struct {
         }
         if (b.m.capture_taps) {
             const d = &b.drafter.?;
-            try d.prefill(b.m.slot, &b.k.glue, b.s, at, end - at, prompt.len, b.m.w.c.text.eps);
+            try d.prefill(b.m.slot, &b.k.glue, b.s, at, end - at, mark, b.m.w.c.text.eps);
         }
         if (done) try b.d.check(b.d.api.cuMemcpyDtoDAsync_v2(l.last, b.m.s.logits, b.m.w.c.text.unpadded_vocab * 4, b.s.handle), "cuMemcpyDtoDAsync");
         l.len = end;
@@ -340,6 +350,7 @@ pub const Backend = struct {
         s.fill_at.store(@intCast(end), .monotonic);
         if (s.reuse.hook) |hook| if (std.mem.indexOfScalar(u32, s.reuse.marks, @intCast(end)) != null)
             hook.at(hook.ptr, s, @intCast(end));
+        try prefix.mark(b, s, l, end);
         return done;
     }
 
@@ -546,28 +557,31 @@ pub const Backend = struct {
         if (r.depth != 0) try d.propose(b.m.slot, b.m, b.k, b.s, pending, r.depth, if (l.sampled) l.rule else null);
     }
 
-    pub fn saveState(b: *Backend, owner: ?*anyopaque, at: u32) !*Model.Saved {
+    pub fn stateLane(b: *Backend, owner: ?*anyopaque) !*Lane {
         const s: *const lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoOwner));
-        const l = try b.laneOf(s);
+        return b.laneOf(s);
+    }
+
+    pub fn saveState(b: *Backend, owner: ?*anyopaque, at: u32) !*Model.Saved {
+        const l = try b.stateLane(owner);
         if ((l.fill orelse l.len) != at) return error.NotAtMark;
         return b.m.save(b.s, at);
     }
 
     pub fn restoreState(b: *Backend, owner: ?*anyopaque, saved: *const Model.Saved) !void {
-        const s: *const lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoOwner));
-        const l = try b.laneOf(s);
+        const l = try b.stateLane(owner);
         try b.m.restore(b.s, saved);
         l.len = saved.at;
-    }
-
-    pub fn dropState(b: *Backend, saved: *Model.Saved) void {
-        b.m.drop(b.s, saved);
     }
 
     fn release(ptr: *anyopaque, s: *lanes.Stream) void {
         const b = self(ptr);
         const i = b.slotOf(s) orelse return;
-        if (b.lanes_[i]) |*l| l.rows.deinit(b.gpa);
+        if (b.lanes_[i]) |*l| {
+            pages.finish(b.m, &l.lease);
+            l.rows.deinit(b.gpa);
+            b.gpa.free(l.cache.marks);
+        }
         b.lanes_[i] = null;
         b.streams[i] = null;
     }

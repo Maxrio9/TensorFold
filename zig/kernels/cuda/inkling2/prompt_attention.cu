@@ -4,6 +4,7 @@
 
 #include "common/qmm_frag.cuh"
 #include "kv_fp8.cuh"
+#include "cache_rows.cuh"
 
 namespace ink2p {
 
@@ -19,13 +20,7 @@ constexpr int kTile = kKeys * kDim;  // halves in a K or V tile: [key][128], 16-
 constexpr int kStage = 2 * kTile;    // a stage: its K tile, then its V tile
 constexpr float kLog2e = 1.4426950408889634f;
 
-struct Seg {
-    int row0;
-    int n;
-    int p0;
-    int pad;
-    long long off;
-};
+using Seg = Ink2Segment;
 
 __device__ __forceinline__ float bf(uint16_t u) { return __uint_as_float(static_cast<uint32_t>(u) << 16); }
 
@@ -52,9 +47,8 @@ __device__ __forceinline__ int piece(int key, int c) { return key * kDim + ((c ^
 
 // The K/V tile load: keys kt..kt+63 of a key head into the stage's bf16 tiles, zeros outside [k_lo, k_hi] (async).
 __device__ __forceinline__ void loadTile(uint16_t* ks, uint16_t* vs, const uint16_t* __restrict__ kc,
-                                         const uint16_t* __restrict__ vc, size_t head_base, int ring, int kt,
+                                         const uint16_t* __restrict__ vc, size_t head_base, size_t slot0, int kt,
                                          int k_lo, int k_hi) {
-    const size_t slot0 = static_cast<size_t>(kt % ring);
     for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += kThreads) {
         const int key = e >> 4, col = (e & 15) * 8;
         const int kp = kt + key;
@@ -70,8 +64,7 @@ __device__ __forceinline__ void loadTile(uint16_t* ks, uint16_t* vs, const uint1
 template <bool BoundLow = false>
 __device__ __forceinline__ void loadTile8(uint16_t* ks, uint16_t* vs, const uint8_t* __restrict__ kc,
                                           const uint8_t* __restrict__ vc, size_t head_base, size_t scale_base,
-                                          int ring, int kt, int k_hi, int k_lo = 0) {
-    const size_t slot0 = static_cast<size_t>(kt % ring);
+                                          size_t slot0, int kt, int k_hi, int k_lo = 0) {
     for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += kThreads) {
         const int key = e >> 4, col = (e & 15) * 8;
         uint4 k = make_uint4(0, 0, 0, 0), v = make_uint4(0, 0, 0, 0);
@@ -133,15 +126,15 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
     float O[16][4];
     float M[2] = {-INFINITY, -INFINITY}, L[2] = {0.0f, 0.0f};
     for (int n = 0; n < 16; ++n) O[n][0] = O[n][1] = O[n][2] = O[n][3] = 0.0f;
-    const size_t head_base = s.off + static_cast<size_t>(kvh) * ring * kDim;
+    const size_t head_base = s.offset() + static_cast<size_t>(kvh) * ring * kDim;
     // ldmatrix lanes: K rows 8j + (lane & 7), pieces 2k + lane / 8; V rows 16u + lane % 16, pieces n + lane / 16
     const int k_row = lane & 7, k_pc = lane >> 3;
     const int v_row = lane & 15, v_pc = lane >> 4;
     constexpr bool fp8 = sizeof(Cache) == 1;
     if constexpr (!fp8) {
         for (int st = 0; st < kStages - 1; ++st) {
-            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base, ring,
-                                       b_lo + st * kKeys, b_lo, k_hi);
+            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base,
+                                       s.physical(b_lo + st * kKeys, ring), b_lo + st * kKeys, b_lo, k_hi);
             else tf_common::cp_commit();
         }
     }
@@ -154,17 +147,18 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
             l[0] = l[1] = 0.0f;
         }
         if constexpr (fp8) {
-            const size_t scale_base = s.off + static_cast<size_t>(kv_heads) * ring * kDim * sizeof(Cache)
+            const size_t scale_base = s.offset() + static_cast<size_t>(kv_heads) * ring * kDim * sizeof(Cache)
                 + static_cast<size_t>(kvh) * ring * sizeof(float);
             __syncthreads();
-            loadTile8(smem, smem + kTile, kc, vc, head_base, scale_base, ring, kt, k_hi);
+            loadTile8(smem, smem + kTile, kc, vc, head_base, scale_base, s.physical(kt, ring), kt, k_hi);
             __syncthreads();
         } else {
             tf_common::cp_wait<kStages - 2>();
             __syncthreads();  // tile `it` is in; every warp is past tile it-1, whose stage the next load takes
             if (it + kStages - 1 < n_tiles) {
                 uint16_t* nx = smem + ((it + kStages - 1) % kStages) * kStage;
-                loadTile(nx, nx + kTile, kc, vc, head_base, ring, kt + (kStages - 1) * kKeys, b_lo, k_hi);
+                loadTile(nx, nx + kTile, kc, vc, head_base,
+                         s.physical(kt + (kStages - 1) * kKeys, ring), kt + (kStages - 1) * kKeys, b_lo, k_hi);
             } else {
                 tf_common::cp_commit();
             }
@@ -322,8 +316,8 @@ __device__ __forceinline__ void slideTile(const uint16_t* __restrict__ q, const 
     const int n_tiles = (tile_hi - first) / kKeys + 1;
     if constexpr (!fp8) {
         for (int st = 0; st < kStages - 1; ++st) {
-            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base, ring,
-                                       first + st * kKeys, tile_lo, tile_hi);
+            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base,
+                                       (first + st * kKeys) % ring, first + st * kKeys, tile_lo, tile_hi);
             else tf_common::cp_commit();
         }
     }
@@ -338,14 +332,15 @@ __device__ __forceinline__ void slideTile(const uint16_t* __restrict__ q, const 
         }
         if constexpr (fp8) {
             __syncthreads();
-            loadTile8<true>(smem, smem + kTile, kc, vc, head_base, scale_base, ring, kt, tile_hi, tile_lo);
+            loadTile8<true>(smem, smem + kTile, kc, vc, head_base, scale_base, kt % ring, kt, tile_hi, tile_lo);
             __syncthreads();
         } else {
             tf_common::cp_wait<kStages - 2>();
             __syncthreads();
             if (it + kStages - 1 < n_tiles) {
                 uint16_t* next = smem + ((it + kStages - 1) % kStages) * kStage;
-                loadTile(next, next + kTile, kc, vc, head_base, ring, kt + (kStages - 1) * kKeys, tile_lo, tile_hi);
+                loadTile(next, next + kTile, kc, vc, head_base,
+                         (kt + (kStages - 1) * kKeys) % ring, kt + (kStages - 1) * kKeys, tile_lo, tile_hi);
             } else {
                 tf_common::cp_commit();
             }

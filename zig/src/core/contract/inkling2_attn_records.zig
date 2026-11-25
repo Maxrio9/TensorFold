@@ -57,7 +57,10 @@ pub const cuda_133 = [_]registry.Override{
 };
 
 pub const cuda_134 = [_]registry.Override{
-    .{ .name = "inkling2_attn tf_ink2_attn", .usage = .{ .{ .regs = 208, .static = 34816, .bound = 128 }, .{ .regs = 208, .static = 34816, .bound = 128 }, .{ .regs = 208, .static = 34816, .bound = 128 }, .{ .regs = 194, .static = 34816, .bound = 128 }, .{ .regs = 194, .static = 34816, .bound = 128 } } },
-    .{ .name = "inkling2_attn tf_ink2_attn_fp8", .usage = .{ .{ .regs = 206, .static = 34816, .bound = 128 }, .{ .regs = 212, .static = 34816, .bound = 128 }, .{ .regs = 212, .static = 34816, .bound = 128 }, .{ .regs = 190, .static = 34816, .bound = 128 }, .{ .regs = 190, .static = 34816, .bound = 128 } } },
-    .{ .name = "inkling2_attn tf_ink2_attn_fp8_prefetch", .usage = .{ .{ .regs = 209, .static = 0, .bound = 128 }, .{ .regs = 207, .static = 0, .bound = 128 }, .{ .regs = 207, .static = 0, .bound = 128 }, .{ .regs = 181, .static = 0, .bound = 128 }, .{ .regs = 181, .static = 0, .bound = 128 } } },
+    .{ .name = "inkling2_attn tf_ink2_prep", .usage = .{ .{ .regs = 26, .static = 0 }, .{ .regs = 28, .static = 0 }, .{ .regs = 28, .static = 0 }, .{ .regs = 28, .static = 0 }, .{ .regs = 28, .static = 0 } } },
+    .{ .name = "inkling2_attn tf_ink2_prep_fp8", .usage = .{ .{ .regs = 28, .static = 0 }, .{ .regs = 30, .static = 0 }, .{ .regs = 30, .static = 0 }, .{ .regs = 30, .static = 0 }, .{ .regs = 30, .static = 0 } } },
+    .{ .name = "inkling2_attn tf_ink2_attn", .usage = .{ .{ .regs = 209, .static = 34816, .bound = 128 }, .{ .regs = 209, .static = 34816, .bound = 128 }, .{ .regs = 209, .static = 34816, .bound = 128 }, .{ .regs = 207, .static = 34816, .bound = 128 }, .{ .regs = 207, .static = 34816, .bound = 128 } } },
+    .{ .name = "inkling2_attn tf_ink2_attn_fold", .usage = @splat(.{ .regs = 255, .static = 34816, .bound = 128 }) },
+    .{ .name = "inkling2_attn tf_ink2_attn_fp8", .usage = .{ .{ .regs = 206, .static = 34816, .bound = 128 }, .{ .regs = 212, .static = 34816, .bound = 128 }, .{ .regs = 212, .static = 34816, .bound = 128 }, .{ .regs = 207, .static = 34816, .bound = 128 }, .{ .regs = 207, .static = 34816, .bound = 128 } } },
+    .{ .name = "inkling2_attn tf_ink2_attn_fp8_prefetch", .usage = .{ .{ .regs = 216, .static = 0, .bound = 128 }, .{ .regs = 214, .static = 0, .bound = 128 }, .{ .regs = 214, .static = 0, .bound = 128 }, .{ .regs = 181, .static = 0, .bound = 128 }, .{ .regs = 181, .static = 0, .bound = 128 } } },
 };

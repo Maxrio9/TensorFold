@@ -10,6 +10,7 @@ pub const round = @import("loop_round.zig");
 const modelopt = @import("modelopt.zig");
 const exl3_experts = @import("loop_exl3_experts.zig");
 const loop_math = @import("loop_math_cuda.zig");
+const pages = @import("loop_pages.zig");
 
 pub const prompt_rows = loop.exl3_prompt_rows;
 pub const window_rows: usize = 16;
@@ -25,10 +26,12 @@ const Slot = struct {
     sites: cuda.DeviceBuffer,
     backup: cuda.DeviceBuffer,
     hist: cuda.DeviceBuffer,
+    page_table: ?cuda.DeviceBuffer = null,
     recorded: usize = 0,
 
     pub fn deinit(slot: *Slot) void {
         for ([_]*cuda.DeviceBuffer{ &slot.hist, &slot.backup, &slot.sites, &slot.cache }) |b| b.free();
+        if (slot.page_table) |*b| b.free();
     }
 };
 pub const max_slots = 16;
@@ -46,6 +49,7 @@ pub const Model = struct {
     w: *const weights_.Weights,
     context: usize,
     layout: loop.CacheLayout,
+    pages: ?pages.Pages = null,
     slots: [max_slots]Slot = undefined,
     n_slots: usize = 0,
     slot: usize = 0, // the slot forwards, snapshots and rewinds use; forwards share the scratch
@@ -92,7 +96,14 @@ pub const Model = struct {
         errdefer sites.free();
         var backup = try cuda.DeviceBuffer.alloc(m.d, sizes[2]);
         errdefer backup.free();
-        return .{ .cache = cache, .sites = sites, .backup = backup, .hist = try cuda.DeviceBuffer.alloc(m.d, sizes[3]) };
+        var hist = try cuda.DeviceBuffer.alloc(m.d, sizes[3]);
+        errdefer hist.free();
+        const table = if (m.pages != null) try cuda.DeviceBuffer.alloc(m.d, pages.tableBytes(m.context)) else null;
+        return .{ .cache = cache, .sites = sites, .backup = backup, .hist = hist, .page_table = table };
+    }
+
+    pub fn pageTable(m: *const Model, slot: usize) u64 {
+        return if (m.slots[slot].page_table) |table| table.ptr else 0;
     }
 
     fn scratchAllocation(bytes: usize) usize {
@@ -124,13 +135,14 @@ pub const Model = struct {
 
     pub fn layerGeometry(m: *const Model, layer: u32) attention.Layer {
         return if (config.isGlobal(layer))
-            attention.Layer.global(@intCast(m.context))
+            attention.Layer.global(@intCast(if (m.pages) |p| p.tokens else m.context))
         else
             attention.Layer.sliding(m.w.c.text.window, @intCast(@min(m.promptRows(), m.context)));
     }
 
     pub fn cacheOf(m: *const Model, visit: u32) attention.Cache {
         const slot = m.layout.at(visit);
+        if (slot.global_row != 0) return m.pages.?.cache(slot, m.layout.format);
         const base = m.slotBase() + slot.kv_offset;
         return .{ .k = base, .v = base + slot.kv_bytes / 2, .format = m.layout.format };
     }
@@ -160,7 +172,15 @@ pub const Model = struct {
     }
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, s: cuda.Stream, w: *const weights_.Weights, context: usize, format: loop.CacheFormat) !Model {
-        const layout = try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context), format, loop.promptRows(w.c.exl3));
+        return initWithPages(gpa, d, s, w, context, format, 0);
+    }
+
+    pub fn initWithPages(gpa: std.mem.Allocator, d: *const cuda.Driver, s: cuda.Stream, w: *const weights_.Weights, context: usize, format: loop.CacheFormat, count: usize) !Model {
+        const rows = loop.promptRows(w.c.exl3);
+        const layout = if (count > 0)
+            try loop.CacheLayout.initPaged(&w.c.text, &w.p, @intCast(context), format, rows)
+        else
+            try loop.CacheLayout.init(&w.c.text, &w.p, @intCast(context), format, rows);
         var m: Model = .{
             .gpa = gpa,
             .d = d,
@@ -169,6 +189,8 @@ pub const Model = struct {
             .layout = layout,
         };
         errdefer m.deinitBuffers();
+        if (count > 0) m.pages = try pages.Pages.init(gpa, d, count, loop.CacheLayout.globalBytesPerToken(&w.p, format));
+        errdefer if (m.pages) |*p| p.deinit();
         try m.initScratch();
         try m.addSlots(s, 1);
         return m;
@@ -179,10 +201,14 @@ pub const Model = struct {
             .modelopt => null,
             .exl3 => |e| e.layer,
         };
-        m.s = try scratchAlloc(m, m.w.c.text, m.context, m.promptRows(), expert);
+        m.s = try scratchAlloc(m, m.w.c.text, m.context, m.promptRows(), expert, m.pages != null);
     }
 
     pub fn planScratch(c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer) !usize {
+        return planScratchMode(c, context, expert, false);
+    }
+
+    pub fn planScratchMode(c: config.Text, context: usize, expert: ?cuda.exl3_experts.Layer, paged: bool) !usize {
         const Counter = struct {
             bytes: usize = 0,
             fn alloc(self: *@This(), bytes: usize) !u64 {
@@ -191,11 +217,11 @@ pub const Model = struct {
             }
         };
         var counter: Counter = .{};
-        _ = try scratchAlloc(&counter, c, context, loop.promptRows(expert != null), expert);
+        _ = try scratchAlloc(&counter, c, context, loop.promptRows(expert != null), expert, paged);
         return counter.bytes;
     }
 
-    fn scratchAlloc(buffers: anytype, c: config.Text, context: usize, rows: usize, expert: ?cuda.exl3_experts.Layer) !Scratch {
+    fn scratchAlloc(buffers: anytype, c: config.Text, context: usize, rows: usize, expert: ?cuda.exl3_experts.Layer, paged: bool) !Scratch {
         const h: usize = c.hidden;
         const q: usize = @as(usize, c.global.q) * c.global.dim;
         const kv: usize = @as(usize, c.local.kv) * c.local.dim;
@@ -213,7 +239,7 @@ pub const Model = struct {
             .ids = try buffers.alloc(rows * 4),
             .pos = try buffers.alloc(rows * 4),
             .seg_of = try buffers.alloc(rows * 4),
-            .segs = try buffers.alloc(max_slots * @sizeOf(attention.Seg)),
+            .segs = try buffers.alloc((@as(usize, 1) + @intFromBool(paged)) * max_slots * @sizeOf(attention.Seg)),
             .tiles = try buffers.alloc(round.tile_storage * @sizeOf(attention.Tile)),
             .partial_a = try buffers.alloc(rows * h * 2),
             .partial_b = try buffers.alloc(rows * h * 2),
@@ -265,6 +291,7 @@ pub const Model = struct {
         if (m.lazy_head) |*head| head.deinit();
         m.deinitBuffers();
         for (m.slots[0..m.n_slots]) |*slot| slot.deinit();
+        if (m.pages) |*p| p.deinit();
         m.* = undefined;
     }
 
@@ -332,6 +359,7 @@ pub const Model = struct {
         for (0..m.w.p.n_visits) |v| {
             const layer = m.w.p.at(m.w.p.visits[v].layer);
             const global = layer.kind == .global;
+            if (global and m.pages != null) continue;
             const count = if (global) at else @min(at, m.w.c.text.window - 1);
             const row = layer.heads.kv * m.layout.format.rowBytes(layer.heads.dim);
             bytes += 2 * count * row;
@@ -339,14 +367,13 @@ pub const Model = struct {
         return bytes;
     }
 
-    fn copyState(m: *const Model, s: cuda.Stream, saved: *const Saved, out: bool) !void {
-        const at: usize = saved.at;
-        var off: usize = 0;
+    pub fn eachState(m: *const Model, at: usize, writer: anytype) !void {
         for (0..m.w.p.n_visits) |v| {
             const visit = m.w.p.visits[v];
             const layer = m.w.p.at(visit.layer);
-            const geometry = m.layerGeometry(visit.layer);
             const global = layer.kind == .global;
+            if (global and m.pages != null) continue;
+            const geometry = m.layerGeometry(visit.layer);
             const count = if (global) at else @min(at, m.w.c.text.window - 1);
             const first = at - count;
             const cache = m.cacheOf(visit.cache_slot);
@@ -363,10 +390,7 @@ pub const Model = struct {
                             const row = pos % geometry.ring;
                             const n = @min(at - pos, geometry.ring - row);
                             const dev = base + row * rb;
-                            const src = if (out) dev else saved.buf.ptr + off;
-                            const dst = if (out) saved.buf.ptr + off else dev;
-                            try m.copy(s, dst, src, n * rb);
-                            off += n * rb;
+                            try writer.span(dev, n * rb);
                             pos += n;
                         }
                     }
@@ -376,7 +400,24 @@ pub const Model = struct {
         }
         const conv = m.slotBase() + m.layout.at(0).conv_offset;
         const bytes = m.layout.bytes - m.layout.at(0).conv_offset;
-        try m.copy(s, if (out) saved.buf.ptr + off else conv, if (out) conv else saved.buf.ptr + off, bytes);
+        try writer.span(conv, bytes);
+    }
+
+    const LinearState = struct {
+        m: *const Model,
+        s: cuda.Stream,
+        ptr: u64,
+        out: bool,
+
+        fn span(w: *LinearState, dev: u64, bytes: usize) !void {
+            try w.m.copy(w.s, if (w.out) w.ptr else dev, if (w.out) dev else w.ptr, bytes);
+            w.ptr += bytes;
+        }
+    };
+
+    fn copyState(m: *const Model, s: cuda.Stream, saved: *const Saved, out: bool) !void {
+        var writer: LinearState = .{ .m = m, .s = s, .ptr = saved.buf.ptr, .out = out };
+        try m.eachState(saved.at, &writer);
     }
 
     pub fn save(m: *const Model, s: cuda.Stream, at: u32) !*Saved {
@@ -384,11 +425,14 @@ pub const Model = struct {
         const gpa = m.gpa;
         const saved = try gpa.create(Saved);
         errdefer gpa.destroy(saved);
-        const lp = m.w.c.text.loop.?;
-        saved.* = .{ .at = at, .visits = m.w.p.n_visits, .passes = lp.passes, .hidden = m.w.c.text.hidden, .format = m.layout.format, .buf = try cuda.DeviceBuffer.alloc(m.d, @intCast(@max(snapshotBytes(m, at), 256))) };
+        saved.* = m.stateAt(at, try cuda.DeviceBuffer.alloc(m.d, @intCast(@max(snapshotBytes(m, at), 256))));
         errdefer saved.buf.free();
         try m.copyState(s, saved, true);
         return saved;
+    }
+
+    pub fn stateAt(m: *const Model, at: u32, buf: cuda.DeviceBuffer) Saved {
+        return .{ .at = at, .visits = m.w.p.n_visits, .passes = m.w.c.text.loop.?.passes, .hidden = m.w.c.text.hidden, .format = m.layout.format, .buf = buf };
     }
 
     pub fn restore(m: *const Model, s: cuda.Stream, saved: *const Saved) !void {

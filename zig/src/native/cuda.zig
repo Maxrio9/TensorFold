@@ -193,7 +193,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     // a family with no positions to stretch (GLM-5.3-Flash) raises it with a row of its own, read at its open
     const raised = windows.familyCeiling(F, problem) catch return null;
     const native: i64 = if (raised.window) |n| @intCast(n) else own;
-    const window = contextWindow(o.context, native, F.default_context) catch |e| {
+    var window = contextWindow(o.context, native, F.default_context) catch |e| {
         problem.* = switch (e) {
             error.Negative => try std.fmt.allocPrint(a, "--context {d}: a token count, or 0 for the model's window", .{o.context.?}),
             error.NoNative => "--context 0 asks for the model's window, and its config.json names none: give a token count",
@@ -268,7 +268,6 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     // a family split over hosts holds only its rank's share (GLM-5.3-Flash's TP)
     const weights = try family_memory.weights(F, a, io, o, problem) orelse return null;
     const held0 = cuda.usage(false).device;
-    // a family over hosts reads every rank's room after its load, by this budget, and admits by the smallest
     const Probe = struct {
         a: Allocator,
         io: std.Io,
@@ -286,6 +285,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
     var probe: Probe = .{ .a = a, .io = io, .ctx = &g.ctx, .held = held0, .weights = weights, .problem = problem };
     var opts: F.Options = .{ .context = @intCast(window), .drafts = o.drafts, .segments = segments, .slide = o.slide };
     if (!family_options.set(F, o, &opts, problem)) return null;
+    var mini_plan: mini_capacity.Startup = .{ .a = a, .io = io, .request = o, .before = before, .problem = problem };
+    if (comptime F == @import("inkling2").native) if (capability >= 120 and !try mini_plan.admit(&opts)) return null;
     if (@hasField(F.Options, "room")) opts.room = .{ .ctx = &probe, .read = Probe.read };
     if (try family_memory.weightRefusal(a, weights, before, held0)) |why| {
         problem.* = why;
@@ -331,6 +332,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         }
     };
     defer if (!opened) loaded.deinit(loaded.ctx);
+    if (comptime F == @import("inkling2").native) window = @intCast(loaded.context);
     if (comptime @hasField(@TypeOf(loaded), "auto_stream_limit")) {
         if (!o.lanes_fixed) o.lanes = @min(o.lanes, loaded.auto_stream_limit);
     }
@@ -338,7 +340,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         problem.* = "--learn-conversations writes the host prompt cache's states, and TF_QWEN_KV_SHARE keeps prompts as pool pages instead: serve with one of the two";
         return null;
     }
-    const share = try prompt_pages.wanted(F, loaded); // TF_KV_SHARE: the cache is pool pages, kept by the family's store
+    const share = try prompt_pages.wanted(F, loaded);
     if (o.learn_conversations and share) {
         problem.* = "--learn-conversations writes the host prompt cache's states, and TF_KV_SHARE keeps prompts as pool pages instead: serve with one of the two";
         return null;
@@ -397,10 +399,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         capability, device,                                                                                                       name,                                                           if (after.unified) ", memory shared with the host" else "", toGib(model), if (learn_bytes > 0) try std.fmt.allocPrint(a, " and {d:.2} GiB kept for --slide's trainer", .{toGib(learn_bytes)}) else "", streams, if (streams == 1) "" else "s", shown[0], toGib(room), toGib(after.reserve), @import("cuda_startup.zig").rows(F, loaded), if (segments > 1) try std.fmt.allocPrint(a, ", {d} staggered segments a call", .{segments}) else "",
         cache_text, if (kernels) |dir| try std.fmt.allocPrint(a, "glue kernels captured at {s}", .{dir}) else "own glue kernels", try @import("cuda_pool_after_warmup.zig").text(a, pool_sizing),
     });
-    if (comptime F == @import("inkling2").native) std.log.info(
-        "Mini CUDA startup: model {d} bytes, room after reserve {d} bytes, reserve {d} bytes, stream {d} bytes",
-        .{ model, room, after.reserve, served.stream_bytes },
-    );
+    if (comptime F == @import("inkling2").native) mini_capacity.reportStartup(loaded.paging, model, room, after.reserve, served.stream_bytes, window);
     errdefer gpa.free(h.startup);
     if (@hasDecl(F, "snap_save") and cache > 0 and !kv_pages.ownCache(loaded) and !share) {
         const pc = api.prompt_cache;
@@ -426,9 +425,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         };
     }
     errdefer if (h.store) |store| kv_pages.closeStore(gpa, store);
-    const share_limit = if (!share) 0 else if (counted.slots != null) paged.?.snaps else try @import("core").kv_prompts.sharing(); // what its slots hold
+    const share_limit = if (!share) 0 else prompt_pages.entryLimit(loaded) orelse if (counted.slots != null) paged.?.snaps else try @import("core").kv_prompts.sharing(); // what its slots hold
     if (comptime @hasDecl(F, "share_attach")) if (@import("cuda_streams.zig").opensStore(F, share, cache, share_limit)) {
-        h.prompts = try prompt_pages.Adapter.open(F, gpa, loaded.target, @intCast(layout.?.page_tokens), share_limit);
+        h.prompts = try prompt_pages.Adapter.openLimited(F, gpa, loaded.target, @intCast(layout.?.page_tokens), share_limit, prompt_pages.pageLimit(loaded));
     };
     errdefer if (h.prompts) |x| x.close();
     var conversations = false;
@@ -477,7 +476,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, asked: a
         .startup = h.startup,
         .cuda_pool_after_warmup = pool_sizing,
         .policy = if (@hasField(@TypeOf(loaded), "policy")) loaded.policy else "",
-        .prompt_cache = h.store != null,
+        .prompt_cache = h.store != null or h.prompts != null,
         .decode_share = o.decode_share,
         .default_decode_share = 0.25, // #3397: shares long fills only (past Share.default_arm_rows); short prompts keep main's cells
         .prompt_cache_capacity = cache_capacity,
