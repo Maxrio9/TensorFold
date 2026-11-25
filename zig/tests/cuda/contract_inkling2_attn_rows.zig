@@ -18,7 +18,7 @@ const n_out = heads * D;
 const global_ring = 4096; // global keys to 1M wrap a 4,096-slot ring (key p in slot p % ring): no 2 GiB cache needed
 
 /// The launch kernels.attend picks: sliding chunks, a block a global chunk, a block a sub-chunk, one stream's prompt.
-pub const Path = enum { sliding, fold, split, prompt };
+pub const Path = enum { sliding, sliding_prompt, fold, split, prompt };
 
 /// A control's planted fault, through the device's inputs only: the served kernels run as they are.
 pub const Plant = enum { none, late_bias, no_sink, q_ulp };
@@ -30,6 +30,8 @@ const fp8_shapes = [_]c.Shape{
 };
 const fp8_split_shapes = [_]c.Shape{ fp8_shapes[0], fp8_shapes[1], .{ .rows = 8, .n = n_out, .k = 16385 } };
 const fp8_fold_name = "inkling2 attn FP8 global fold";
+pub const slide_prompt_name = "inkling2 attn sliding prompt";
+pub const slide_prompt_fp8_name = "inkling2 attn sliding prompt FP8";
 
 pub const fold_name = "inkling2 attn tf_ink2_attn_fold + tf_ink2_merge (global layers, 16,384-key chunks)";
 
@@ -39,6 +41,11 @@ fn depth(_: c.Shape) usize {
 }
 
 const sliding_shapes = [_]c.Shape{ .{ .rows = 16, .n = n_out, .k = 4096 }, .{ .rows = 1, .n = n_out, .k = 1048576 }, .{ .rows = 2048, .n = n_out, .k = 2048 }, .{ .rows = 2048, .n = n_out, .k = 1048576 }, .{ .rows = 128, .n = n_out, .k = 300000 }, .{ .rows = 7, .n = n_out, .k = 1030 } };
+const sliding_prompt_shapes = [_]c.Shape{
+    .{ .rows = 64, .n = n_out, .k = 64 },
+    .{ .rows = 129, .n = n_out, .k = 1373 },
+    .{ .rows = 257, .n = n_out, .k = 3105 },
+};
 const fold_shapes = [_]c.Shape{ .{ .rows = 16, .n = n_out, .k = 20000 }, .{ .rows = 1, .n = n_out, .k = 1048576 }, .{ .rows = 128, .n = n_out, .k = 300000 }, .{ .rows = 70, .n = n_out, .k = 16390 }, .{ .rows = 2, .n = n_out, .k = 1048576 } };
 const split_shapes = [_]c.Shape{ .{ .rows = 16, .n = n_out, .k = 20000 }, .{ .rows = 1, .n = n_out, .k = 1048576 }, .{ .rows = 8, .n = n_out, .k = 1048576 }, .{ .rows = 64, .n = n_out, .k = 70000 }, .{ .rows = 33, .n = n_out, .k = 1030 } };
 const prompt_shapes = [_]c.Shape{ .{ .rows = 130, .n = n_out, .k = 20000 }, .{ .rows = 1, .n = n_out, .k = 1048576 }, .{ .rows = 2048, .n = n_out, .k = 2048 }, .{ .rows = 2048, .n = n_out, .k = 18432 }, .{ .rows = 256, .n = n_out, .k = 1048576 } };
@@ -54,6 +61,11 @@ pub fn spec(path: Path) c.Spec {
             x.name = "inkling2 attn tf_ink2_attn + tf_ink2_merge (sliding layers: window 1,024, 256-key chunks)";
             x.served = &sliding_shapes;
             x.tiles = .{ rows32, no, .{ .size = 1024 } };
+        },
+        .sliding_prompt => {
+            x.name = slide_prompt_name;
+            x.served = &sliding_prompt_shapes;
+            x.tiles = .{ .{ .size = 64, .min = 64 }, no, .{ .size = 256 } };
         },
         .fold => {
             x.name = fold_name;
@@ -137,12 +149,17 @@ pub const Attn = struct {
         if (self.fp8) {
             s.name = switch (self.path) {
                 .sliding => "inkling2 attn FP8 sliding",
+                .sliding_prompt => slide_prompt_fp8_name,
                 .fold => fp8_fold_name,
                 .split => "inkling2 attn FP8 global split",
                 .prompt => "inkling2 attn FP8 global prompt",
             };
             s.replaces = if (self.path == .split or self.path == .prompt) fp8_fold_name else null;
-            s.served = if (self.path == .split) &fp8_split_shapes else &fp8_shapes;
+            s.served = switch (self.path) {
+                .split => &fp8_split_shapes,
+                .sliding_prompt => &sliding_prompt_shapes,
+                else => &fp8_shapes,
+            };
             s.tiles = @splat(.{});
         }
         return .{ .spec = s, .ctx = self, .vt = &vt, .control = if (self.plant == .none) null else .shapes };
@@ -168,9 +185,12 @@ pub const Attn = struct {
         self.fill = fill;
         const a = self.rig.gpu.gpa;
         const rows = shape.rows;
-        self.layer = if (self.path == .sliding) K.Layer.sliding(1024, 2048) else .{ .window = 0, .ring = global_ring, .chunk = K.global_chunk, .tau = true };
+        self.layer = switch (self.path) {
+            .sliding, .sliding_prompt => K.Layer.sliding(1024, 2048),
+            else => .{ .window = 0, .ring = global_ring, .chunk = K.global_chunk, .tau = true },
+        };
         const ring: usize = self.layer.ring;
-        self.streams = if (self.path != .prompt and rows >= 2 and rows <= 128) 2 else 1;
+        self.streams = if (self.path != .prompt and self.path != .sliding_prompt and rows >= 2 and rows <= 128) 2 else 1;
         const n1 = if (self.streams == 2) rows / 2 else 0;
         const n0 = rows - n1;
         const last1 = @max(n1, shape.k / 2);
@@ -355,6 +375,7 @@ pub const Attn = struct {
         var slots: usize = 0; // no partial room for sub-chunks: global calls take the fold or the prompt kernel
         switch (path) {
             .sliding, .prompt => {},
+            .sliding_prompt => r.sliding_prompt = true,
             .fold => r.streams = 2, // the dispatcher's multi-stream branch: a block a chunk, its sub-chunks folded in order
             .split => slots = self.shape.rows * heads * stride * K.subs,
         }

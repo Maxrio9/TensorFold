@@ -6,6 +6,17 @@ pub const cuda = [_]registry.CudaRecord{
     .{ .launch = .{ .name = "exl3_experts tf_exl3_grouped_wide_2 (Inkling 2)", .symbol = "tf_exl3_grouped_wide_2", .image = "exl3_experts", .threads = 128, .min_sm = 80 }, .usage = .{ .{ .regs = 128, .static = 32896, .bound = 0 }, .{ .regs = 128, .static = 32896, .bound = 0 }, .{ .regs = 128, .static = 32896, .bound = 0 }, .{ .regs = 140, .static = 32896, .bound = 0 }, .{ .regs = 140, .static = 32896, .bound = 0 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2_exl3_batch tf_exl3_grouped_short_2", .symbol = "tf_exl3_grouped_short_2", .image = "inkling2_exl3_batch", .threads = 128, .min_sm = 120 }, .usage = .{ .{ .regs = 0, .static = 0 }, .{ .regs = 0, .static = 0 }, .{ .regs = 0, .static = 0 }, .{ .regs = 116, .static = 18432 }, .{ .regs = 116, .static = 18432 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2_exl3_batch tf_exl3_grouped_prefill_2", .symbol = "tf_exl3_grouped_prefill_2", .image = "inkling2_exl3_batch", .threads = 128, .min_sm = 120 }, .usage = .{ .{ .regs = 0, .static = 0 }, .{ .regs = 0, .static = 0 }, .{ .regs = 0, .static = 0 }, .{ .regs = 121, .static = 8192 }, .{ .regs = 121, .static = 8192 } }, .later_pending = true },
+    // 128-member Mini prefill, nvcc 13.4.92.
+    .{
+        .launch = .{ .name = "inkling2_exl3_batch tf_exl3_grouped_prefill_128_2", .symbol = "tf_exl3_grouped_prefill_128_2", .image = "inkling2_exl3_batch", .threads = 256, .min_sm = 120 },
+        .usage = .{
+            .{ .regs = 0, .static = 0 },
+            .{ .regs = 0, .static = 0 },
+            .{ .regs = 0, .static = 0 },
+            .{ .regs = 125, .static = 16384, .bound = 256 },
+            .{ .regs = 125, .static = 16384, .bound = 256 },
+        },
+    },
     .{ .launch = .{ .name = "exl3_experts tf_exl3_gateup_capped (Inkling 2)", .symbol = "tf_exl3_gateup_capped", .image = "exl3_experts", .threads = 32, .min_sm = 80 }, .usage = .{ .{ .regs = 38, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2_experts tf_ink2x_group", .symbol = "tf_ink2x_group", .image = "inkling2_experts", .threads = 1024, .dynamic = 27648, .min_sm = 80 }, .usage = .{ .{ .regs = 28, .static = 144, .bound = 1024 }, .{ .regs = 36, .static = 144, .bound = 1024 }, .{ .regs = 36, .static = 144, .bound = 1024 }, .{ .regs = 35, .static = 144, .bound = 1024 }, .{ .regs = 35, .static = 144, .bound = 1024 } }, .later_pending = true },
     .{ .launch = .{ .name = "inkling2_experts tf_ink2x_rows", .symbol = "tf_ink2x_rows", .image = "inkling2_experts", .threads = 128, .min_sm = 80 }, .usage = .{ .{ .regs = 156, .static = 32832, .bound = 128 }, .{ .regs = 156, .static = 32832, .bound = 128 }, .{ .regs = 156, .static = 32832, .bound = 128 }, .{ .regs = 144, .static = 32832, .bound = 128 }, .{ .regs = 144, .static = 32832, .bound = 128 } }, .later_pending = true },

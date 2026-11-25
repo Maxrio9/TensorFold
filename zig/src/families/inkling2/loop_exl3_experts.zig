@@ -15,6 +15,7 @@ pub const Bits = struct { lo: u32, hi: u32 };
 pub const wide_from = 512;
 /// Large prompt chunks have enough pairs to share decoded weights across four member warps.
 const prefill_from = 1024;
+const large_prefill_from = 2048;
 
 /// Core's experts module and the plan kernels of the shared experts image.
 pub const Kernels = struct {
@@ -36,6 +37,8 @@ pub const Kernels = struct {
             // The desktop decode and Spark prefill variants are selected independently.
             if (sm == 120) main.short = try batch.?.function("tf_exl3_grouped_short_2");
             if (sm == 121) main.prefill = try batch.?.function("tf_exl3_grouped_prefill_2");
+            if (try @import("sys").environment.read(bool, "TF_INKLING2_PREFILL_EXPERTS", false))
+                main.prefill_128 = try batch.?.function("tf_exl3_grouped_prefill_128_2");
         }
         return .{ .main = main, .mod = mod, .batch = batch, .router = try grouped.Router.resolve(mod) };
     }
@@ -85,7 +88,8 @@ pub fn run(e: *const Kernels, s: cuda.Stream, l: ex.Layer, caps: Caps, bits: Bit
     var c = l;
     c.act_mode = 3;
     c.caps = .{ caps.gate, caps.up };
-    const tile: usize = if (rows >= prefill_from and e.main.prefill != null)
+    const tile: usize = if (rows >= large_prefill_from and e.main.prefill_128 != null and
+        l.dims == 2304 and l.width == 1152) 128 else if (rows >= prefill_from and e.main.prefill != null)
         64
     else if (rows >= wide_from)
         32

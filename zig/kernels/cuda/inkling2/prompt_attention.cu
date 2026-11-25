@@ -67,14 +67,15 @@ __device__ __forceinline__ void loadTile(uint16_t* ks, uint16_t* vs, const uint1
 }
 
 // Expand only the current FP8 tile, without a widened global cache.
+template <bool BoundLow = false>
 __device__ __forceinline__ void loadTile8(uint16_t* ks, uint16_t* vs, const uint8_t* __restrict__ kc,
                                           const uint8_t* __restrict__ vc, size_t head_base, size_t scale_base,
-                                          int ring, int kt, int k_hi) {
+                                          int ring, int kt, int k_hi, int k_lo = 0) {
     const size_t slot0 = static_cast<size_t>(kt % ring);
     for (int e = threadIdx.x; e < kKeys * (kDim / 8); e += kThreads) {
         const int key = e >> 4, col = (e & 15) * 8;
         uint4 k = make_uint4(0, 0, 0, 0), v = make_uint4(0, 0, 0, 0);
-        if (kt + key <= k_hi) {
+        if ((!BoundLow || kt + key >= k_lo) && kt + key <= k_hi) {
             const size_t slot = slot0 + key;
             const size_t at = head_base + slot * kDim + col;
             k = tf_kv_fp8::bf16x8(kc + at, reinterpret_cast<const float*>(kc + scale_base)[slot]);
@@ -266,6 +267,191 @@ __device__ __forceinline__ void promptTile(const uint16_t* __restrict__ q, const
     }
 }
 
+// Copyright 2026 MiaAI-Lab (Apache-2.0), adapted from patch 0009.
+
+// One sliding prompt CTA shares K/V tiles across 128 row/head pairs and merges its own chunks, sink and gate.
+template <typename Cache>
+__device__ __forceinline__ void slideTile(const uint16_t* __restrict__ q, const Cache* __restrict__ kc,
+                                          const Cache* __restrict__ vc, const uint16_t* __restrict__ tab,
+                                          const Seg* __restrict__ segs, const uint16_t* __restrict__ sink,
+                                          const uint16_t* __restrict__ gate, uint16_t* __restrict__ out, int heads,
+                                          int kv_heads, int ring, int window, int chunk, float scale, uint16_t* smem) {
+    const Seg s = segs[0];
+    const int group = heads / kv_heads;
+    const int total = s.n * group;
+    const int m0 = static_cast<int>(blockIdx.x) * kPairs;
+    if (m0 >= total) return;
+    const int tile_hi = s.p0 + min(m0 + kPairs - 1, total - 1) / group;
+    const int tile_lo = max(0, s.p0 + m0 / group - window + 1);
+    const int kvh = blockIdx.y;
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
+    const int w0 = m0 + warp * 16;
+    const bool busy = w0 < total;
+    const int w_last = s.p0 + min(w0 + 15, total - 1) / group;
+    int pos[2], lo[2];
+    bool ok[2];
+    size_t prow[2];
+    uint32_t qa[8][4];
+    for (int i = 0; i < 2; ++i) {
+        const int mr = w0 + g + i * 8;
+        ok[i] = mr < total;
+        const int lr = ok[i] ? mr / group : 0;
+        pos[i] = ok[i] ? s.p0 + lr : -1;
+        lo[i] = max(0, pos[i] - window + 1);
+        prow[i] = static_cast<size_t>(s.row0 + lr) * heads + kvh * group + (ok[i] ? mr % group : 0);
+    }
+    for (int k = 0; k < 8; ++k) {
+        for (int i = 0; i < 2; ++i) {
+            const uint32_t* src = reinterpret_cast<const uint32_t*>(q + prow[i] * kDim + 16 * k + 2 * t);
+            qa[k][i] = ok[i] ? src[0] : 0u;
+            qa[k][i + 2] = ok[i] ? src[4] : 0u;
+        }
+    }
+    float acc[16][4];
+    float m[2], l[2];
+    float O[16][4];  // the merge's running o, ll and mm a row
+    float MM[2] = {-INFINITY, -INFINITY}, LL[2] = {0.0f, 0.0f};
+    for (int n = 0; n < 16; ++n) O[n][0] = O[n][1] = O[n][2] = O[n][3] = 0.0f;
+    const size_t head_base = s.off + static_cast<size_t>(kvh) * ring * kDim;
+    const int k_row = lane & 7, k_pc = lane >> 3;
+    const int v_row = lane & 15, v_pc = lane >> 4;
+    constexpr bool fp8 = sizeof(Cache) == 1;
+    const size_t scale_base = s.off + static_cast<size_t>(kv_heads) * ring * kDim
+        + static_cast<size_t>(kvh) * ring * sizeof(float);
+    const int first = tile_lo & ~(kKeys - 1);
+    const int n_tiles = (tile_hi - first) / kKeys + 1;
+    if constexpr (!fp8) {
+        for (int st = 0; st < kStages - 1; ++st) {
+            if (st < n_tiles) loadTile(smem + st * kStage, smem + st * kStage + kTile, kc, vc, head_base, ring,
+                                       first + st * kKeys, tile_lo, tile_hi);
+            else tf_common::cp_commit();
+        }
+    }
+    for (int it = 0; it < n_tiles; ++it) {
+        const int kt = first + it * kKeys;
+        const int c = kt / chunk;
+        const int s_lo = c * chunk, s_hi = s_lo + chunk - 1;
+        if (it == 0 || kt == s_lo) {
+            for (int n = 0; n < 16; ++n) acc[n][0] = acc[n][1] = acc[n][2] = acc[n][3] = 0.0f;
+            m[0] = m[1] = -INFINITY;
+            l[0] = l[1] = 0.0f;
+        }
+        if constexpr (fp8) {
+            __syncthreads();
+            loadTile8<true>(smem, smem + kTile, kc, vc, head_base, scale_base, ring, kt, tile_hi, tile_lo);
+            __syncthreads();
+        } else {
+            tf_common::cp_wait<kStages - 2>();
+            __syncthreads();
+            if (it + kStages - 1 < n_tiles) {
+                uint16_t* next = smem + ((it + kStages - 1) % kStages) * kStage;
+                loadTile(next, next + kTile, kc, vc, head_base, ring, kt + (kStages - 1) * kKeys, tile_lo, tile_hi);
+            } else {
+                tf_common::cp_commit();
+            }
+        }
+        const uint16_t* ks = smem + (fp8 ? 0 : (it % kStages) * kStage);
+        const uint16_t* vs = ks + kTile;
+        if (busy && kt <= w_last) {
+            float sc[8][4];
+            for (int j = 0; j < 8; ++j) {
+                sc[j][0] = sc[j][1] = sc[j][2] = sc[j][3] = 0.0f;
+                for (int k = 0; k < 8; k += 2) {
+                    uint32_t b[4];
+                    qmm_frag::ldmatrix4(b, tf_common::smem(ks + piece(8 * j + k_row, 2 * k + k_pc)));
+                    qmm_frag::mma(sc[j], qa[k][0], qa[k][1], qa[k][2], qa[k][3], b[0], b[1]);
+                    qmm_frag::mma(sc[j], qa[k + 1][0], qa[k + 1][1], qa[k + 1][2], qa[k + 1][3], b[2], b[3]);
+                }
+            }
+            float mx[2] = {-INFINITY, -INFINITY};
+            for (int j = 0; j < 8; ++j) {
+                for (int e = 0; e < 4; ++e) {
+                    const int i = e >> 1;
+                    const int kp = kt + 8 * j + 2 * t + (e & 1);
+                    const bool live = ok[i] && kp >= lo[i] && kp <= pos[i] && kp >= s_lo && kp <= s_hi;
+                    const int d = pos[i] - kp;
+                    const float bias = live && d < kExtent ? bf(tab[prow[i] * kExtent + d]) : 0.0f;
+                    sc[j][e] = live ? (sc[j][e] * scale + bias) * kLog2e : -INFINITY;
+                    mx[i] = fmaxf(mx[i], sc[j][e]);
+                }
+            }
+            float alpha[2], mu[2];
+            for (int i = 0; i < 2; ++i) {
+                mx[i] = fmaxf(mx[i], __shfl_xor_sync(0xffffffffu, mx[i], 1));
+                mx[i] = fmaxf(mx[i], __shfl_xor_sync(0xffffffffu, mx[i], 2));
+                const float mn = fmaxf(m[i], mx[i]);
+                mu[i] = mn == -INFINITY ? 0.0f : mn;
+                alpha[i] = exp2f(m[i] - mu[i]);
+                m[i] = mn;
+                l[i] *= alpha[i];
+            }
+            uint32_t pk[8][2];
+            for (int j = 0; j < 8; ++j) {
+                uint16_t p[4];
+                for (int e = 0; e < 4; ++e) {
+                    const int i = e >> 1;
+                    p[e] = tobf(exp2f(sc[j][e] - mu[i]));
+                    l[i] += bf(p[e]);
+                }
+                pk[j][0] = pack(p[0], p[1]);
+                pk[j][1] = pack(p[2], p[3]);
+            }
+            for (int n = 0; n < 16; ++n) {
+                acc[n][0] *= alpha[0];
+                acc[n][1] *= alpha[0];
+                acc[n][2] *= alpha[1];
+                acc[n][3] *= alpha[1];
+            }
+            for (int u = 0; u < 4; ++u) {
+                const uint32_t a0 = pk[2 * u][0], a1 = pk[2 * u][1], a2 = pk[2 * u + 1][0], a3 = pk[2 * u + 1][1];
+                for (int n = 0; n < 16; n += 2) {
+                    uint32_t b[4];
+                    qmm_frag::ldmatrix4t(b, tf_common::smem(vs + piece(16 * u + v_row, n + v_pc)));
+                    qmm_frag::mma(acc[n], a0, a1, a2, a3, b[0], b[1]);
+                    qmm_frag::mma(acc[n + 1], a0, a1, a2, a3, b[2], b[3]);
+                }
+            }
+        }
+        if (kt + kKeys > s_hi || it + 1 == n_tiles) {  // Fold each chunk in the original merge order.
+            if (busy) {
+                for (int i = 0; i < 2; ++i) {
+                    l[i] += __shfl_xor_sync(0xffffffffu, l[i], 1);
+                    l[i] += __shfl_xor_sync(0xffffffffu, l[i], 2);
+                }
+                for (int i = 0; i < 2; ++i) {
+                    // the merge reads chunks lo / chunk .. pos / chunk of a row, and attnTile stored nothing else
+                    if (!ok[i] || c < lo[i] / chunk || c > pos[i] / chunk) continue;
+                    const float mn = fmaxf(MM[i], m[i]);
+                    const float a = exp2f(MM[i] - mn), b = exp2f(m[i] - mn);
+                    // tf_ink2_merge's (one chunk a slot) roundings: ll = fma(a, ll, l b), o = fma(a, o, po b)
+                    LL[i] = __fmaf_rn(a, LL[i], __fmul_rn(l[i], b));
+                    for (int n = 0; n < 16; ++n) {
+                        O[n][2 * i] = __fmaf_rn(a, O[n][2 * i], __fmul_rn(acc[n][2 * i], b));
+                        O[n][2 * i + 1] = __fmaf_rn(a, O[n][2 * i + 1], __fmul_rn(acc[n][2 * i + 1], b));
+                    }
+                    MM[i] = mn;
+                }
+            }
+        }
+    }
+    if (!busy) return;
+    for (int i = 0; i < 2; ++i) {
+        if (!ok[i]) continue;
+        const size_t rh = prow[i];
+        const float sk = bf(sink[rh]) * kLog2e;
+        const float mf = fmaxf(MM[i], sk);
+        const float a = exp2f(MM[i] - mf);
+        // tf_ink2_merge's roundings: ll a + exp2(sk - mf) as one fma, then (o a) / den
+        const float den = __fmaf_rn(a, LL[i], exp2f(sk - mf));
+        for (int n = 0; n < 16; ++n)
+            for (int h = 0; h < 2; ++h) {
+                const int d = 8 * n + 2 * t + h;
+                const float y = __fdiv_rn(__fmul_rn(a, O[n][2 * i + h]), den);
+                const float gv = bf(gate[rh * kDim + d]);
+                out[rh * kDim + d] = tobf(y * (1.0f / (1.0f + expf(-gv))));
+            }
+    }
+}
 }  // namespace ink2p
 
 #define TF_INK2_PROMPT_ARGS(Cache)                                                                                       \
@@ -283,3 +469,20 @@ extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_pr
     extern __shared__ __align__(16) uint16_t smem[];
     ink2p::promptTile(q, kc, vc, tab, segs, part_o, part_ml, heads, kv_heads, ring, chunk, c0, chunks, scale, smem);
 }
+
+#define TF_INK2_SLIDE_ARGS(Cache) \
+    const uint16_t* __restrict__ q, const Cache* __restrict__ kc, const Cache* __restrict__ vc, \
+    const uint16_t* __restrict__ tab, const ink2p::Seg* __restrict__ segs, const uint16_t* __restrict__ sink, \
+    const uint16_t* __restrict__ gate, uint16_t* __restrict__ out, int heads, int kv_heads, int ring, \
+    int window, int chunk, float scale
+
+extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_slide(TF_INK2_SLIDE_ARGS(uint16_t)) {
+    extern __shared__ __align__(16) uint16_t smem[];
+    ink2p::slideTile(q, kc, vc, tab, segs, sink, gate, out, heads, kv_heads, ring, window, chunk, scale, smem);
+}
+
+extern "C" __global__ void __launch_bounds__(ink2p::kThreads, 1) tf_ink2_attn_slide_fp8(TF_INK2_SLIDE_ARGS(uint8_t)) {
+    extern __shared__ __align__(16) uint16_t smem[];
+    ink2p::slideTile(q, kc, vc, tab, segs, sink, gate, out, heads, kv_heads, ring, window, chunk, scale, smem);
+}
+#undef TF_INK2_SLIDE_ARGS

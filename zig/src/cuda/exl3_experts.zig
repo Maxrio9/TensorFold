@@ -145,6 +145,7 @@ pub const Experts = struct {
     down_combine: Function,
     wide: Function = undefined, // tf_exl3_grouped_wide_2: 32-member items by 64 columns, mul1
     short: ?Function = null, // tf_exl3_grouped_short_2: 8-member items by 128 columns, mul1
+    prefill_128: ?Function = null, // 128-member items, shared gate/up and down
     prefill: ?Function = null, // tf_exl3_grouped_prefill_2: 64-member gate/up items by 64 columns, mul1
     capped: Function = undefined, // the gate/up epilogue for act_mode 3
     prompt: prompt.Kernels = undefined,
@@ -219,6 +220,7 @@ pub const Experts = struct {
         const items = it != null;
         const tile: usize = if (items) it.?.tile else 16;
         const prefill = tile == 64;
+        const large_prefill = tile == 128;
         if (items and (it.?.plan.members == 0 or it.?.plan.items == 0 or it.?.plan.counts == 0)) return error.TileNotBuilt;
         if (tile != 16 and l.codebook != .mul1) return error.TileNotBuilt;
         const nx: usize = if (items) grouped.maxItems(p, l.experts + 1, tile) else maxu; // grid x and nexp_max
@@ -231,9 +233,11 @@ pub const Experts = struct {
             8 => e.short orelse return error.TileNotBuilt,
             16 => e.grouped[@backingInt(l.codebook)],
             32, 64 => e.wide,
+            128 => e.prefill_128 orelse return error.TileNotBuilt,
             else => return error.TileNotBuilt,
         };
         const gate_proj = if (prefill) e.prefill orelse return error.TileNotBuilt else proj;
+        const threads: u32 = if (large_prefill) 256 else 128;
         const down_tiles = if (prefill) 2 else mtu; // the down kernel consumes a 64-member item as two 32-member tiles
         const cols: usize = if (tile >= 32) 64 else 128;
         const std_a: i32 = if (items) 1 else 0;
@@ -290,7 +294,7 @@ pub const Experts = struct {
         g.add(i32d(l.gu_stride));
         g.add(std_a);
         g.add(skip_a);
-        try launch_.launch(gate_proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(w / cols), .z = @intCast(2 * g_sk * mtu) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &g);
+        try launch_.launch(gate_proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(w / cols), .z = @intCast(2 * g_sk * mtu) }, .block = .{ .x = threads, .y = 1, .z = 1 } }, s, &g);
 
         var ep: launch_.Args = .{};
         ep.add(sc.z);
@@ -330,7 +334,7 @@ pub const Experts = struct {
         dn.add(@as(i32, 0));
         dn.add(std_a);
         dn.add(skip_a);
-        try launch_.launch(proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(d / cols), .z = @intCast(d_sk * down_tiles) }, .block = .{ .x = 128, .y = 1, .z = 1 } }, s, &dn);
+        try launch_.launch(proj, .{ .grid = .{ .x = @intCast(nx), .y = @intCast(d / cols), .z = @intCast(d_sk * down_tiles) }, .block = .{ .x = threads, .y = 1, .z = 1 } }, s, &dn);
 
         var cb: launch_.Args = .{};
         cb.add(sc.z);

@@ -10,7 +10,6 @@ const masked_draw = @import("loop_masked_draw.zig");
 
 const Model = engine.Model;
 const Kernels = engine.Kernels;
-const prompt_rows = engine.prompt_rows;
 const window_rows = engine.window_rows;
 const round = engine.round;
 const token_ring = 1024;
@@ -298,7 +297,8 @@ pub const Backend = struct {
         const prompt = s.prompt();
         const at = l.fill.?;
         if (s.isCancelled()) return error.Cancelled;
-        var end = @min(prompt.len, (at / prompt_rows + 1) * prompt_rows);
+        const rows_per_pass = b.m.promptRows();
+        var end = @min(prompt.len, (at / rows_per_pass + 1) * rows_per_pass);
         for (s.reuse.marks) |mark| {
             if (mark > at and mark < end) end = mark;
         }

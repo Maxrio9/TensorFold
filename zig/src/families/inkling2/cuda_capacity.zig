@@ -36,6 +36,10 @@ const DensePlan = struct {
         if (cuda.exl3.groupable(ws, 16)) self.grow(Dense.groupBytes(ws, 16));
     }
 
+    pub fn reservePromptPair(self: *DensePlan, _: cuda.Stream, ws: [2]cuda.exl3.Weight) !void {
+        self.grow(Dense.groupBytes(&ws, 128));
+    }
+
     fn bytes(self: DensePlan) usize {
         return self.sizes.z + self.sizes.xh + self.sizes.counters;
     }
@@ -91,7 +95,8 @@ pub const Checkpoint = struct {
     }
 
     pub fn allocations(ck: *const Checkpoint, context: u32, format: Format) !Components {
-        const layout = try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format);
+        const rows_per_pass = loop.promptRows(ck.exl3);
+        const layout = try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format, rows_per_pass);
         const slot = engine.slotAllocs(&layout, ck.schedule.n_visits);
         const lane = backend.laneAllocs(ck.text.unpadded_vocab);
         const shared = backend.sharedAllocs(ck.text.unpadded_vocab);
@@ -99,11 +104,11 @@ pub const Checkpoint = struct {
         const global = loop.CacheLayout.globalBytesPerToken(&ck.schedule, format);
         const global_kv = global * std.mem.alignForward(u64, context, 64);
         const drafted = ck.draft_arena > 0;
-        const shared_taps = if (drafted) draft.shared_tap_bytes else 0;
+        const shared_taps = if (drafted) draft.sharedTapBytes(rows_per_pass) else 0;
         const ds = drafted and ck.draft_kind == .dspark;
         const df = drafted and ck.draft_kind == .dflash2;
         const draft_partials = if (ds) draft.partialBytes(context) else if (df) dflash.partialBytes() else 0;
-        const draft_scratch = if (ds) draft.Drafter.scratchBytes(context) else if (df) dflash.scratchBytes() else 0;
+        const draft_scratch = if (ds) draft.Drafter.scratchBytes(context, rows_per_pass) else if (df) dflash.scratchBytes(rows_per_pass) else 0;
         const prepared_head: u64 = if (ds) draft_weights.prepared_head_bytes else 0;
         return .{
             .target_weights = ck.target_arena,
@@ -195,14 +200,15 @@ test "Mini capacity: published stream and FP8 KV sizes" {
     var ck = try testCheckpoint(std.testing.allocator);
     const drafted = try ck.allocations(131072, .fp8);
     const conv = drafted.target_conv;
+    const local_wider = (loop.promptRows(ck.exl3) - loop.modelopt_prompt_rows) * 40 * 2 * 8 * 132;
     const legacy_stream = drafted.stream() - drafted.drafterSession() - conv - conv / 3 * engine.window_rows;
-    try std.testing.expectEqual(2_478_755_336, legacy_stream);
-    try std.testing.expectEqual(3_048_988_680, drafted.stream());
-    try std.testing.expectEqual(480_239_624, (try ck.allocations(8704, .fp8)).stream());
+    try std.testing.expectEqual(2_478_755_336 + local_wider, legacy_stream);
+    try std.testing.expectEqual(3_048_988_680 + local_wider, drafted.stream());
+    try std.testing.expectEqual(480_239_624 + local_wider, (try ck.allocations(8704, .fp8)).stream());
     try std.testing.expectEqual(16_896, drafted.global_kv_per_token);
     ck.draft_arena = 0;
     const plain = try ck.allocations(8704, .fp8);
-    try std.testing.expectEqual(435_506_696, plain.stream());
+    try std.testing.expectEqual(435_506_696 + local_wider, plain.stream());
     try std.testing.expectEqual(16_896, plain.global_kv_per_token);
 }
 
@@ -258,6 +264,7 @@ test "Mini capacity: shared, first-slot and additional-slot allocations across c
     w.p = ck.schedule;
     var layer: weights.Layer = undefined;
     layer.experts = .{ .exl3 = .{ .layer = pack.expertGeometry(ck.text), .bits = .{ .lo = 6, .hi = 8 } } };
+    w.c.exl3 = true;
     w.layers = (&layer)[0..1];
     const d: *const cuda.Driver = @ptrFromInt(0x1000);
     const s = cuda.Stream.borrowed(d, null);
@@ -272,7 +279,7 @@ test "Mini capacity: shared, first-slot and additional-slot allocations across c
                 var request = ck;
                 if (!drafts) request.draft_arena = 0;
                 const c = try request.allocations(context, format);
-                const layout = try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format);
+                const layout = try loop.CacheLayout.init(&ck.text, &ck.schedule, context, format, loop.promptRows(ck.exl3));
                 var m: engine.Model = .{ .gpa = a, .d = d, .w = &w, .context = context, .layout = layout };
                 defer m.deinit();
                 try m.initScratch();
@@ -286,7 +293,7 @@ test "Mini capacity: shared, first-slot and additional-slot allocations across c
                 defer b.deinit();
                 try r.expect(c.backend_shared + c.backend_lane);
                 if (drafts) {
-                    var shared = try draft.Drafter.allocScratch(d, context);
+                    var shared = try draft.Drafter.allocScratch(d, context, m.promptRows());
                     defer shared.free();
                     try r.expect(c.drafterShared());
                     var session = try draft.Session.init(d, context);

@@ -20,12 +20,16 @@ pub fn main(init: std.process.Init) !void {
         return dsparkContract(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-kv-contract"))
         return cacheContract(gpu);
+    if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-slide-contract"))
+        return slideContract(gpu);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-exl3-teacher"))
         return @import("inkling2_mini_exl3_teacher.zig").run(gpu, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-kv-fidelity"))
         return @import("inkling2_mini_verify.zig").cacheFidelity(gpu, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "inkling2-mini-concurrent"))
         return @import("inkling2_mini_verify.zig").concurrent(gpu, args[2], args[3]);
+    if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-prefill-logits"))
+        return @import("inkling2_mini_verify.zig").prefillLogits(gpu, args[2], args[3], args[4]);
     if (args.len == 5 and std.mem.eql(u8, args[1], "inkling2-mini-verify"))
         return @import("inkling2_mini_verify.zig").run(gpu, args[2], args[3], args[4]);
     return error.BadArguments;
@@ -82,4 +86,20 @@ fn cacheContract(gpu: check.Gpu) !void {
     try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
     std.debug.print("MINI FP8 KV CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
     try check.expect(tally.kernels == 4 and tally.problems() == 0, "Mini FP8 KV contract", .{});
+}
+
+fn slideContract(gpu: check.Gpu) !void {
+    var stream = try cuda.Stream.init(gpu.d, false);
+    defer stream.deinit();
+    var kernels: std.ArrayList(gates.Kernel) = .empty;
+    defer kernels.deinit(gpu.gpa);
+    var set: @import("contract_inkling2_attn.zig").Set = .{};
+    try set.init(gpu, stream, gpu.gpa, &kernels);
+    defer set.deinit();
+    const rows = @import("contract_inkling2_attn_rows.zig");
+    @import("contract_after.zig").keep(&kernels, &.{ rows.slide_prompt_name, rows.slide_prompt_fp8_name });
+    var tally: gates.Tally = .{};
+    try gates.runAll(gpu.gpa, kernels.items, 0x6b63, &tally);
+    std.debug.print("MINI SLIDING PROMPT CONTRACT {d}/{d} kernels, {d} problems\n", .{ tally.passed, tally.kernels, tally.problems() });
+    try check.expect(tally.kernels == 2 and tally.problems() == 0, "Mini sliding prompt contract", .{});
 }

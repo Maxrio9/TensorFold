@@ -18,7 +18,9 @@ const local_ring = local_window + block;
 const absorb_rows = 64;
 pub const depth = block - 1;
 pub const tap_stride = 4 * h * 2;
-pub const shared_tap_bytes = engine.prompt_rows * tap_stride;
+pub fn sharedTapBytes(rows: usize) usize {
+    return rows * tap_stride;
+}
 
 fn partialSizes(context: usize) [2]usize {
     const chunks = (context + block + dsp.chunk - 1) / dsp.chunk;
@@ -49,11 +51,11 @@ const Scratch = struct {
     walk: u64,
     draw: u64,
 
-    fn layout(base: u64, context: usize, total: *usize) Scratch {
+    fn layout(base: u64, context: usize, rows_per_pass: usize, total: *usize) Scratch {
         const partials = partialSizes(context);
         const b = 2;
         const sizes = .{
-            .taps = shared_tap_bytes,
+            .taps = sharedTapBytes(rows_per_pass),
             .mixed = absorb_rows * h * b,
             .matrix_rows = @max(absorb_rows * 2 * kv, block * 2 * inter) * b,
             .residual = block * h * b,
@@ -146,23 +148,23 @@ pub const Drafter = struct {
     sessions: [engine.max_slots]Session = undefined,
     count: usize = 0,
 
-    pub fn scratchBytes(context: usize) usize {
+    pub fn scratchBytes(context: usize, rows_per_pass: usize) usize {
         var bytes: usize = 0;
-        _ = Scratch.layout(0, context, &bytes);
+        _ = Scratch.layout(0, context, rows_per_pass, &bytes);
         return bytes;
     }
 
-    pub fn allocScratch(d: *const cuda.Driver, context: usize) !cuda.DeviceBuffer {
-        return cuda.DeviceBuffer.alloc(d, scratchBytes(context));
+    pub fn allocScratch(d: *const cuda.Driver, context: usize, rows_per_pass: usize) !cuda.DeviceBuffer {
+        return cuda.DeviceBuffer.alloc(d, scratchBytes(context, rows_per_pass));
     }
 
     /// Takes ownership of the weights only on success.
-    pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize) !Drafter {
+    pub fn init(d: *const cuda.Driver, w: w_.Weights, context: usize, rows_per_pass: usize) !Drafter {
         var kernels = try dsp.Kernels.load(d);
         errdefer kernels.unload();
         var dense = try cuda.dense_rows.DenseRows.load(d);
         errdefer dense.unload();
-        var memory = try allocScratch(d, context);
+        var memory = try allocScratch(d, context, rows_per_pass);
         errdefer memory.free();
         var bytes: usize = 0;
         var out: Drafter = .{
@@ -170,7 +172,7 @@ pub const Drafter = struct {
             .k = kernels,
             .dense = dense,
             .memory = memory,
-            .scratch = Scratch.layout(memory.ptr, context, &bytes),
+            .scratch = Scratch.layout(memory.ptr, context, rows_per_pass, &bytes),
             .rings = Session.kvRings(context),
         };
         try out.reserve(1);

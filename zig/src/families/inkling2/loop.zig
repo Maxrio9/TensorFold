@@ -10,6 +10,14 @@ pub fn validateLoad(c: *const config.Config, rank: usize, images: bool) !void {
     if (lp.gate_rank != 64) return error.UnsupportedLoopGateRank;
 }
 
+pub const modelopt_prompt_rows: usize = 2048;
+pub const exl3_prompt_rows: usize = 4096;
+
+pub fn promptRows(exl3: bool) usize {
+    if (!exl3) return modelopt_prompt_rows;
+    return @import("sys").environment.read(usize, "TF_INKLING2_PREFILL_ROWS", modelopt_prompt_rows) catch modelopt_prompt_rows;
+}
+
 pub const CacheFormat = enum {
     bf16,
     fp8,
@@ -35,17 +43,20 @@ pub const CacheLayout = struct {
     n: u32,
     bytes: u64,
     format: CacheFormat,
+    rows_per_pass: usize,
 
-    pub fn init(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat) !CacheLayout {
-        if (context == 0 or context > c.max_context or p.n_visits != c.visitCount()) return error.BadLoopCache;
+    pub fn init(c: *const config.Text, p: *const plan_.Plan, context: u32, format: CacheFormat, rows_per_pass: usize) !CacheLayout {
+        if (context == 0 or context > c.max_context or p.n_visits != c.visitCount() or
+            rows_per_pass == 0 or rows_per_pass > exl3_prompt_rows) return error.BadLoopCache;
         var out: CacheLayout = undefined;
         out.n = p.n_visits;
         out.format = format;
+        out.rows_per_pass = rows_per_pass;
         out.bytes = 0;
         const conv_values = 3 * (2 * @as(u64, c.local.kv * c.local.dim) + 2 * @as(u64, c.hidden));
         for (p.visits[0..p.n_visits], 0..) |visit, i| {
             const layer = p.layers[visit.layer];
-            const rows: u32 = @intCast(@min(2048, context));
+            const rows: u32 = @intCast(@min(rows_per_pass, context));
             const tokens = if (layer.kind == .global)
                 std.mem.alignForward(u32, context, 64)
             else
@@ -119,7 +130,7 @@ test "a saved prompt restores every visit byte and owns its copy" {
     const c = try config.parse(arena.allocator(), @import("config_test.zig").mini, &why);
     var prec: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &prec);
-    const layout = try CacheLayout.init(&c.text, &p, 1, .bf16);
+    const layout = try CacheLayout.init(&c.text, &p, 1, .bf16, modelopt_prompt_rows);
     const state = try std.testing.allocator.alloc(u8, @intCast(layout.bytes));
     defer std.testing.allocator.free(state);
     for (state, 0..) |*v, i| v.* = @truncate(i * 29 + 7);
@@ -140,7 +151,7 @@ test "Mini has 48 independent KV and convolution slots and a whole-state snapsho
     const c = try config.parse(a, config_test.mini, &why);
     var prec: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &prec);
-    const layout = try CacheLayout.init(&c.text, &p, 1_048_576, .bf16);
+    const layout = try CacheLayout.init(&c.text, &p, 1_048_576, .bf16, modelopt_prompt_rows);
     try std.testing.expectEqual(@as(u32, 48), layout.n);
     try std.testing.expectEqual(@as(u64, 3072 * 2 * 8 * 128 * 2), layout.at(0).kv_bytes);
     try std.testing.expectEqual(@as(u64, 1_048_576 * 2 * 8 * 128 * 2), layout.at(5).kv_bytes);
@@ -184,7 +195,7 @@ test "pass snapshots and rollback layout cover every visit" {
     const c = try config.parse(arena.allocator(), config_test.mini, &why);
     var precisions: [24]plan_.Precision = @splat(.nvfp4);
     const p = try plan_.build(&c.text, &precisions);
-    const layout = try CacheLayout.init(&c.text, &p, 4096, .bf16);
+    const layout = try CacheLayout.init(&c.text, &p, 4096, .bf16, modelopt_prompt_rows);
     try std.testing.expectEqual(@as(u32, 48), layout.n);
     try std.testing.expect(layout.at(17).kv_offset != layout.at(29).kv_offset);
     try std.testing.expectEqual(@as(u64, layout.at(46).conv_offset + layout.at(46).conv_bytes), layout.at(47).conv_offset);
@@ -196,8 +207,8 @@ test "FP8 holds one E4M3 code per value and one FP32 scale per head row of every
     var why: config.Why = .{};
     const c = try config.parse(arena.allocator(), @import("config_test.zig").mini, &why);
     const p = try plan_.build(&c.text, &(@as([24]plan_.Precision, @splat(.nvfp4))));
-    const bf16 = try CacheLayout.init(&c.text, &p, 8705, .bf16);
-    const fp8 = try CacheLayout.init(&c.text, &p, 8705, .fp8);
+    const bf16 = try CacheLayout.init(&c.text, &p, 8705, .bf16, modelopt_prompt_rows);
+    const fp8 = try CacheLayout.init(&c.text, &p, 8705, .fp8, modelopt_prompt_rows);
     var end: u64 = 0;
     for (fp8.slots[0..fp8.n], bf16.slots[0..bf16.n]) |small, wide| {
         try std.testing.expectEqual(end, small.kv_offset);
@@ -206,5 +217,5 @@ test "FP8 holds one E4M3 code per value and one FP32 scale per head row of every
         end += small.kv_bytes;
     }
     try std.testing.expectEqual(end, fp8.at(0).conv_offset);
-    try std.testing.expectEqual(@as(u64, 64 * 16896), (try CacheLayout.init(&c.text, &p, 8769, .fp8)).bytes - fp8.bytes);
+    try std.testing.expectEqual(@as(u64, 64 * 16896), (try CacheLayout.init(&c.text, &p, 8769, .fp8, modelopt_prompt_rows)).bytes - fp8.bytes);
 }

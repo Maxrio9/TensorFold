@@ -58,6 +58,7 @@ pub const Loaded = struct {
     backend: lanes.backend.Backend,
     facts: lanes.Model,
     rows: u32,
+    prompt_rows: u32,
     stream_bytes: usize,
     free_streams: u32 = startup_streams,
     auto_stream_limit: u32,
@@ -207,7 +208,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);
     errdefer if (!moved) be.deinit();
     if (dw) |d| {
-        be.drafter = try draft_runtime.Drafter.init(ctx.d, d, o.context);
+        be.drafter = try draft_runtime.Drafter.init(ctx.d, d, o.context, m.promptRows());
         dw = null;
     }
     if (state_room) |room| {
@@ -240,6 +241,7 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
         .backend = out.backend.backend(),
         .facts = out.backend.facts(),
         .rows = window_rows,
+        .prompt_rows = @intCast(out.model.promptRows()),
         .stream_bytes = out.backend.streamBytesWithDraft(),
         .auto_stream_limit = engine.max_slots,
         .ctx = out,
@@ -289,7 +291,7 @@ pub fn explain(_: ?*anyopaque, err: anyerror) ?[]const u8 {
 test "Mini native registration and refusal wording are explicit" {
     _ = dflash_weights;
     try std.testing.expectEqualStrings("inkling2_loop", model_type);
-    try std.testing.expect(max_segments == 1 and prompt_rows == 2048 and window_rows == 16);
+    try std.testing.expect(max_segments == 1 and prompt_rows == 4096 and window_rows == 16);
     try std.testing.expectEqual(16, engine.max_slots); // the stream cap explain() names
     for ([_]anyerror{ error.Inkling2LoopOneRankOnly, error.Inkling2LoopTextOnly, error.Inkling2DraftNeedsExl3, error.Inkling2CapturedKernels, error.Inkling2TooManyStreams }) |err| {
         try std.testing.expect(explain(null, err) != null);
@@ -330,7 +332,7 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 25,
     var m: engine.Model = undefined;
     m.d = @ptrFromInt(0x1000); // never called: the hook answers every allocation
     m.w = &w;
-    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .fp8);
+    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .fp8, loop.promptRows(w.c.exl3));
     var b: backend.Backend = undefined;
     b.d = m.d;
     b.m = &m;
@@ -348,7 +350,7 @@ test "stream_bytes is what an extra stream's slot and lane buffers allocate, 25,
     const conv = m.layout.bytes - m.layout.at(0).conv_offset;
     const rows = 8 * 8192 + 40 * 1023;
     try std.testing.expectEqual(conv + rows * 2 * 8 * 132, m.snapshotBytes(8192));
-    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .bf16);
+    m.layout = try loop.CacheLayout.init(&w.c.text, &w.p, 8192, .bf16, loop.promptRows(w.c.exl3));
     try std.testing.expectEqual(conv + rows * 2 * 8 * 256, m.snapshotBytes(8192));
 }
 
