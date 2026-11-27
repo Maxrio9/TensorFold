@@ -55,6 +55,9 @@ pub const Model = struct {
     slot: usize = 0, // the slot forwards, snapshots and rewinds use; forwards share the scratch
     taps: ?struct { function: cuda.Function, buffer: u64 } = null,
     capture_taps: bool = false,
+    loopcd_hidden: f32 = 0,
+    loopcd_first_block: u64 = 0,
+    loopcd_first_partial: u64 = 0,
     lazy_head: ?@import("loop_lazy_head.zig").Head = null,
     s: Scratch = undefined,
     buffers: std.ArrayList(cuda.DeviceBuffer) = .empty,
@@ -194,6 +197,18 @@ pub const Model = struct {
         try m.initScratch();
         try m.addSlots(s, 1);
         return m;
+    }
+
+    pub fn loopcdBytes(rows: usize, hidden: usize) usize {
+        return 2 * scratchAllocation(rows * hidden * 2);
+    }
+
+    pub fn enableLoopcd(m: *Model, weight: f32) !void {
+        if (weight == 0) return;
+        const bytes = m.promptRows() * m.w.c.text.hidden * 2;
+        m.loopcd_first_block = try m.alloc(bytes);
+        m.loopcd_first_partial = try m.alloc(bytes);
+        m.loopcd_hidden = weight;
     }
 
     pub fn initScratch(m: *Model) !void {

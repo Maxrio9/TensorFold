@@ -112,6 +112,10 @@ pub const Checkpoint = struct {
         };
     }
 
+    pub fn loopcdBytes(ck: *const Checkpoint) u64 {
+        return engine.Model.loopcdBytes(loop.promptRows(ck.exl3), ck.text.hidden);
+    }
+
     pub fn allocations(ck: *const Checkpoint, context: u32, format: Format) !Components {
         return ck.allocationsMode(context, format, false);
     }

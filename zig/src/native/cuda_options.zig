@@ -42,6 +42,16 @@ pub fn set(comptime F: type, o: api.Open, opts: *F.Options, problem: *[]const u8
             return false;
         };
     }
+    if (comptime @hasField(F.Options, "loopcd_hidden")) {
+        if (!std.math.isFinite(o.loopcd_hidden)) {
+            problem.* = "--loopcd-hidden must be finite";
+            return false;
+        }
+        opts.loopcd_hidden = o.loopcd_hidden;
+    } else if (o.loopcd_hidden != 0) {
+        problem.* = "--loopcd-hidden requires Inkling 2 Mini CUDA";
+        return false;
+    }
     if (comptime @hasField(F.Options, "drafter")) opts.drafter = o.drafter;
     if (comptime @hasField(F.Options, "drafter_bits")) opts.drafter_bits = o.drafter_bits;
     if (comptime @hasField(F.Options, "rope_yarn")) opts.rope_yarn = o.rope_yarn;

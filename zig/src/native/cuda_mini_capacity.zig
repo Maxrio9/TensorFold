@@ -23,6 +23,7 @@ pub const Query = struct {
     vision: ?mini.native.VisionOptions = null,
     prompt_cache_gib: ?f64 = null,
     cache_entries: usize = kv.most_snaps,
+    loopcd_hidden: f32 = 0,
 };
 
 pub const Result = struct {
@@ -79,6 +80,7 @@ fn admit(a: Allocator, ck: *const mini.capacity.Checkpoint, before: budget.Pool,
     };
     r.context = @intCast(window);
     var c = try ck.allocationsMode(r.context, q.format, true);
+    if (q.loopcd_hidden != 0) c.model_working += ck.loopcdBytes();
     r.components = c;
     const state = c.state();
     const model = c.weights() + state;
@@ -217,6 +219,7 @@ fn runtime(a: Allocator, io: std.Io, o: api.Open, before: budget.Pool, capabilit
         .drafter = opts.drafter,
         .vision = opts.vision,
         .prompt_cache_gib = o.prompt_cache_gib,
+        .loopcd_hidden = opts.loopcd_hidden,
         .cache_entries = if (o.keep) |n| @intCast(@max(n, 0)) else kv.most_snaps,
     };
     const r = try plan(a, io, o.dir, before, q, problem) orelse return false;
@@ -381,4 +384,17 @@ test "Mini capacity: explicit zero requires the model window, omitted context fi
     const admitted = try search(a, &ck, large, ck.checkpoint_bytes, .{ .parallel = 1, .context = 0 });
     try std.testing.expectEqual(ck.text.max_context, admitted.result.context);
     try std.testing.expect(admitted.maximum == null and admitted.result.refused_at == null);
+}
+
+test "CUDA startup: Mini capacity includes guidance scratch once, only when enabled" {
+    const a = std.testing.allocator;
+    const ck = try mini.capacity.testCheckpoint(a);
+    const gib = 1 << 30;
+    const pool: budget.Pool = .{ .total = 32 * gib, .free = 31 * gib, .reserve = 4 * gib, .limit = null, .unified = false };
+    var q: Query = .{ .parallel = 1, .context = 4096, .cache_entries = 0 };
+    const off = (try search(a, &ck, pool, ck.checkpoint_bytes, q)).result;
+    q.loopcd_hidden = 0.3;
+    const on = (try search(a, &ck, pool, ck.checkpoint_bytes, q)).result;
+    try std.testing.expectEqual(ck.loopcdBytes(), on.components.?.model_working - off.components.?.model_working);
+    try std.testing.expectEqual(ck.loopcdBytes(), on.tracked.?.ready - off.tracked.?.ready);
 }

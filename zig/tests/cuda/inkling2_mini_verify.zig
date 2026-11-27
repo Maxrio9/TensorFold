@@ -259,7 +259,7 @@ pub fn releaseFidelity(gpu: check.Gpu, mode: FidelityMode, model: []const u8, dr
     if (mode == .fp8_paged) {
         if (comptime @hasDecl(ink, "loop_pages")) {
             var why: ink.capacity.ConfigWhy = .{};
-            const ck = try ink.capacity.Checkpoint.read(a, gpu.io, model, true, drafter, null, &why);
+            const ck = try ink.capacity.Checkpoint.read(a, gpu.io, model, true, drafter, null, try gpu.ctx.capability(), &why);
             const c = try ck.allocationsMode(@intCast(context), .fp8, true);
             const layout: @import("core").kv_pool.Layout = .{
                 .fixed_bytes = c.stream(),

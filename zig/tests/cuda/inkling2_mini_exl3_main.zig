@@ -14,6 +14,8 @@ pub fn main(init: std.process.Init) !void {
     const gpu: check.Gpu = .{ .d = &driver, .ctx = &ctx, .gpa = init.gpa, .io = init.io };
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-exl3-contract"))
         return @import("contract_inkling2_mini_exl3.zig").run(gpu);
+    if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-loopcd-mix"))
+        return @import("inkling2_loopcd_test.zig").run(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-regressions"))
         return regressions(gpu);
     if (args.len == 2 and std.mem.eql(u8, args[1], "inkling2-mini-dspark-contract"))

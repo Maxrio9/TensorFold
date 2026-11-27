@@ -431,3 +431,12 @@ extern "C" __global__ void __launch_bounds__(256)
     const long long i = static_cast<long long>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (i < n) out[i] = ink2l::bf(ink2l::tobf(in[i]));
 }
+
+extern "C" __global__ void tf_ink2_loop_hidden_mix(uint16_t* block, uint16_t* partial,
+    const uint16_t* first_block, const uint16_t* first_partial, int n, float weight) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float b = ink2l::bf(block[i]), p = ink2l::bf(partial[i]);
+    block[i] = ink2l::tobf(__fadd_rn(b, __fmul_rn(weight, __fsub_rn(b, ink2l::bf(first_block[i])))));
+    partial[i] = ink2l::tobf(__fadd_rn(p, __fmul_rn(weight, __fsub_rn(p, ink2l::bf(first_partial[i])))));
+}

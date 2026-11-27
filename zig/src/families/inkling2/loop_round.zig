@@ -157,6 +157,9 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
             };
             if (channel) |ch| try @import("dspark_ops.zig").tap(t.function, s, partial, t.buffer, rows, h, ch);
         }
+        if (m.loopcd_hidden != 0 and visit.layer == lp.core_end and visit.pass == 0) {
+            try loop_math.hiddenMix(&k.loop, s, m.s.blocks[n_blocks - 1], partial, m.loopcd_first_block, m.loopcd_first_partial, rows * h, m.loopcd_hidden);
+        }
         const layer = m.w.p.at(visit.layer);
         const lw = &m.w.layers[visit.layer];
         if (visit.pass >= 2 and visit.layer == lp.core_start) {
@@ -316,6 +319,10 @@ pub fn executePrompt(m: *Model, k: *Kernels, s: cuda.Stream, shape: Shape, image
         std.mem.swap(u64, &partial, &next);
 
         if (visit.layer + 1 == lp.core_start) try m.copy(s, m.s.prelude, partial, rows * h * 2);
+        if (m.loopcd_hidden != 0 and visit.pass == 1 and visit.layer + 1 == lp.core_end) {
+            try m.copy(s, m.loopcd_first_block, m.s.blocks[n_blocks - 1], rows * h * 2);
+            try m.copy(s, m.loopcd_first_partial, partial, rows * h * 2);
+        }
         if (visit.pass > 0 and visit.pass < lp.passes and visit.layer + 1 == lp.core_end) {
             try m.copy(s, m.s.bank0, m.s.blocks[n_blocks - 1], rows * h * 2);
             try m.copy(s, m.s.bank1, partial, rows * h * 2);

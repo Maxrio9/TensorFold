@@ -43,6 +43,7 @@ pub const Paging = struct {
 pub const Options = struct {
     context: usize,
     drafts: bool,
+    loopcd_hidden: f32 = 0,
     kv8: bool = true,
     segments: usize = 1,
     slide: bool = false,
@@ -295,6 +296,8 @@ pub fn open(gpa: std.mem.Allocator, io: std.Io, ctx: *const cuda.Context, dir: [
     try k.reserveDense(stream, w.layers);
     var m = try engine.Model.initWithPages(gpa, ctx.d, stream, &w, o.context, if (o.kv8) .fp8 else .bf16, if (o.paging) |pg| pg.pool.pages else 0);
     errdefer if (!moved) m.deinit();
+    try m.enableLoopcd(o.loopcd_hidden);
+    std.log.info("inkling2_loop: LoopCD-Hidden weight {d}", .{o.loopcd_hidden});
     m.lazy_head = lazy;
     lazy = null;
     var be = try backend.Backend.init(gpa, ctx.d, &m, &k, stream);

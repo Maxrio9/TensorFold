@@ -30,6 +30,7 @@ pub const Kernels = struct {
     gate_up_fn: cuda.Function,
     project_qkv_fn: cuda.Function,
     round_bf16_fn: cuda.Function,
+    hidden_mix_fn: cuda.Function,
 
     pub fn load(d: *const cuda.Driver) !Kernels {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
@@ -45,6 +46,7 @@ pub const Kernels = struct {
             .gate_up_fn = try mod.function("tf_ink2_loop_gate_up"),
             .project_qkv_fn = try mod.function("tf_ink2_loop_project_qkv"),
             .round_bf16_fn = try mod.function("tf_ink2_loop_round_bf16"),
+            .hidden_mix_fn = try mod.function("tf_ink2_loop_hidden_mix"),
         };
     }
 
@@ -210,4 +212,13 @@ test "loop math argument ABI and message role offsets" {
         const queries = @as(usize, 2 * j + @as(usize, @intFromBool(i == 2 or i == 3))) * c;
         try std.testing.expect(at >= base and queries < 24 * c);
     }
+}
+
+pub fn hiddenMix(k: *const Kernels, s: cuda.Stream, block: u64, partial: u64, first_block: u64, first_partial: u64, n: usize, weight: f32) !void {
+    if (n == 0) return error.Inkling2LoopHiddenShape;
+    var a: cuda.Args = .{};
+    for ([_]u64{ block, partial, first_block, first_partial }) |v| a.add(v);
+    a.add(int(n));
+    a.add(weight);
+    try go(k.hidden_mix_fn, s, .{ .x = @intCast((n + 255) / 256) }, 256, &a);
 }

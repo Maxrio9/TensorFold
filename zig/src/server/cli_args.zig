@@ -76,6 +76,7 @@ pub const Args = struct {
     drafter: ?[]const u8 = null,
     drafter_name: ?[]const u8 = null, // retained before hub resolution for the engine's serving line
     drafter_bits: u8 = 4,
+    loopcd_hidden: f32 = 0,
     rope_yarn: ?f64 = null, // YaRN with this factor over the checkpoint's trained window (Qwen3.5/3.6 on CUDA)
     record: ?[]const u8 = null, // drafter training rows written under this folder
     kv_cache: ?[]const u8 = null, // null uses the backend and family default
